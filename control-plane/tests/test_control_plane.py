@@ -1,0 +1,405 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import telegram_control_plane.audits as audits
+from telegram_control_plane.audits import (
+    _dialog_annotation_map,
+    _imported_tool_names,
+    audit_managed_systems,
+    audit_mcp_surface,
+    build_registry,
+)
+import telegram_control_plane.planner as planner
+from telegram_control_plane.planner import build_repair_plan
+
+
+def test_imported_tool_names_excludes_register_aliases(tmp_path: Path) -> None:
+    source = tmp_path / "__init__.py"
+    source.write_text(
+        "from .x import send_message, read_dialog, register as register_x\n"
+        "from .y import register as register_y, create_channel\n",
+        encoding="utf-8",
+    )
+    assert _imported_tool_names(source) == ["create_channel", "read_dialog", "send_message"]
+
+
+def test_dialog_annotation_map_reads_facade_registration(tmp_path: Path) -> None:
+    source = tmp_path / "dialog.py"
+    source.write_text(
+        "def register(mcp):\n"
+        "    mcp.tool(annotations=READONLY)(tool_error_handler(read_dialog))\n"
+        "    mcp.tool(annotations=ADDITIVE)(tool_error_handler(send_dialog_message))\n",
+        encoding="utf-8",
+    )
+    assert _dialog_annotation_map(source) == {
+        "read_dialog": "readonly",
+        "send_dialog_message": "additive",
+    }
+
+
+def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
+    report = audit_mcp_surface()
+    assert report["status"] == "ok"
+    assert "create_channel" not in report["default_surface_tools"]
+    assert "send_dialog_message" not in report["default_surface_tools"]
+    assert not report["unexpected_write_or_destructive_tools"]
+
+
+def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
+    original_load_json = audits.load_json
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("/.mcp.json"):
+            return {"mcpServers": {"telegram-local": {"allowedTools": ["delete_messages"]}}}
+        return original_load_json(path)
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_mcp_surface()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "mcp_endpoint_unsafe_allowlist_tool" for item in report["findings"])
+
+
+def test_launchd_blocks_malformed_plist(monkeypatch, tmp_path: Path) -> None:
+    bad_plist = tmp_path / "com.example.telegram-bad.plist"
+    bad_plist.write_text("not a plist", encoding="utf-8")
+    monkeypatch.setattr(audits, "LAUNCHAGENTS_DIR", tmp_path)
+    monkeypatch.setattr(audits, "_launchctl_labels", lambda: {})
+
+    report = audits.audit_launchd()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "launchd_plist_parse_error" for item in report["findings"])
+
+
+def test_launchd_blocks_nonzero_launchctl(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(audits, "LAUNCHAGENTS_DIR", tmp_path)
+
+    class Completed:
+        returncode = 1
+        stdout = ""
+        stderr = "launchctl unavailable"
+
+    monkeypatch.setattr(audits.subprocess, "run", lambda *args, **kwargs: Completed())
+
+    report = audits.audit_launchd()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "launchctl_list_failed" for item in report["findings"])
+
+
+def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path) -> None:
+    plist = tmp_path / "com.example.telegram-evil.plist"
+    plist.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.example.telegram-evil</string>
+  <key>ProgramArguments</key>
+  <array><string>/tmp/evil/run.sh</string></array>
+</dict>
+</plist>
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audits, "LAUNCHAGENTS_DIR", tmp_path)
+    monkeypatch.setattr(audits, "_launchctl_labels", lambda: {})
+
+    report = audits.audit_launchd()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
+
+
+def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-mirror",
+                        "role": "mirror_recovery_candidate",
+                        "path": "/definitely/missing/telegram-mirror",
+                        "expected_kind": "directory",
+                        "deletion_protection": "blocking",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "managed_system_missing" for item in report["findings"])
+
+
+def test_managed_systems_warns_for_missing_warn_only_path(monkeypatch) -> None:
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-plugin-cache",
+                        "role": "installed_plugin_cache",
+                        "path": "/definitely/missing/telegram-plugin-cache",
+                        "expected_kind": "directory",
+                        "deletion_protection": "warn",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "warn"
+    assert report["summary"]["missing"] == 1
+
+
+def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch, tmp_path: Path) -> None:
+    wrong_root = tmp_path / "telegram-mirror"
+    wrong_root.mkdir()
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-mirror",
+                        "role": "mirror_recovery_candidate",
+                        "path": str(wrong_root),
+                        "expected_kind": "directory",
+                        "required_markers": ["AGENTS.md", "scripts/telegram_mirror_allowlist_report.py"],
+                        "deletion_protection": "blocking",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "managed_system_marker_missing" for item in report["findings"])
+
+
+def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:
+    private_components = {
+        "plugin_drift": {"status": "ok", "findings": []},
+        "mcp_surface": {"status": "ok", "findings": []},
+        "mcp_profiles": {"status": "ok", "findings": [], "profiles": []},
+        "launchd": {"status": "ok", "findings": []},
+        "sessions": {
+            "status": "ok",
+            "findings": [],
+            "sessions": [
+                {
+                    "path": "~/.telegram-mcp/session.session",
+                    "exists": True,
+                    "registered": True,
+                    "runtime_allowed": True,
+                    "schema_checked": False,
+                    "lease_checked": False,
+                }
+            ],
+            "policy": {
+                "sessions": [
+                    {
+                        "path": "~/.telegram-mcp/session.session",
+                        "account_key": "telegram-mcp-main",
+                        "owner": "com.example.telegram-mcp-http",
+                        "runtime_allowed": True,
+                    }
+                ]
+            },
+        },
+        "telegram_mirror": {
+            "status": "warn",
+            "classification": "mirror-recovery",
+            "findings": [],
+            "runtime_state": {
+                "sessions": ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror/data/private.session"],
+                "ledgers": [],
+                "runtime_exports_exists": False,
+            },
+        },
+        "telecrawl": {
+            "status": "warn",
+            "findings": [],
+            "accounts": {
+                "accounts": [
+                    {
+                        "account_key": "tg:123456789",
+                        "telegram_user_id": "123456789",
+                        "username": "example_user",
+                        "label": "Telegram ",
+                        "tdata_path": "~/Library/Application Support/Telegram Desktop/tdata",
+                        "db_path": "${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}/telecrawl-fast.db",
+                        "manifest_path": "${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}/telecrawl-fast.db.manifest.json",
+                        "active": 1,
+                    }
+                ]
+            },
+            "default_archive_status": {
+                "archive_ready": True,
+                "account": {
+                    "account_key": "tg:123456789",
+                    "telegram_user_id": "123456789",
+                    "label": "Telegram ",
+                },
+            },
+        },
+        "managed_systems": {
+            "status": "ok",
+            "findings": [],
+            "summary": {"registered": 1, "existing": 1},
+            "systems": [
+                {
+                    "id": "telegram-mirror",
+                    "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror",
+                    "exists": True,
+                    "deletion_protection": "blocking",
+                }
+            ],
+            "deletion_policy": {"default": "deny"},
+        },
+    }
+    monkeypatch.setattr(audits, "_collect_components", lambda: private_components)
+
+    registry = build_registry()
+
+    encoded = json.dumps(registry, ensure_ascii=False)
+
+    assert "~/.telegram-mcp/session.session" not in encoded
+    assert "telegram_user_id" not in encoded
+    assert "tdata_path" not in encoded
+    assert "db_path" not in encoded
+    assert "manifest_path" not in encoded
+    assert "Telegram @" not in encoded
+    assert "tg:123456789" not in encoded
+
+
+def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
+    monkeypatch.setattr(audits, "_collect_components", lambda: {
+        "managed_systems": {
+            "status": "ok",
+            "findings": [],
+            "summary": {"registered": 1, "existing": 1},
+            "systems": [
+                {
+                    "id": "telegram-mirror",
+                    "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror",
+                    "exists": True,
+                    "deletion_protection": "blocking",
+                }
+            ],
+            "deletion_policy": {"default": "deny"},
+        },
+        "plugin_drift": {"status": "ok", "findings": []},
+        "mcp_surface": {"status": "ok", "findings": []},
+        "mcp_profiles": {"status": "ok", "findings": [], "profiles": []},
+        "launchd": {"status": "ok", "findings": []},
+        "sessions": {
+            "status": "ok",
+            "findings": [],
+            "sessions": [{"exists": True, "registered": True, "runtime_allowed": True}],
+            "policy": {"sessions": [{"runtime_allowed": True}]},
+        },
+        "telegram_mirror": {
+            "status": "warn",
+            "classification": "mirror-recovery",
+            "findings": [],
+            "runtime_state": {"sessions": ["private.session"], "ledgers": ["ledger.json"], "runtime_exports_exists": False},
+        },
+        "telecrawl": {
+            "status": "warn",
+            "findings": [],
+            "accounts": {"accounts": [{"active": 1}, {"active": 0}]},
+            "default_archive_status": {"archive_ready": True, "import_gaps": {"errors": 3}},
+        },
+    })
+
+    registry = build_registry()
+
+    assert set(registry["components"]["sessions"]) == {"status", "findings", "summary", "policy_summary"}
+    assert "sessions" not in registry["components"]["sessions"]
+    assert "accounts" not in registry["components"]["telecrawl"]
+    assert "default_archive_status" not in registry["components"]["telecrawl"]
+    assert "runtime_state" not in registry["components"]["telegram_mirror"]
+    assert "managed_systems" in registry["components"]
+
+
+def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy(monkeypatch) -> None:
+    components = {
+        "plugin_drift": {"status": "ok", "findings": []},
+        "managed_systems": {"status": "ok", "findings": []},
+        "mcp_surface": {"status": "ok", "findings": []},
+        "mcp_profiles": {"status": "ok", "findings": []},
+        "launchd": {"status": "ok", "findings": []},
+        "sessions": {"status": "ok", "findings": []},
+        "telegram_mirror": {
+            "status": "warn",
+            "classification": "mirror-recovery",
+            "findings": [{"id": "mirror_runtime_exports_missing", "severity": "warn"}],
+        },
+        "telecrawl": {
+            "status": "warn",
+            "findings": [{"id": "telecrawl_known_gaps", "severity": "warn"}],
+        },
+    }
+    monkeypatch.setattr(audits, "_collect_components", lambda: components)
+
+    registry = build_registry()
+    encoded = json.dumps(registry, ensure_ascii=False)
+
+    assert encoded
+    assert registry["status"] == "warn"
+    assert registry["summary"]["blocking_findings"] == 0
+    assert {
+        "managed_systems",
+        "plugin_drift",
+        "mcp_surface",
+        "launchd",
+        "sessions",
+        "telegram_mirror",
+        "telecrawl",
+    }.issubset(registry["components"])
+
+
+def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(
+        planner,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {
+                "components": {
+                    "managed_systems": "ok",
+                    "plugin_drift": "ok",
+                    "mcp_surface": "ok",
+                    "launchd": "ok",
+                    "sessions": "ok",
+                    "telegram_mirror": "warn",
+                    "telecrawl": "warn",
+                }
+            },
+            "findings": [],
+        },
+    )
+
+    plan = build_repair_plan()
+    assert plan["status"] == "ready"
+    assert plan["safety"]["default_mode"] == "dry_run_only"
+    assert plan["recommended_order"][0] == "managed-systems-inventory"
+    by_id = {step["id"]: step for step in plan["steps"]}
+    assert by_id["managed-systems-inventory"]["apply_commands"] == []
+    assert by_id["plugin-cache-parity"]["verification_commands"]
+    assert by_id["launchd-inventory-and-cold-mode"]["apply_commands"] == []

@@ -1,0 +1,7 @@
+{
+  "live_current": "telegram-mcp profiles",
+  "user_facing_behavior": "plugin source and installed cache parity",
+  "historical_mirror": "telegram-mirror only after runtime preflight",
+  "historical_archive": "telecrawl account-scoped archive snapshots",
+  "runtime_state": "launchd inventory and session registry inputs"
+}

@@ -1,0 +1,21 @@
+[project]
+name = "telegram-mcp"
+version = "0.1.0"
+description = "Telegram MCP server for Claude Code — read chats, send messages, search, manage contacts and media"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.26.0",
+    "telethon>=1.42.0",
+    "cryptg>=0.4",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.7",
+    "python-dotenv>=1.0",
+    "structlog>=24.4",
+]
+
+[project.scripts]
+telegram-mcp = "telegram_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

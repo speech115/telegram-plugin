@@ -1,0 +1,28 @@
+{
+  "default_mcp_profile": {
+    "external_operation_mode": "read_only",
+    "unexpected_write_or_destructive_tools_are_blocking": true,
+    "additive_tools_allowed_in_default_profile": false,
+    "explicit_write_profiles": ["full", "admin"],
+    "approved_additive_facade_tools": [
+      "send_dialog_message",
+      "reply_in_dialog",
+      "reply_message"
+    ],
+    "approved_read_or_preview_facade_tools": [
+      "resolve_dialog",
+      "find_dialog",
+      "read_dialog_by_date",
+      "read_today_dialog",
+      "read_recent_dialog",
+      "read_dialog",
+      "collect_dialog_context",
+      "collect_context",
+      "prepare_dialog_reply",
+      "draft_reply",
+      "prepare_send_message",
+      "prepare_reply_message",
+      "search_dialog_messages"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "classification": "mirror-recovery",
+  "runtime_start_allowed": false,
+  "missing_runtime_exports_are_blocking": false,
+  "sessions_in_recovery_tree_are_blocking": false,
+  "requires_explicit_runtime_preflight_for_promotion": true
+}

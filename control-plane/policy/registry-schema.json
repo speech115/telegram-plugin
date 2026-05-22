@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "persisted_registry_contract": {
+    "default": "allowlist_only",
+    "private_debug_raw_payloads_allowed": false,
+    "disallowed_value_classes": [
+      "telegram_user_ids",
+      "telegram_handles",
+      "phone_numbers",
+      "exact_session_paths",
+      "telegram_desktop_tdata_paths",
+      "archive_database_paths",
+      "archive_manifest_paths",
+      "raw_private_errors"
+    ]
+  },
+  "component_fields": {
+    "managed_systems": ["status", "findings", "summary", "systems", "deletion_policy"],
+    "plugin_drift": ["status", "findings", "raw_status", "version", "artifacts", "sha256"],
+    "mcp_surface": [
+      "status",
+      "findings",
+      "tool_count",
+      "default_surface_tools",
+      "approved_facade_tools",
+      "unexpected_write_or_destructive_tools",
+      "non_facade_tools",
+      "dialog_facade_annotations",
+      "plugin_mcp_servers"
+    ],
+    "mcp_profiles": ["status", "findings", "profiles"],
+    "launchd": ["status", "findings", "jobs", "loaded_jobs", "policy"],
+    "sessions": ["status", "findings", "summary", "policy_summary"],
+    "telegram_mirror": ["status", "classification", "findings", "policy", "runtime_state_summary"],
+    "telecrawl": ["status", "findings", "wrapper", "policy", "account_summary", "freshness"]
+  }
+}

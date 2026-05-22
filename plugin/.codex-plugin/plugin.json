@@ -1,0 +1,43 @@
+{
+  "name": "telegram",
+  "version": "0.1.6",
+  "description": "Read and search live Telegram dialogs, collect context, and prepare reply drafts through the local telegram-mcp facade.",
+  "author": {
+    "name": "Telegram Plugin Maintainers",
+    "url": "https://telegram.org/"
+  },
+  "homepage": "https://telegram.org/",
+  "repository": "https://github.com/speech115/telegram-agent-control-plane",
+  "license": "MIT",
+  "keywords": [
+    "telegram",
+    "messaging",
+    "mcp",
+    "chat"
+  ],
+  "skills": "./skills/",
+  "apps": "./.app.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Telegram",
+    "shortDescription": "Read, search, collect context, and draft Telegram replies",
+    "longDescription": "Use live Telegram dialogs through the local telegram-mcp facade to resolve chats, read recent or date-scoped messages, search conversations, summarize context, inspect scoped media, use built-in Telegram voice transcription, and prepare non-sending reply previews. The default plugin surface is intentionally restricted to read-only, local media-download, voice-transcription, and preview tools; sending messages, subscriber export, and admin actions require separate explicit tooling outside the default plugin allowlist.",
+    "developerName": "Telegram Plugin Maintainers",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://telegram.org/",
+    "privacyPolicyURL": "https://telegram.org/privacy",
+    "termsOfServiceURL": "https://telegram.org/tos",
+    "defaultPrompt": [
+      "Read today's chat with @username and summarize the decisions",
+      "Search a Telegram dialog for a message or link",
+      "Collect context from a Telegram chat and prepare a reply draft"
+    ],
+    "brandColor": "#229ED9",
+    "composerIcon": "./assets/telegram-small.png",
+    "logo": "./assets/telegram.png",
+    "screenshots": []
+  }
+}

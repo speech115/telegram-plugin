@@ -1,0 +1,27 @@
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Environment
+.env
+
+# Telegram session
+*.session
+*.session-journal
+
+# Downloads
+downloads/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# uv
+uv.lock

@@ -1,0 +1,26 @@
+# llms.txt
+
+root: ${TELEGRAM_MCP_REPO:-./mcp}
+generated_at: 2026-04-18T15:20:22Z
+
+## Important Files
+- AGENTS.md
+- README.md
+- CLAUDE.md
+- .ai/project.json
+- bin/status
+- bin/doctor
+- bin/test
+
+## Commands
+- bin/status
+- bin/doctor
+- bin/test
+
+## Active Zones
+- none
+
+## Docs
+- AGENTS.md
+- README.md
+- docs

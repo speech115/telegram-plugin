@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
+DOCTOR_TMP=$(mktemp)
+HEALTH_TMP=$(mktemp)
+DOCTOR_ERR_TMP=$(mktemp)
+HEALTH_ERR_TMP=$(mktemp)
+trap 'rm -f "${DOCTOR_TMP}" "${HEALTH_TMP}" "${DOCTOR_ERR_TMP}" "${HEALTH_ERR_TMP}"' EXIT
+
+if [[ "${1:-}" == "--json" ]]; then
+  JSON=true
+  shift
+else
+  JSON=false
+fi
+
+if [[ "$#" -ne 0 ]]; then
+  echo "Usage: $(basename "$0") [--json]" >&2
+  exit 2
+fi
+
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  if [[ "${JSON}" == true ]]; then
+    cat <<JSON
+{
+  "status": "error",
+  "command": "health + doctor",
+  "checks": {
+    "python_runtime": {
+      "status": "missing",
+      "path": "${PYTHON_BIN}"
+    }
+  },
+  "health": null,
+  "doctor": null
+}
+JSON
+    exit 1
+  fi
+  echo "Missing repo-local python at ${PYTHON_BIN}. Run 'uv pip install -e .'." >&2
+  exit 1
+fi
+
+run_health() {
+  set +e
+  TELEGRAM_MCP_HOST="${TELEGRAM_MCP_HOST:-127.0.0.1}" \
+  TELEGRAM_MCP_PORT="${TELEGRAM_MCP_PORT:-8799}" \
+  TELEGRAM_MCP_HTTP_PATH="${TELEGRAM_MCP_HTTP_PATH:-/mcp}" \
+  TELEGRAM_MCP_TRANSPORT="${TELEGRAM_MCP_TRANSPORT:-streamable-http}" \
+  PYTHONPATH="${REPO_ROOT}/src" \
+  "${PYTHON_BIN}" -m telegram_mcp health >"${HEALTH_TMP}" 2>"${HEALTH_ERR_TMP}"
+  HEA_EXIT=$?
+  set -e
+}
+
+run_doctor() {
+  set +e
+  TELEGRAM_MCP_HOST="${TELEGRAM_MCP_HOST:-127.0.0.1}" \
+  TELEGRAM_MCP_PORT="${TELEGRAM_MCP_PORT:-8799}" \
+  TELEGRAM_MCP_HTTP_PATH="${TELEGRAM_MCP_HTTP_PATH:-/mcp}" \
+  TELEGRAM_MCP_TRANSPORT="${TELEGRAM_MCP_TRANSPORT:-streamable-http}" \
+  PYTHONPATH="${REPO_ROOT}/src" \
+  "${PYTHON_BIN}" -m telegram_mcp doctor >"${DOCTOR_TMP}" 2>"${DOCTOR_ERR_TMP}"
+  DOC_EXIT=$?
+  set -e
+}
+
+if [[ "${JSON}" == false ]]; then
+  if [[ ! -x "${PYTHON_BIN}" ]]; then
+    echo "Missing repo-local python at ${PYTHON_BIN}. Run 'uv pip install -e .'." >&2
+    exit 1
+  fi
+
+  run_health
+  if [[ "${HEA_EXIT}" -ne 0 ]]; then
+    exit "${HEA_EXIT}"
+  fi
+
+  run_doctor
+  if [[ "${DOC_EXIT}" -ne 0 ]]; then
+    exit "${DOC_EXIT}"
+  fi
+
+  cat "${HEALTH_TMP}"
+  echo
+  cat "${DOCTOR_TMP}"
+  exit 0
+fi
+
+run_health
+run_doctor
+
+python3 - "$HEALTH_TMP" "$DOCTOR_TMP" "$HEALTH_ERR_TMP" "$DOCTOR_ERR_TMP" "$HEA_EXIT" "$DOC_EXIT" "${PYTHON_BIN}" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+health_path, doctor_path, health_err_path, doctor_err_path, health_exit, doctor_exit, python_bin = sys.argv[1:8]
+health_output = Path(health_path).read_text(encoding="utf-8").strip()
+doctor_output = Path(doctor_path).read_text(encoding="utf-8").strip()
+health_stderr = Path(health_err_path).read_text(encoding="utf-8").strip()
+doctor_stderr = Path(doctor_err_path).read_text(encoding="utf-8").strip()
+
+try:
+    health_payload = json.loads(health_output) if health_output else None
+except json.JSONDecodeError:
+    health_payload = None
+try:
+    doctor_payload = json.loads(doctor_output) if doctor_output else None
+except json.JSONDecodeError:
+    doctor_payload = None
+
+checks = {
+    "python_runtime": {
+        "status": "ok" if os.access(python_bin, os.X_OK) else "missing",
+        "path": python_bin,
+    },
+    "health": {
+        "status": "ok" if int(health_exit) == 0 else "warn",
+        "exit_code": int(health_exit),
+    },
+    "doctor": {
+        "status": "ok" if int(doctor_exit) == 0 else "warn",
+        "exit_code": int(doctor_exit),
+    },
+}
+
+overall_status = "ok" if int(health_exit) == 0 and int(doctor_exit) == 0 else "warn"
+report = {
+    "status": overall_status,
+    "command": "health + doctor",
+    "checks": checks,
+    "health": health_payload,
+    "doctor": doctor_payload,
+    "health_exit_code": int(health_exit),
+    "doctor_exit_code": int(doctor_exit),
+}
+
+if health_payload is None:
+    report["health_output"] = health_output
+if doctor_payload is None:
+    report["doctor_output"] = doctor_output
+if health_stderr:
+    report["health_stderr"] = health_stderr
+if doctor_stderr:
+    report["doctor_stderr"] = doctor_stderr
+
+print(json.dumps(report, ensure_ascii=False, indent=2))
+sys.exit(0 if overall_status == "ok" else 1)
+PY
