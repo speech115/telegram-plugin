@@ -125,7 +125,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             title="Add hard allowlist/profile split for default Telegram MCP surface",
             status="blocked_by_current_surface" if mcp_surface_blocked else "already_clean",
             reason=(
-                "Default plugin endpoint exposes low-level write/destructive tools and plugin metadata has no "
+                "Default Mode endpoint exposes low-level write/destructive tools and plugin metadata has no "
                 "hard allowlist."
                 if mcp_surface_blocked
                 else "Default MCP surface gate is clean."

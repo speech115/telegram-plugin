@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "Telegram",
     "shortDescription": "Read, search, collect context, and draft Telegram replies",
-    "longDescription": "Use live Telegram dialogs through the local telegram-mcp facade to resolve chats, read recent or date-scoped messages, search conversations, summarize context, inspect scoped media, use built-in Telegram voice transcription, and prepare non-sending reply previews. The default plugin surface is intentionally restricted to read-only, local media-download, voice-transcription, and preview tools; sending messages, subscriber export, and admin actions require separate explicit tooling outside the default plugin allowlist.",
+    "longDescription": "Use live Telegram dialogs through the local telegram-mcp facade to resolve chats, read recent or date-scoped messages, search conversations, summarize context, inspect scoped media, use built-in Telegram voice transcription, and prepare non-sending reply previews. Default Mode is intentionally restricted to read-only, local media-download, voice-transcription, and preview tools. Power Mode can expose the broader Telegram MCP surface, and Operator Workflows cover mirror/archive/export tasks, but both require separate explicit local setup outside the default plugin allowlist.",
     "developerName": "Telegram Plugin Maintainers",
     "category": "Productivity",
     "capabilities": [

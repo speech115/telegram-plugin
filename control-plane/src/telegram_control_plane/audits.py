@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import os
 import plistlib
 import re
 import subprocess
@@ -72,6 +73,21 @@ PRIVATE_PATH_SUBSTRINGS = (
     "~/Library/Application Support/Telegram Desktop/tdata",
     "TELECRAWL_ARTIFACT_ROOT",
 )
+SHELL_DEFAULT_PATH_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]+)\}(.*)$")
+
+
+def _resolve_policy_path(raw_path: str, *, base: Path | None = None) -> Path:
+    """Resolve policy paths without invoking a shell."""
+
+    match = SHELL_DEFAULT_PATH_RE.match(raw_path)
+    if match:
+        env_name, default, suffix = match.groups()
+        selected = os.environ.get(env_name) or default
+        raw_path = f"{selected}{suffix}"
+    expanded = Path(os.path.expandvars(raw_path)).expanduser()
+    if not expanded.is_absolute() and base is not None:
+        expanded = base / expanded
+    return expanded
 
 
 def audit_plugin_drift() -> dict[str, Any]:
@@ -173,7 +189,7 @@ def audit_managed_systems() -> dict[str, Any]:
         expected_kind = str(item.get("expected_kind") or "path")
         deletion_protection = str(item.get("deletion_protection") or "blocking")
         required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
-        path = Path(raw_path) if raw_path else Path()
+        path = _resolve_policy_path(raw_path, base=POLICY_DIR.parent) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
         missing_markers = sorted(
@@ -440,12 +456,12 @@ def _launchctl_labels() -> dict[str, dict[str, Any]]:
 def _allowed_roots() -> tuple[list[Path], list[Path]]:
     policy = load_json(POLICY_DIR / "allowed-roots.json") or {}
     allowed = [
-        Path(str(item.get("path"))).resolve(strict=False)
+        _resolve_policy_path(str(item.get("path"))).resolve(strict=False)
         for item in policy.get("allowed_roots", [])
         if isinstance(item, dict) and item.get("path")
     ]
     aliases = [
-        Path(str(item.get("path"))).resolve(strict=False)
+        _resolve_policy_path(str(item.get("path"))).resolve(strict=False)
         for item in policy.get("temporary_compatibility_aliases", [])
         if isinstance(item, dict) and item.get("path")
     ]

@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a scoped improvement.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      options:
+        - Default Mode
+        - MCP server
+        - Power Mode
+        - Control-plane
+        - Operator Workflows
+        - Mirror/archive
+        - Subscriber export
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful version.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety boundary
+      options:
+        - label: This does not add write/admin/destructive tools to the Default Mode plugin allowlist.
+          required: true

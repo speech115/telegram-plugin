@@ -11,12 +11,13 @@ from telegram_control_plane.audits import audit_mirror_preflight, build_registry
 pytestmark = pytest.mark.integration
 
 
-def test_live_registry_has_expected_warn_shape() -> None:
+def test_live_registry_keeps_default_mcp_surface_safe() -> None:
     registry = build_registry()
 
-    assert registry["status"] == "warn"
-    assert registry["summary"]["blocking_findings"] == 0
-    assert registry["summary"]["warning_findings"] == 5
+    assert registry["schema_version"] == 1
+    assert registry["read_only_external_state"] is True
+    assert registry["components"]["mcp_surface"]["status"] == "ok"
+    assert not registry["components"]["mcp_surface"]["unexpected_write_or_destructive_tools"]
 
 
 def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:

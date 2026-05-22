@@ -60,8 +60,8 @@ manifest paths, subscriber exports, media payloads, or raw private errors.
   A missing blocking-protected path is a fail-closed defect.
 - Plugin source, live skill, and installed cache are aligned at local Telegram
   plugin version `0.1.6`; previous cache versions are left as rollback.
-- The default MCP tool profile is the restricted facade profile. Admin/channel
-  management tools require an explicit full/admin profile.
+- Default Mode is the restricted facade profile. Admin/channel management tools
+  require explicit Power Mode (`TELEGRAM_MCP_TOOL_PROFILE=full` or `admin`).
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they
   load credentials through `TELEGRAM_MCP_ENV_FILE` pointing at private `0600`
   env files under the MCP session directories.

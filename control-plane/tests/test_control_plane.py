@@ -7,6 +7,7 @@ import telegram_control_plane.audits as audits
 from telegram_control_plane.audits import (
     _dialog_annotation_map,
     _imported_tool_names,
+    _resolve_policy_path,
     audit_managed_systems,
     audit_mcp_surface,
     build_registry,
@@ -161,6 +162,18 @@ def test_managed_systems_warns_for_missing_warn_only_path(monkeypatch) -> None:
 
     assert report["status"] == "warn"
     assert report["summary"]["missing"] == 1
+
+
+def test_resolve_policy_path_supports_shell_default_env(monkeypatch, tmp_path: Path) -> None:
+    configured = tmp_path / "configured-control-plane"
+    fallback = tmp_path / "control-plane"
+    monkeypatch.setenv("TELEGRAM_CONTROL_PLANE_ROOT", str(configured))
+
+    assert _resolve_policy_path("${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}") == configured
+
+    monkeypatch.delenv("TELEGRAM_CONTROL_PLANE_ROOT")
+
+    assert _resolve_policy_path("${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}", base=fallback.parent) == fallback
 
 
 def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch, tmp_path: Path) -> None:

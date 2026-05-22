@@ -13,7 +13,7 @@ treated differently from a normal stateless API integration.
 
 ## Default Boundary
 
-The default plugin path should expose only tools that are safe for routine agent
+Default Mode should expose only tools that are safe for routine agent
 context gathering:
 
 - resolve dialogs;
