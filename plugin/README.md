@@ -1,11 +1,20 @@
 # Telegram local plugin
 
+Community-maintained packaging for local use. This is not an official Telegram
+client or Telegram LLC distribution.
+
 This plugin gives Codex a Telegram-flavored front door backed by the local
 `telegram-mcp` daemon at `http://127.0.0.1:8799/mcp`.
 
 The default installed surface is Default Mode: read-only and preview tools for
 live dialog resolution, reading, searching, context collection, scoped media,
 voice transcription, and non-sending reply drafts.
+
+Default Mode boundaries are enforced by runtime profile + plugin allowlist
+(`TELEGRAM_MCP_TOOL_PROFILE=default` and `plugin/.mcp.json`). HTTP daemon mode
+also requires a local bearer token (`TELEGRAM_MCP_AUTH_TOKEN`) configured on the
+server and client. The plugin MCP config references that variable with
+`bearer_token_env_var`; it does not store the token itself.
 
 What it does:
 

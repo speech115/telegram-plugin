@@ -1,5 +1,8 @@
 # Security Policy
 
+This repository is a community-maintained local integration and is not an
+official Telegram product channel.
+
 ## Supported Versions
 
 This project is currently alpha software. Security fixes target the latest
@@ -43,6 +46,8 @@ Use synthetic or redacted examples instead.
 Security-sensitive areas include:
 
 - accidental Power Mode tool exposure in the Default Mode allowlist;
+- MCP runtime profile drift where `default` serves write/admin tools;
+- unauthenticated local HTTP/SSE MCP endpoint exposure;
 - credential/session leakage;
 - prompt injection through Telegram content;
 - private content leakage into generated artifacts;

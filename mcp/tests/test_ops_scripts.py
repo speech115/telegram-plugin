@@ -1,5 +1,6 @@
 import json
 import os
+import plistlib
 import shutil
 import stat
 import subprocess
@@ -65,6 +66,14 @@ class OpsScriptsTests(unittest.TestCase):
             runtime_transport="${{TELEGRAM_MCP_TRANSPORT:-{transport}}}"
             if [ "${{TELEGRAM_TEST_STDERR_NOISE:-0}}" = "1" ]; then
               echo "stderr noise from mcp/httpx" >&2
+            fi
+            if [ "$#" -eq 0 ]; then
+              if [ {mcporter_facade_exit} -ne 0 ]; then
+                echo "direct facade failed" >&2
+                exit {mcporter_facade_exit}
+              fi
+              echo "Facade smoke direct MCP client passed."
+              exit 0
             fi
             if [ "$mode" = "health" ]; then
               attempts_file="${{HOME}}/.python-health-invocations"
@@ -189,6 +198,7 @@ class OpsScriptsTests(unittest.TestCase):
             {
                 "HOME": str(root),
                 "PATH": f"{root / 'fake-bin'}:{env.get('PATH', '')}",
+                "TELEGRAM_MCP_AUTH_TOKEN": "test-token",
             }
         )
         env.update(env_overrides)
@@ -333,7 +343,7 @@ class OpsScriptsTests(unittest.TestCase):
 
     def test_smoke_check_uses_mcporter_for_daemon_checks(self):
         root = self._make_fake_project(
-            include_python=False,
+            include_python=True,
             include_mcporter=True,
         )
 
@@ -342,24 +352,25 @@ class OpsScriptsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("Running telegram-mcp daemon health via mcporter...", result.stdout)
         self.assertIn("Running telegram-mcp daemon doctor via mcporter...", result.stdout)
+        self.assertIn("Running telegram-mcp daemon facade smoke via direct MCP client...", result.stdout)
         self.assertIn("Smoke check passed.", result.stdout)
 
     def test_smoke_check_runs_facade_probe_for_daemon_checks(self):
         root = self._make_fake_project(
-            include_python=False,
+            include_python=True,
             include_mcporter=True,
         )
 
         result = self._run_script(root, "smoke-check.sh")
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Running telegram-mcp daemon facade smoke via mcporter...", result.stdout)
-        self.assertIn("Facade smoke dialog ref: tg://dialog/user/123", result.stdout)
+        self.assertIn("Running telegram-mcp daemon facade smoke via direct MCP client...", result.stdout)
+        self.assertIn("Facade smoke direct MCP client passed.", result.stdout)
         self.assertIn("Smoke check passed.", result.stdout)
 
     def test_smoke_check_reports_facade_probe_failure_in_daemon_mode(self):
         root = self._make_fake_project(
-            include_python=False,
+            include_python=True,
             include_mcporter=True,
             mcporter_facade_exit=1,
         )
@@ -367,10 +378,7 @@ class OpsScriptsTests(unittest.TestCase):
         result = self._run_script(root, "smoke-check.sh")
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn(
-            "Facade smoke check failed: mcporter call telegram.collect_dialog_context returned non-zero.",
-            result.stderr,
-        )
+        self.assertIn("direct facade failed", result.stderr)
 
     def test_status_script_reports_mcporter_hint_when_missing_in_daemon_mode(self):
         root = self._make_fake_project(include_python=False)
@@ -432,6 +440,64 @@ class OpsScriptsTests(unittest.TestCase):
         self.assertIn("<string>15</string>", plist)
         self.assertIn("<key>TELEGRAM_RESULT_CACHE_SIZE</key>", plist)
         self.assertIn("<string>64</string>", plist)
+
+    def test_install_launchd_requires_auth_token_for_http_transport(self):
+        root = self._make_fake_project(include_python=True)
+
+        result = self._run_script(
+            root,
+            "install-launchd.sh",
+            TELEGRAM_API_ID="1",
+            TELEGRAM_API_HASH="hash",
+            TELEGRAM_MCP_AUTH_TOKEN="",
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("TELEGRAM_MCP_AUTH_TOKEN must be set", result.stderr)
+
+    def test_install_launchd_rejects_hostile_env_file_without_executing_it(self):
+        root = self._make_fake_project(include_python=True)
+        env_file = root / "hostile.env"
+        marker = root / "env-executed"
+        env_file.write_text(
+            "\n".join(
+                [
+                    "TELEGRAM_API_ID=1",
+                    "TELEGRAM_API_HASH=hash",
+                    f"TELEGRAM_DOWNLOAD_DIR=$(touch {marker})",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        env_file.chmod(0o600)
+
+        result = self._run_script(
+            root,
+            "install-launchd.sh",
+            TELEGRAM_MCP_ENV_FILE=str(env_file),
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(marker.exists())
+        self.assertIn("Unsafe env value", result.stderr)
+
+    def test_install_launchd_generates_logrotate_without_inline_shell(self):
+        root = self._make_fake_project(include_python=True)
+
+        result = self._run_script(
+            root,
+            "install-launchd.sh",
+            TELEGRAM_API_ID="1",
+            TELEGRAM_API_HASH="hash",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rotate_plist = root / "Library" / "LaunchAgents" / "com.example.telegram-mcp-http-logrotate.plist"
+        payload = plistlib.loads(rotate_plist.read_bytes())
+        args = payload["ProgramArguments"]
+        self.assertNotIn("-c", args)
+        self.assertNotIn("/bin/bash", args)
+        self.assertIn("rotate-logs.sh", args[0])
 
     def test_install_launchd_boots_out_existing_service_by_plist_path(self):
         root = self._make_fake_project(include_python=True)

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     mcp_http_path: str = "/mcp"
     mcp_mount_path: str = "/"
     mcp_json_response: bool = True
+    mcp_auth_token: str | None = None
     mcp_shared_client: bool = False
     mcp_include_diagnostics: bool = False
     mcp_probe_timeout_seconds: float = 15.0

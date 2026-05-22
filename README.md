@@ -2,6 +2,9 @@
 
 Safe local Telegram access for AI coding agents.
 
+This is a community-maintained integration project and is not an official
+Telegram product or Telegram LLC publication.
+
 This is an alpha open-source packaging of a working local stack: a Telegram MCP
 server, a Codex plugin bundle, and an optional audit/control-plane layer that
 keeps the runtime explainable before agents read live chats or prepare reply
@@ -26,6 +29,15 @@ and voice transcription are local inspection tools; message sending, admin
 actions, and subscriber export are intentionally outside the default path unless
 you wire them explicitly.
 
+The runtime boundary is enforced in two layers:
+
+- MCP runtime profile (`TELEGRAM_MCP_TOOL_PROFILE=default`) keeps write/admin
+  tools outside the default served surface.
+- Plugin allowlist (`plugin/.mcp.json`) exposes only Default Mode facade tools
+  even when a broader local daemon exists.
+- HTTP/SSE daemon transports require `TELEGRAM_MCP_AUTH_TOKEN`; stdio remains
+  local process-only.
+
 The project has three operating modes:
 
 | Mode | Use it for | Can change Telegram? | Default |
@@ -45,6 +57,7 @@ externally visible actions.
 ```bash
 cp mcp/.env.example mcp/.env
 $EDITOR mcp/.env
+chmod 600 mcp/.env
 ```
 
 2. Install and run the MCP server:
@@ -74,16 +87,23 @@ cd mcp
 ```
 
 5. Point your local Codex plugin setup at `plugin/` and the MCP endpoint in
-`plugin/.mcp.json` (`http://127.0.0.1:8799/mcp` by default).
+`plugin/.mcp.json` (`http://127.0.0.1:8799/mcp` by default). For HTTP daemon
+mode, configure `TELEGRAM_MCP_AUTH_TOKEN` in the client environment before
+connecting; the plugin MCP config references that variable via
+`bearer_token_env_var`.
 
 To inspect the full server surface locally, run the daemon with:
 
 ```bash
-TELEGRAM_MCP_TOOL_PROFILE=full .venv/bin/telegram-mcp
+TELEGRAM_MCP_POWER_MODE=enabled TELEGRAM_MCP_TOOL_PROFILE=full .venv/bin/telegram-mcp
 ```
 
 Use `plugin/.mcp.full.example.json` only when you intentionally want Power Mode
 in a local agent client.
+
+Dependency strategy for `mcp/`: commit and review `uv.lock` changes for
+reproducible installs. Do not run broad upgrades as part of routine docs or
+metadata edits.
 
 ## Configuration
 

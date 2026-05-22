@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -65,3 +66,11 @@ def status_from_findings(findings: list[dict[str, Any]]) -> str:
     if any(item.get("severity") in {"warn", "warning"} for item in findings):
         return "warn"
     return "ok"
+
+
+def is_group_or_world_writable(path: Path) -> bool:
+    try:
+        mode = path.stat().st_mode
+    except OSError:
+        return False
+    return bool(mode & (stat.S_IWGRP | stat.S_IWOTH))

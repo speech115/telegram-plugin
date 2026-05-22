@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from .file_path_policy import validate_outbound_media_path
 from .types import MessageInfo
 
 
@@ -13,6 +14,7 @@ class MessageVoiceWriteMixin:
     async def send_voice(
         self, chat: str | int, file_path: str
     ) -> MessageInfo:
+        safe_file_path = validate_outbound_media_path(file_path)
         entity = await self._resolve_entity(chat)
         started_at = time.perf_counter()
         self._append_write_audit_event(
@@ -26,7 +28,7 @@ class MessageVoiceWriteMixin:
                 "send_voice",
                 lambda: self.client.send_file(
                     entity,
-                    file_path,
+                    safe_file_path,
                     voice_note=True,
                 ),
             )

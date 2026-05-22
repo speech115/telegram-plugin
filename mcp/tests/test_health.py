@@ -242,6 +242,57 @@ class HealthTests(unittest.TestCase):
             15.0,
         )
 
+    def test_http_probe_sends_configured_bearer_token(self):
+        from telegram_mcp.auth import _probe_http_runtime
+
+        captured_headers = []
+
+        @asynccontextmanager
+        async def fake_streamable_http_client(_url, *, http_client, **_kwargs):
+            captured_headers.append(dict(http_client.headers))
+            yield ("read-stream", "write-stream", lambda: None)
+
+        class DummyClientSession:
+            def __init__(self, read_stream, write_stream, **kwargs):
+                self.read_stream = read_stream
+                self.write_stream = write_stream
+                self.kwargs = kwargs
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def initialize(self):
+                return None
+
+            async def call_tool(self, *_args, **_kwargs):
+                return type("ToolResult", (), {"isError": False})()
+
+        with patch("telegram_mcp.auth.get_settings") as get_settings:
+            get_settings.return_value = type(
+                "SettingsStub",
+                (),
+                {"mcp_auth_token": "probe-token"},
+            )()
+            with patch(
+                "mcp.client.streamable_http.streamable_http_client",
+                fake_streamable_http_client,
+            ):
+                with patch(
+                    "mcp.client.session.ClientSession",
+                    DummyClientSession,
+                ):
+                    _run(
+                        _probe_http_runtime(
+                            "http://127.0.0.1:8799/mcp",
+                            transport="streamable-http",
+                        )
+                    )
+
+        self.assertEqual(captured_headers[0]["authorization"], "Bearer probe-token")
+
     def test_get_doctor_report_uses_http_probe_for_daemon_transport(self):
         from telegram_mcp.auth import get_doctor_report
 

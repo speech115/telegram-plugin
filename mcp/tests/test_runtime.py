@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 from telegram_mcp import runtime
@@ -44,6 +45,7 @@ class RuntimeConfigTests(unittest.TestCase):
                 "TELEGRAM_MCP_PORT": "8799",
                 "TELEGRAM_MCP_HTTP_PATH": "/mcp",
                 "TELEGRAM_MCP_MOUNT_PATH": "/",
+                "TELEGRAM_MCP_AUTH_TOKEN": "test-token",
                 **BASE_ENV,
             },
             clear=False,
@@ -65,6 +67,7 @@ class RuntimeConfigTests(unittest.TestCase):
             {
                 "TELEGRAM_MCP_TRANSPORT": "streamable-http",
                 "TELEGRAM_MCP_JSON_RESPONSE": "false",
+                "TELEGRAM_MCP_AUTH_TOKEN": "test-token",
                 **BASE_ENV,
             },
             clear=False,
@@ -75,6 +78,41 @@ class RuntimeConfigTests(unittest.TestCase):
 
         self.assertFalse(runtime.mcp.settings.json_response)
         mcp_run.assert_called_once_with(transport="streamable-http")
+
+    def test_run_server_rejects_http_transport_without_auth_token(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TELEGRAM_MCP_TRANSPORT": "streamable-http",
+                "TELEGRAM_MCP_AUTH_TOKEN": "",
+                **BASE_ENV,
+            },
+            clear=False,
+        ):
+            get_settings.cache_clear()
+            with self.assertRaisesRegex(ValueError, "TELEGRAM_MCP_AUTH_TOKEN"):
+                runtime.run_server()
+
+    def test_http_auth_verifier_accepts_only_configured_token(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TELEGRAM_MCP_TRANSPORT": "streamable-http",
+                "TELEGRAM_MCP_AUTH_TOKEN": "configured-token",
+                **BASE_ENV,
+            },
+            clear=False,
+        ):
+            get_settings.cache_clear()
+            runtime.configure_transport_auth("streamable-http")
+
+        verifier = runtime.mcp._token_verifier
+        self.assertIsNotNone(verifier)
+        accepted = _run(verifier.verify_token("configured-token"))
+        rejected = _run(verifier.verify_token("wrong-token"))
+        self.assertEqual(accepted.client_id, "telegram-local")
+        self.assertGreater(accepted.expires_at, int(datetime.now(UTC).timestamp()))
+        self.assertIsNone(rejected)
 
     def test_run_server_disconnects_shared_wrapper_on_shutdown(self):
         with patch.dict("os.environ", BASE_ENV, clear=False):

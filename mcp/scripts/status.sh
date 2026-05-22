@@ -147,7 +147,14 @@ EOF
   fi
 }
 
-launchctl print "gui/$(id -u)/${LABEL}" || true
+redact_sensitive_output() {
+  sed -E \
+    -e 's/(TELEGRAM_MCP_AUTH_TOKEN => ).*/\1[REDACTED]/' \
+    -e 's/(TELEGRAM_MCP_AUTH_TOKEN=)[^[:space:]]+/\1[REDACTED]/g' \
+    -e 's/(Authorization: Bearer )[A-Za-z0-9._~+\/=-]+/\1[REDACTED]/g'
+}
+
+launchctl print "gui/$(id -u)/${LABEL}" 2>&1 | redact_sensitive_output || true
 
 if [ "${TRANSPORT}" != "stdio" ]; then
   if [ -n "${MCPORTER_BIN}" ]; then
@@ -165,5 +172,5 @@ fi
 
 if [ -f "${LOG_PATH}" ]; then
   printf '\n--- logs ---\n'
-  tail -n 40 "${LOG_PATH}"
+  tail -n 40 "${LOG_PATH}" | redact_sensitive_output
 fi

@@ -15,7 +15,7 @@ from pathlib import Path
 DEFAULT_LIVE_SKILL_PATH = Path("~/.agents/skills/telegram/SKILL.md")
 DEFAULT_PLUGIN_SOURCE_SKILL_PATH = Path("~/plugins/telegram/skills/telegram/SKILL.md")
 AUTO_PATH = "auto"
-DEFAULT_PLUGIN_CACHE_ROOT = Path("~/.codex/plugins/cache/local/telegram")
+DEFAULT_PLUGIN_CACHE_ROOT = Path("~/.codex/plugins/cache/sereja-local/telegram")
 DEFAULT_PLUGIN_SOURCE_MCP_PATH = Path("~/plugins/telegram/.mcp.json")
 DEFAULT_CODEX_CONFIG_PATH = Path("~/.codex/config.toml")
 DEFAULT_LOCAL_MARKETPLACE_PATH = Path("~/.agents/plugins/marketplace.json")
@@ -207,7 +207,7 @@ def _marketplace_name_from_plugin_key(plugin_key: str) -> str:
     return plugin_key.rsplit("@", 1)[1]
 
 
-def _read_codex_plugin_config(path: Path, plugin_key: str = "telegram@local") -> CodexPluginConfigState:
+def _read_codex_plugin_config(path: Path, plugin_key: str = "telegram@sereja-local") -> CodexPluginConfigState:
     marketplace_name = _marketplace_name_from_plugin_key(plugin_key)
     if not path.exists():
         return CodexPluginConfigState(
@@ -236,7 +236,15 @@ def _read_codex_plugin_config(path: Path, plugin_key: str = "telegram@local") ->
             error=f"invalid_toml: {exc}",
         )
 
-    plugin_payload = payload.get("plugins", {}).get(plugin_key, {})
+    plugins_payload = payload.get("plugins", {})
+    if plugin_key not in plugins_payload:
+        telegram_keys = sorted(
+            key for key in plugins_payload if isinstance(key, str) and key.startswith("telegram@")
+        )
+        if telegram_keys:
+            plugin_key = telegram_keys[0]
+            marketplace_name = _marketplace_name_from_plugin_key(plugin_key)
+    plugin_payload = plugins_payload.get(plugin_key, {})
     marketplace_payload = payload.get("marketplaces", {}).get(marketplace_name, {})
     return CodexPluginConfigState(
         path=str(path),

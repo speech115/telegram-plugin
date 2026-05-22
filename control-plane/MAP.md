@@ -23,7 +23,7 @@ Start here when working on local Telegram tooling.
   - role: local Telegram plugin source
   - use for: plugin package metadata, MCP allowlist, assets, user-facing skill
 
-- `${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/local/telegram}`
+- `${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}`
   - role: installed plugin cache
   - use for: installed/cached plugin parity checks
 

@@ -155,14 +155,14 @@ fast-path defaults, paging rules, and double-work avoidance.
 For all channel/group subscribers or members, run the bundled exporter:
 
 ```bash
-python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume
+python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
 ```
 
 If the plugin bundle is unavailable but the live standalone skill is installed,
 the equivalent live fallback path is:
 
 ```bash
-python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume
+python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume --acknowledge-pii-export
 ```
 
 If only `get_participants` is available, label the result incomplete/probe-only.

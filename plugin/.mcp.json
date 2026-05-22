@@ -3,6 +3,7 @@
     "telegram-local": {
       "type": "http",
       "url": "http://127.0.0.1:8799/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
       "note": "Local Telegram MCP server backed by telegram-mcp high-level dialog facade tools.",
       "allowedTools": [
         "doctor_check",

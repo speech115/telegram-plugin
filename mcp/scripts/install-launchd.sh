@@ -15,12 +15,82 @@ LOGROTATE_LABEL="${TELEGRAM_MCP_LOGROTATE_LABEL:-${LABEL}-logrotate}"
 ROTATE_PLIST="${HOME}/Library/LaunchAgents/${LOGROTATE_LABEL}.plist"
 ENV_FILE="${TELEGRAM_MCP_ENV_FILE:-${PROJECT_ROOT}/.env}"
 
-# Source env file for Telegram credentials
+reject_unsafe_env_value() {
+  local key="$1"
+  local value="$2"
+
+  case "${value}" in
+    *'$('*|*'`'*|*'>'*|*'<'*|*'|'*|*';'*|*'&'*)
+      printf 'Unsafe env value for %s in %s\n' "${key}" "${ENV_FILE}" >&2
+      exit 1
+      ;;
+  esac
+}
+
+load_env_file() {
+  local line key value
+
+  [ -f "${ENV_FILE}" ] || return 0
+  if [ ! -O "${ENV_FILE}" ]; then
+    printf 'Refusing env file not owned by current user: %s\n' "${ENV_FILE}" >&2
+    exit 1
+  fi
+  if [ "$(stat -f '%OLp' "${ENV_FILE}")" != "600" ] && [ "$(stat -f '%OLp' "${ENV_FILE}")" != "400" ]; then
+    printf 'Refusing env file with unsafe permissions: %s\n' "${ENV_FILE}" >&2
+    exit 1
+  fi
+
+  while IFS= read -r line || [ -n "${line}" ]; do
+    case "${line}" in
+      ''|'#'*) continue ;;
+      export\ *) line="${line#export }" ;;
+    esac
+    case "${line}" in
+      *=*) ;;
+      *)
+        printf 'Invalid env line in %s\n' "${ENV_FILE}" >&2
+        exit 1
+        ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "${key}" in
+      TELEGRAM_[A-Z0-9_]*)
+        ;;
+      *)
+        printf 'Unsupported env key %s in %s\n' "${key}" "${ENV_FILE}" >&2
+        exit 1
+        ;;
+    esac
+    if [ "${key}" = "TELEGRAM_MCP_TOOL_PROFILE" ]; then
+      printf 'Refusing TELEGRAM_MCP_TOOL_PROFILE in default launchd env file\n' >&2
+      exit 1
+    fi
+    reject_unsafe_env_value "${key}" "${value}"
+    export "${key}=${value}"
+  done < "${ENV_FILE}"
+}
+
+escape_xml() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "${value}"
+}
+
+append_xml_string() {
+  local key="$1"
+  local value="$2"
+  printf '    <key>%s</key>\n' "$(escape_xml "${key}")" >> "${PLIST_PATH}"
+  printf '    <string>%s</string>\n' "$(escape_xml "${value}")" >> "${PLIST_PATH}"
+}
+
+# Parse env file for Telegram credentials without evaluating shell syntax.
 if [ -f "${ENV_FILE}" ]; then
-    set -a
-    # shellcheck source=/dev/null
-    source "${ENV_FILE}"
-    set +a
+    load_env_file
 fi
 
 TRANSPORT="${TELEGRAM_MCP_TRANSPORT:-streamable-http}"
@@ -33,6 +103,9 @@ READY_INTERVAL="${TELEGRAM_MCP_READY_INTERVAL:-1}"
 
 : "${TELEGRAM_API_ID:?'TELEGRAM_API_ID must be set in .env or environment'}"
 : "${TELEGRAM_API_HASH:?'TELEGRAM_API_HASH must be set in .env or environment'}"
+if [ "${TRANSPORT}" != "stdio" ]; then
+  : "${TELEGRAM_MCP_AUTH_TOKEN:?'TELEGRAM_MCP_AUTH_TOKEN must be set for launchd HTTP/SSE transports'}"
+fi
 
 ensure_python_runtime() {
   if [ -x "${PYTHON_BIN}" ]; then
@@ -131,10 +204,7 @@ cat > "${PLIST_PATH}" <<EOF
 EOF
 
 if [ -n "${TELEGRAM_SESSION_DIR:-}" ]; then
-cat >> "${PLIST_PATH}" <<EOF
-    <key>TELEGRAM_SESSION_DIR</key>
-    <string>${TELEGRAM_SESSION_DIR}</string>
-EOF
+append_xml_string TELEGRAM_SESSION_DIR "${TELEGRAM_SESSION_DIR}"
 fi
 
 append_optional_env_var() {
@@ -145,10 +215,7 @@ append_optional_env_var() {
     return 0
   fi
 
-cat >> "${PLIST_PATH}" <<EOF
-    <key>${key}</key>
-    <string>${value}</string>
-EOF
+  append_xml_string "${key}" "${value}"
 }
 
 append_optional_env_var TELEGRAM_DOWNLOAD_DIR
@@ -220,10 +287,13 @@ cat > "${ROTATE_PLIST}" <<ROTEOF
   <string>${LOGROTATE_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>-c</string>
-    <string>LOG="${LOG_PATH}"; [ -f "\$LOG" ] &amp;&amp; [ "\$(stat -f%z "\$LOG" 2>/dev/null || echo 0)" -gt 1048576 ] &amp;&amp; mv "\$LOG" "\$LOG.\$(date +%Y%m%d)" &amp;&amp; touch "\$LOG"</string>
+    <string>${PROJECT_ROOT}/scripts/rotate-logs.sh</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>TELEGRAM_MCP_LOG</key>
+    <string>${LOG_PATH}</string>
+  </dict>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
