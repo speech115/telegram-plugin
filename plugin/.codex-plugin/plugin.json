@@ -7,7 +7,7 @@
     "url": "https://telegram.org/"
   },
   "homepage": "https://telegram.org/",
-  "repository": "https://github.com/speech115/telegram-agent-control-plane",
+  "repository": "https://github.com/speech115/telegram-plugin",
   "license": "MIT",
   "keywords": [
     "telegram",

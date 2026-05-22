@@ -1,4 +1,4 @@
-# Telegram Agent Control Plane
+# Telegram Plugin
 
 Safe local Telegram access for AI coding agents.
 
