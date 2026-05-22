@@ -462,6 +462,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accept-counter-gap", type=int, default=1, help="Skip slow capped-slice splitting when only this many visible-counter users are missing.")
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save progress after this many search requests.")
     parser.add_argument("--require-exact", action="store_true", help="Exit non-zero if exported_count is lower than Telegram's visible counter.")
+    parser.add_argument(
+        "--acknowledge-pii-export",
+        action="store_true",
+        help="Required for real exports: confirms you understand subscriber data is PII.",
+    )
     parser.add_argument("--debug-direct-only", action="store_true", help="Debug only: export the direct first API page, usually incomplete.")
     parser.add_argument("--include-access-hash", action="store_true", help="Debug only: include Telethon access_hash values in JSON output.")
     parser.add_argument("--fast-mcp-only", action="store_true", help=argparse.SUPPRESS)
@@ -470,6 +475,10 @@ def parse_args() -> argparse.Namespace:
     args.seed_session = args.seed_session or args.telegram_mirror_repo / "data" / "telegram_mirror.session"
     if getattr(args, "fast_mcp_only", False):
         args.debug_direct_only = True
+    if not args.acknowledge_pii_export and not args.fast_mcp_only:
+        raise SystemExit(
+            "Explicit PII acknowledgement is required: pass --acknowledge-pii-export"
+        )
     if not args.seed_session.exists():
         raise SystemExit(f"Missing seed session: {args.seed_session}")
     return args

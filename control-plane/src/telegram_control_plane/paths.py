@@ -12,10 +12,10 @@ def _path_from_env(name: str, default: str | Path) -> Path:
 HOME = Path.home()
 PROJECTS_ROOT = _path_from_env("TELEGRAM_PROJECTS_ROOT", HOME / "Projects")
 CONTROL_ROOT = _path_from_env("TELEGRAM_CONTROL_PLANE_ROOT", Path(__file__).resolve().parents[2])
-MONOREPO_ROOT = CONTROL_ROOT.parent
-MCP_REPO = _path_from_env("TELEGRAM_MCP_REPO", MONOREPO_ROOT / "mcp")
-PLUGIN_SOURCE = _path_from_env("TELEGRAM_PLUGIN_SOURCE", MONOREPO_ROOT / "plugin")
-PLUGIN_CACHE_ROOT = _path_from_env("TELEGRAM_PLUGIN_CACHE_ROOT", HOME / ".codex/plugins/cache/local/telegram")
+REPO_ROOT = CONTROL_ROOT.parent
+MCP_REPO = _path_from_env("TELEGRAM_MCP_REPO", REPO_ROOT / "mcp")
+PLUGIN_SOURCE = _path_from_env("TELEGRAM_PLUGIN_SOURCE", REPO_ROOT / "plugin")
+PLUGIN_CACHE_ROOT = _path_from_env("TELEGRAM_PLUGIN_CACHE_ROOT", HOME / ".codex/plugins/cache/sereja-local/telegram")
 LIVE_SKILL = _path_from_env("TELEGRAM_LIVE_SKILL", HOME / ".agents/skills/telegram")
 MIRROR_ROOT = _path_from_env("TELEGRAM_MIRROR_ROOT", PROJECTS_ROOT / "tools/telegram-mirror")
 MIRROR_LEGACY_ALIAS = _path_from_env("TELEGRAM_MIRROR_LEGACY_ALIAS", PROJECTS_ROOT / "tools/telegram-mirror")

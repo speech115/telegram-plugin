@@ -1760,6 +1760,78 @@ class ClientTests(unittest.TestCase):
                 ["dialog_read:", "dialog_search:", "list_chats"],
             )
 
+    def test_send_file_rejects_sensitive_artifact_paths(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        wrapper.client.send_file = AsyncMock()
+
+        with patch.object(wrapper, "_resolve_entity", AsyncMock()) as resolve_entity:
+            with self.assertRaises(ToolContractError) as ctx:
+                _run(wrapper.send_file(chat="@example_user", file_path="/tmp/.env"))
+
+        self.assertEqual(ctx.exception.code, "unsafe_file_path")
+        resolve_entity.assert_not_awaited()
+        wrapper.client.send_file.assert_not_awaited()
+
+    def test_send_voice_rejects_sensitive_paths_before_resolving_chat(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        wrapper.client.send_file = AsyncMock()
+
+        with patch.object(wrapper, "_resolve_entity", AsyncMock()) as resolve_entity:
+            with self.assertRaises(ToolContractError) as ctx:
+                _run(wrapper.send_voice(chat="@example_user", file_path="/tmp/.env"))
+
+        self.assertEqual(ctx.exception.code, "unsafe_file_path")
+        resolve_entity.assert_not_awaited()
+        wrapper.client.send_file.assert_not_awaited()
+
+    def test_send_voice_rejects_subscriber_exports(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        wrapper.client.send_file = AsyncMock()
+
+        with self.assertRaises(ToolContractError) as ctx:
+            _run(
+                wrapper.send_voice(
+                    chat="@example_user",
+                    file_path="/tmp/2026-05-22-example-subscribers.json",
+                )
+            )
+
+        self.assertEqual(ctx.exception.code, "unsafe_file_path")
+        wrapper.client.send_file.assert_not_awaited()
+
+    def test_send_file_rejects_symlink_escape(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        wrapper.client.send_file = AsyncMock()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target.txt"
+            target.write_text("data", encoding="utf-8")
+            link = root / "link.txt"
+            link.symlink_to(target)
+
+            with self.assertRaises(ToolContractError) as ctx:
+                _run(wrapper.send_file(chat="@example_user", file_path=str(link)))
+
+        self.assertEqual(ctx.exception.code, "unsafe_file_path")
+        wrapper.client.send_file.assert_not_awaited()
+
     def test_pin_unpin_and_reaction_invalidate_dialog_and_list_caches(self):
         settings = Settings(api_id=1, api_hash="hash")
 

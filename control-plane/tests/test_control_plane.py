@@ -204,6 +204,74 @@ def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch
     assert any(item["id"] == "managed_system_marker_missing" for item in report["findings"])
 
 
+def test_managed_systems_resolves_default_repo_paths_from_repo_root(monkeypatch, tmp_path: Path) -> None:
+    control_root = tmp_path / "repo" / "control-plane"
+    policy_dir = control_root / "policy"
+    mcp_root = control_root.parent / "mcp"
+    plugin_root = control_root.parent / "plugin"
+    mcp_root.mkdir(parents=True)
+    plugin_root.mkdir(parents=True)
+    monkeypatch.setattr(audits, "POLICY_DIR", policy_dir)
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {"id": "telegram-mcp", "path": "${TELEGRAM_MCP_REPO:-./mcp}", "expected_kind": "directory"},
+                    {"id": "telegram-plugin-source", "path": "${TELEGRAM_PLUGIN_SOURCE:-./plugin}", "expected_kind": "directory"},
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    report = audit_managed_systems()
+    resolved = {row["id"]: row["resolved"] for row in report["systems"]}
+    assert resolved["telegram-mcp"] == str(mcp_root.resolve())
+    assert resolved["telegram-plugin-source"] == str(plugin_root.resolve())
+
+
+def test_managed_systems_flags_untrusted_env_overrides(monkeypatch, tmp_path: Path) -> None:
+    insecure_root = tmp_path / "insecure"
+    insecure_root.mkdir()
+    insecure_root.chmod(0o777)
+    fake_exec = insecure_root / "telecrawl-archive"
+    fake_exec.write_text("#!/bin/sh\necho pwned\n", encoding="utf-8")
+    fake_exec.chmod(0o755)
+    symlink_target = tmp_path / "escape-target"
+    symlink_target.mkdir()
+    symlink_path = insecure_root / "mirror-link"
+    symlink_path.symlink_to(symlink_target)
+    monkeypatch.setenv("TELECRAWL_ARCHIVE_BIN", str(fake_exec))
+    monkeypatch.setenv("TELEGRAM_MIRROR_LEGACY_ALIAS", str(symlink_path))
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telecrawl-archive-wrapper",
+                        "path": "${TELECRAWL_ARCHIVE_BIN:-telecrawl-archive}",
+                        "expected_kind": "file",
+                        "deletion_protection": "blocking",
+                    },
+                    {
+                        "id": "telegram-mirror-compat-alias",
+                        "path": "${TELEGRAM_MIRROR_LEGACY_ALIAS:-~/Projects/tools/telegram-mirror}",
+                        "expected_kind": "symlink",
+                        "deletion_protection": "warn",
+                    },
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    report = audit_managed_systems()
+    ids = {item["id"] for item in report["findings"]}
+    assert "managed_system_env_untrusted_world_writable_root" in ids
+    assert "managed_system_env_untrusted_executable_marker" in ids
+    assert "managed_system_env_untrusted_symlink_escape" in ids
+
+
 def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:
     private_components = {
         "plugin_drift": {"status": "ok", "findings": []},
@@ -247,6 +315,11 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
         "telecrawl": {
             "status": "warn",
             "findings": [],
+            "env_snapshot": {
+                "TELEGRAM_API_HASH": "api_hash=abcd",
+                "TELEGRAM_SESSION_STRING": "session_string=secret",
+                "DOTENV": "/Users/private/work/.env",
+            },
             "accounts": {
                 "accounts": [
                     {
@@ -298,6 +371,11 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
     assert "manifest_path" not in encoded
     assert "Telegram @" not in encoded
     assert "tg:123456789" not in encoded
+    assert ".env" not in encoded
+    assert "api_hash" not in encoded
+    assert "session_string" not in encoded
+    assert "tdata" not in encoded
+    assert "/Users/" not in encoded
 
 
 def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:

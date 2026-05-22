@@ -18,6 +18,12 @@ class RegistrationTests(unittest.TestCase):
         self.assertNotIn("create_channel", names)
         self.assertNotIn("delete_messages", names)
 
+    def test_default_registration_rejects_env_profile_escalation(self):
+        mcp = FastMCP("test")
+        with patch.dict(os.environ, {"TELEGRAM_MCP_TOOL_PROFILE": "full"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "Power Mode"):
+                register_all_tools(mcp)
+
     def test_full_tool_registration_surface_is_stable(self):
         mcp = FastMCP("test")
         register_all_tools(mcp, profile="full")

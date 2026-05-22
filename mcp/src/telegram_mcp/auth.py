@@ -6,6 +6,7 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 from telethon import TelegramClient
 
 from .client import TelegramWrapper
@@ -281,11 +282,14 @@ async def _probe_http_runtime(
     from mcp.client.session import ClientSession
 
     read_timeout = timedelta(seconds=timeout_seconds)
+    settings = get_settings()
+    auth_token = (getattr(settings, "mcp_auth_token", None) or "").strip()
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else None
 
     if transport == "sse":
         from mcp.client.sse import sse_client
 
-        async with sse_client(endpoint_url) as (read_stream, write_stream):
+        async with sse_client(endpoint_url, headers=headers) as (read_stream, write_stream):
             async with ClientSession(
                 read_stream,
                 write_stream,
@@ -302,21 +306,24 @@ async def _probe_http_runtime(
 
     from mcp.client.streamable_http import streamable_http_client
 
-    async with streamable_http_client(endpoint_url) as (
-        read_stream,
-        write_stream,
-        _,
-    ):
-        async with ClientSession(
+    http_client = httpx.AsyncClient(headers=headers or {})
+    async with http_client:
+        streamable_client = streamable_http_client(endpoint_url, http_client=http_client)
+        async with streamable_client as (
             read_stream,
             write_stream,
-            read_timeout_seconds=read_timeout,
-        ) as session:
-            return await _probe_mcp_session(
-                session,
-                read_timeout=read_timeout,
-                include_doctor=include_doctor,
-            )
+            _,
+        ):
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                read_timeout_seconds=read_timeout,
+            ) as session:
+                return await _probe_mcp_session(
+                    session,
+                    read_timeout=read_timeout,
+                    include_doctor=include_doctor,
+                )
 
 
 async def _probe_mcp_session(

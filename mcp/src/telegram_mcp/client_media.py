@@ -15,6 +15,7 @@ from telethon.tl.types import MessageMediaPhoto, StoryItem
 
 from .download_registry import DownloadRegistry
 from .errors import ToolContractError
+from .file_path_policy import validate_outbound_media_path
 from .types import (
     MediaBatchItem,
     MediaBatchResult,
@@ -466,6 +467,7 @@ class MediaOperationsMixin:
         caption: str = "",
         parse_mode: str = "md",
     ) -> MessageInfo:
+        safe_file_path = validate_outbound_media_path(file_path)
         entity = await self._resolve_entity(chat)
         started_at = time.perf_counter()
         self._append_write_audit_event(
@@ -479,7 +481,7 @@ class MediaOperationsMixin:
                 "send_file",
                 lambda: self.client.send_file(
                     entity,
-                    file_path,
+                    safe_file_path,
                     caption=caption,
                     parse_mode=parse_mode,
                 ),

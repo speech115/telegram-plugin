@@ -25,6 +25,7 @@ from .paths import (
     TELECRAWL_ARCHIVE,
 )
 from .util import file_sha256, load_json, run_json, status_from_findings
+from .util import is_group_or_world_writable
 
 
 APPROVED_FACADE_TOOLS = {
@@ -73,6 +74,22 @@ PRIVATE_PATH_SUBSTRINGS = (
     "~/Library/Application Support/Telegram Desktop/tdata",
     "TELECRAWL_ARTIFACT_ROOT",
 )
+PRIVATE_KEY_FRAGMENTS = ("api_hash", "session_string", "dotenv", "tdata", "telecrawl")
+PRIVATE_VALUE_SUBSTRINGS = (
+    ".env",
+    ".session",
+    "api_hash",
+    "session_string",
+    "tdata",
+    "telecrawl-fast.db",
+    "telecrawl-accounts.db",
+    ".db.manifest",
+    "/users/",
+)
+EXECUTABLE_MARKERS: dict[str, tuple[str, ...]] = {
+    "telecrawl-archive-wrapper": ("telecrawl", "archive"),
+    "telecrawl-fast-binary": ("telecrawl", "fast"),
+}
 SHELL_DEFAULT_PATH_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]+)\}(.*)$")
 
 
@@ -189,7 +206,7 @@ def audit_managed_systems() -> dict[str, Any]:
         expected_kind = str(item.get("expected_kind") or "path")
         deletion_protection = str(item.get("deletion_protection") or "blocking")
         required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
-        path = _resolve_policy_path(raw_path, base=POLICY_DIR.parent) if raw_path else Path()
+        path = _resolve_policy_path(raw_path, base=POLICY_DIR.parent.parent) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
         missing_markers = sorted(
@@ -282,6 +299,16 @@ def audit_managed_systems() -> dict[str, Any]:
                     "message": "Registered Telegram managed system exists but required marker files are missing.",
                 }
             )
+        if _is_env_override(raw_path):
+            findings.extend(
+                _trust_findings_for_env_override(
+                    system_id=system_id,
+                    path=path,
+                    exists=exists,
+                    expected_kind=expected_kind,
+                    deletion_protection=deletion_protection,
+                )
+            )
 
     deletion_policy = policy.get("deletion_policy") if isinstance(policy.get("deletion_policy"), dict) else {}
     return {
@@ -298,6 +325,80 @@ def audit_managed_systems() -> dict[str, Any]:
             "marker_mismatches": sum(1 for row in rows if row.get("missing_markers")),
         },
     }
+
+
+def _is_env_override(raw_path: str) -> bool:
+    match = SHELL_DEFAULT_PATH_RE.match(raw_path)
+    if not match:
+        return False
+    env_name = match.group(1)
+    return bool(os.environ.get(env_name))
+
+
+def _first_existing_ancestor(path: Path) -> Path | None:
+    current = path
+    while True:
+        if current.exists():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _trust_findings_for_env_override(
+    *,
+    system_id: str,
+    path: Path,
+    exists: bool,
+    expected_kind: str,
+    deletion_protection: str,
+) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    severity = "blocking" if deletion_protection == "blocking" else "warn"
+    if exists and path.is_symlink():
+        resolved = path.resolve(strict=False)
+        parent = path.parent.resolve(strict=False)
+        if resolved != parent and parent not in resolved.parents:
+            findings.append(
+                {
+                    "id": "managed_system_env_untrusted_symlink_escape",
+                    "severity": severity,
+                    "system": system_id,
+                    "path": str(path),
+                    "resolved": str(resolved),
+                    "message": "Environment override resolves through a symlink escape outside the configured root.",
+                }
+            )
+    trust_root = path.parent if expected_kind == "file" else path
+    ancestor = _first_existing_ancestor(trust_root)
+    if ancestor is not None and is_group_or_world_writable(ancestor):
+        findings.append(
+            {
+                "id": "managed_system_env_untrusted_world_writable_root",
+                "severity": severity,
+                "system": system_id,
+                "path": str(path),
+                "root": str(ancestor),
+                "message": "Environment override path is rooted in a group/world-writable location.",
+            }
+        )
+    markers = EXECUTABLE_MARKERS.get(system_id)
+    if markers and exists and path.is_file() and os.access(path, os.X_OK):
+        try:
+            sample = path.read_bytes()[:8192].decode("utf-8", errors="ignore").lower()
+        except OSError:
+            sample = ""
+        if not all(marker in sample for marker in markers):
+            findings.append(
+                {
+                    "id": "managed_system_env_untrusted_executable_marker",
+                    "severity": severity,
+                    "system": system_id,
+                    "path": str(path),
+                    "message": "Environment override executable is missing expected trust markers.",
+                }
+            )
+    return findings
 
 
 def _imported_tool_names(init_py: Path) -> list[str]:
@@ -1082,6 +1183,10 @@ def _redact_private_runtime_details(value: Any) -> Any:
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         for key, item in value.items():
+            lower_key = key.lower()
+            if any(fragment in lower_key for fragment in PRIVATE_KEY_FRAGMENTS):
+                result[key] = _redacted_private_value(key, item)
+                continue
             if key in PRIVATE_KEYS:
                 if key == "path" and isinstance(item, str) and not any(
                     marker in item for marker in PRIVATE_PATH_SUBSTRINGS
@@ -1094,6 +1199,10 @@ def _redact_private_runtime_details(value: Any) -> Any:
     if isinstance(value, list):
         return [_redact_private_runtime_details(item) for item in value]
     if isinstance(value, str) and any(marker in value for marker in PRIVATE_PATH_SUBSTRINGS):
+        return "<redacted>"
+    if isinstance(value, str) and any(marker in value.lower() for marker in PRIVATE_VALUE_SUBSTRINGS):
+        return "<redacted>"
+    if isinstance(value, str) and value.startswith(str(HOME)):
         return "<redacted>"
     if isinstance(value, str) and (value.startswith("tg:") or value.startswith("Telegram @")):
         return "<redacted>"

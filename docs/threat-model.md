@@ -28,6 +28,16 @@ Sending messages, deleting messages, admin operations, subscriber export, and
 bulk archive jobs are separate workflows. They should require explicit user
 intent and their own checks.
 
+Enforcement status:
+
+- enforced by MCP profile selection (`TELEGRAM_MCP_TOOL_PROFILE=default` vs
+  `full`, with `TELEGRAM_MCP_POWER_MODE=enabled` for env-selected Power Mode);
+- enforced by plugin-side allowlist (`plugin/.mcp.json` for Default Mode);
+- enforced by bearer auth on HTTP/SSE daemon transports
+  (`TELEGRAM_MCP_AUTH_TOKEN`);
+- still depends on local operator discipline not to replace default config with
+  Power Mode examples unintentionally.
+
 ## Main Risks
 
 - Prompt injection from chat messages or file names.

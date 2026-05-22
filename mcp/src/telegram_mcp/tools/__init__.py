@@ -133,12 +133,20 @@ FACADE_TOOL_NAMES = {
 }
 
 FULL_TOOL_PROFILES = {"all", "full", "admin", "legacy"}
+POWER_MODE_ENV = "TELEGRAM_MCP_POWER_MODE"
 
 
 def register_all_tools(mcp, *, profile: str | None = None) -> None:
     from os import getenv
 
     selected_profile = (profile or getenv("TELEGRAM_MCP_TOOL_PROFILE", "facade")).strip().lower()
+    if profile is None and selected_profile in FULL_TOOL_PROFILES:
+        power_mode = getenv(POWER_MODE_ENV, "").strip().lower()
+        if power_mode not in {"1", "true", "yes", "enabled"}:
+            raise ValueError(
+                "Power Mode tool profiles require TELEGRAM_MCP_POWER_MODE=enabled "
+                "and must not be enabled on the default daemon."
+            )
     if selected_profile not in FULL_TOOL_PROFILES:
         register_user_tools(mcp)
         register_dialog_facade_tools(mcp)

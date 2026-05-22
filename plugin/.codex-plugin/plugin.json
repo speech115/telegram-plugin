@@ -1,12 +1,12 @@
 {
   "name": "telegram",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Read and search live Telegram dialogs, collect context, and prepare reply drafts through the local telegram-mcp facade.",
   "author": {
     "name": "Telegram Plugin Maintainers",
-    "url": "https://telegram.org/"
+    "url": "https://github.com/speech115/telegram-plugin"
   },
-  "homepage": "https://telegram.org/",
+  "homepage": "https://github.com/speech115/telegram-plugin",
   "repository": "https://github.com/speech115/telegram-plugin",
   "license": "MIT",
   "keywords": [
@@ -27,9 +27,9 @@
     "capabilities": [
       "Interactive"
     ],
-    "websiteURL": "https://telegram.org/",
-    "privacyPolicyURL": "https://telegram.org/privacy",
-    "termsOfServiceURL": "https://telegram.org/tos",
+    "websiteURL": "https://github.com/speech115/telegram-plugin",
+    "privacyPolicyURL": "https://github.com/speech115/telegram-plugin/blob/main/SECURITY.md",
+    "termsOfServiceURL": "https://github.com/speech115/telegram-plugin/blob/main/README.md",
     "defaultPrompt": [
       "Read today's chat with @username and summarize the decisions",
       "Search a Telegram dialog for a message or link",

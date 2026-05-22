@@ -14,7 +14,7 @@
     },
     {
       "role": "plugin_cache",
-      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/local/telegram}"
+      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}"
     },
     {
       "role": "mirror_recovery",

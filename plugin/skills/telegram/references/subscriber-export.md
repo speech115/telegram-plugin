@@ -5,13 +5,13 @@ Use this for all subscribers/members of a channel or group.
 ## Default Command
 
 ```bash
-python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume
+python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
 ```
 
 Fallback only when the plugin bundle is unavailable:
 
 ```bash
-python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume
+python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume --acknowledge-pii-export
 ```
 
 The wrapper resolves the canonical exporter path, prefers the plugin source when
@@ -67,7 +67,7 @@ If `exported_count < visible_count`, say so plainly. Usually this means Telegram
 When the user challenges completeness or asks for proof:
 
 ```bash
-python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --profile exhaustive --progress --resume --accept-counter-gap 0 --max-depth 1
+python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --profile exhaustive --progress --resume --accept-counter-gap 0 --max-depth 1 --acknowledge-pii-export
 ```
 
 Treat `exhaustive` as a confidence check, not the default. If fast and exhaustive return the same `exported_count` while `visible_count` is higher, report the result as Telegram API-visible maximum, not exact subscriber counter equality.

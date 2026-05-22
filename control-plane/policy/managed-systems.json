@@ -33,7 +33,7 @@
     {
       "id": "telegram-plugin-cache",
       "role": "installed_plugin_cache",
-      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/local/telegram}",
+      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}",
       "expected_kind": "directory",
       "required_markers": [
         "{plugin_source_version}/.codex-plugin/plugin.json",

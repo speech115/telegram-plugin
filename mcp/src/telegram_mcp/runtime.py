@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 
 from .client import TelegramWrapper
@@ -26,6 +30,21 @@ structlog.configure(
 log = structlog.get_logger()
 _shared_wrapper: TelegramWrapper | None = None
 _shared_wrapper_lock = asyncio.Lock()
+
+
+class StaticBearerTokenVerifier:
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if not secrets.compare_digest(token, self._token):
+            return None
+        return AccessToken(
+            token=token,
+            client_id="telegram-local",
+            scopes=["telegram:local"],
+            expires_at=int(time.time()) + 60 * 60,
+        )
 
 
 def shared_mode_enabled() -> bool:
@@ -136,6 +155,29 @@ def read_http_path() -> str:
     return get_settings().mcp_http_path
 
 
+def configure_transport_auth(transport: str) -> None:
+    settings = get_settings()
+    if transport == "stdio":
+        mcp.settings.auth = None
+        mcp._token_verifier = None
+        return
+
+    token = (settings.mcp_auth_token or "").strip()
+    if not token:
+        raise ValueError(
+            "TELEGRAM_MCP_AUTH_TOKEN is required for streamable-http and sse transports."
+        )
+
+    host = settings.mcp_host
+    port = settings.mcp_port
+    mcp.settings.auth = AuthSettings(
+        issuer_url=f"http://{host}:{port}",
+        resource_server_url=f"http://{host}:{port}",
+        required_scopes=["telegram:local"],
+    )
+    mcp._token_verifier = StaticBearerTokenVerifier(token)
+
+
 def get_runtime_report() -> dict[str, object]:
     transport = read_transport()
     report: dict[str, object] = {
@@ -171,6 +213,7 @@ def run_server() -> None:
     settings = get_settings()
     transport = read_transport()
     mcp.settings.json_response = settings.mcp_json_response
+    configure_transport_auth(transport)
 
     if transport != "stdio":
         mcp.settings.host = settings.mcp_host

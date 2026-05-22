@@ -14,6 +14,14 @@ voice/video transcription.
 Default Mode should be safe to try without the agent sending messages, changing
 chats, changing profile state, or launching background mirror/archive jobs.
 
+This boundary is runtime-enforced when both controls are kept intact:
+
+- MCP daemon runs with `TELEGRAM_MCP_TOOL_PROFILE=default`.
+- HTTP/SSE daemon transport has `TELEGRAM_MCP_AUTH_TOKEN` configured in both
+  server and client.
+- Plugin MCP config stays on `plugin/.mcp.json` allowlist and is not replaced by
+  `plugin/.mcp.full.example.json`.
+
 ## Power Mode
 
 Power Mode is the full MCP surface. It can expose tools that send, reply, edit,
@@ -24,11 +32,14 @@ Enable it intentionally:
 
 ```bash
 cd mcp
-TELEGRAM_MCP_TOOL_PROFILE=full .venv/bin/telegram-mcp
+TELEGRAM_MCP_POWER_MODE=enabled TELEGRAM_MCP_TOOL_PROFILE=full .venv/bin/telegram-mcp
 ```
 
 Then point a local client at the same MCP endpoint using
 `plugin/.mcp.full.example.json` as a starting point.
+
+Power Mode is enforced by explicit operator choice (runtime profile + allowlist
+switch). It is not reachable through the default plugin files alone.
 
 Before using Power Mode:
 
