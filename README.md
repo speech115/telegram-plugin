@@ -11,6 +11,7 @@ desired policy.
 ```bash
 ./bin/telegram-doctor --json
 ./bin/telegram-status --json
+./bin/telegram-managed-systems --json
 ./bin/telegram-plugin-drift --json
 ./bin/telegram-mcp-surface --json
 ./bin/telegram-launchd-audit --json
@@ -19,6 +20,12 @@ desired policy.
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
 ```
+
+## Human Entry Points
+
+- `MAP.md` explains where every Telegram-related system lives.
+- `PLAN.md` records the current control-plane rollout strategy.
+- `PROTECTION.md` defines the cleanup and deletion safety contract.
 
 `telegram-doctor --json` writes `generated/observed-registry.json` and exits
 non-zero while blocking defects are present.
@@ -48,6 +55,9 @@ manifest paths, subscriber exports, media payloads, or raw private errors.
 
 - `telegram-doctor --json` is expected to return `warn` with `0` blocking
   findings and `5` warning findings while recovery/archive caveats remain.
+- `telegram-managed-systems --json` is the canonical inventory of Telegram
+  source repos, plugin/skill surfaces, runtime data roots, and archive tools.
+  A missing blocking-protected path is a fail-closed defect.
 - Plugin source and installed cache are aligned at local Telegram plugin
   version `0.1.3`; previous cache version `0.1.2` is left as rollback.
 - The default MCP tool profile is the restricted facade profile. Admin/channel
@@ -66,6 +76,8 @@ manifest paths, subscriber exports, media payloads, or raw private errors.
 ## Guardrails
 
 - Do not move repos.
+- Do not delete Telegram-related paths directly. Start from
+  `policy/managed-systems.json` and create a dry-run repair/cleanup plan first.
 - Do not start mirror watchers, backfills, sync jobs, or LaunchAgents.
 - Do not copy Telegram sessions into this tree.
 - Do not store secrets, session strings, subscriber exports, media payloads, or

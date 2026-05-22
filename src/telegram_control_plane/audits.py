@@ -123,6 +123,152 @@ def audit_plugin_drift() -> dict[str, Any]:
     }
 
 
+def _expected_kind_matches(path: Path, expected_kind: str) -> bool:
+    if expected_kind == "directory":
+        return path.is_dir()
+    if expected_kind == "file":
+        return path.is_file()
+    if expected_kind == "symlink":
+        return path.is_symlink()
+    if expected_kind == "path":
+        return path.exists()
+    return False
+
+
+def audit_managed_systems() -> dict[str, Any]:
+    policy = load_json(POLICY_DIR / "managed-systems.json") or {}
+    systems_policy = policy.get("systems") if isinstance(policy.get("systems"), list) else []
+    rows: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+
+    for item in systems_policy:
+        if not isinstance(item, dict):
+            findings.append(
+                {
+                    "id": "managed_system_policy_item_invalid",
+                    "severity": "blocking",
+                    "message": "Managed systems policy contains a non-object entry.",
+                }
+            )
+            continue
+        system_id = str(item.get("id") or "")
+        raw_path = str(item.get("path") or "")
+        expected_kind = str(item.get("expected_kind") or "path")
+        deletion_protection = str(item.get("deletion_protection") or "blocking")
+        required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
+        path = Path(raw_path) if raw_path else Path()
+        exists = bool(raw_path) and path.exists()
+        kind_matches = exists and _expected_kind_matches(path, expected_kind)
+        missing_markers = sorted(
+            str(marker)
+            for marker in required_markers
+            if isinstance(marker, str) and not (path / marker).exists()
+        )
+        resolved = str(path.resolve(strict=False)) if raw_path else None
+        row = {
+            "id": system_id,
+            "role": item.get("role"),
+            "path": raw_path,
+            "expected_kind": expected_kind,
+            "exists": exists,
+            "kind_matches": kind_matches,
+            "missing_markers": missing_markers,
+            "resolved": resolved,
+            "source_of_truth": bool(item.get("source_of_truth")),
+            "deletion_protection": deletion_protection,
+            "safe_delete": item.get("safe_delete"),
+        }
+        rows.append(row)
+        if not system_id:
+            findings.append(
+                {
+                    "id": "managed_system_missing_id",
+                    "severity": "blocking",
+                    "message": "Managed systems policy entry is missing id.",
+                }
+            )
+        elif system_id in seen_ids:
+            findings.append(
+                {
+                    "id": "managed_system_duplicate_id",
+                    "severity": "blocking",
+                    "system": system_id,
+                    "message": "Managed systems policy contains a duplicate id.",
+                }
+            )
+        seen_ids.add(system_id)
+        if not raw_path:
+            findings.append(
+                {
+                    "id": "managed_system_missing_path",
+                    "severity": "blocking",
+                    "system": system_id,
+                    "message": "Managed systems policy entry is missing path.",
+                }
+            )
+        elif raw_path in seen_paths:
+            findings.append(
+                {
+                    "id": "managed_system_duplicate_path",
+                    "severity": "blocking",
+                    "system": system_id,
+                    "message": "Managed systems policy contains a duplicate path.",
+                }
+            )
+        seen_paths.add(raw_path)
+        if not exists:
+            findings.append(
+                {
+                    "id": "managed_system_missing",
+                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
+                    "system": system_id,
+                    "role": item.get("role"),
+                    "path": raw_path,
+                    "message": "Registered Telegram managed system path is missing.",
+                }
+            )
+        elif not kind_matches:
+            findings.append(
+                {
+                    "id": "managed_system_kind_mismatch",
+                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
+                    "system": system_id,
+                    "path": raw_path,
+                    "expected_kind": expected_kind,
+                    "message": "Registered Telegram managed system path exists with the wrong kind.",
+                }
+            )
+        elif missing_markers:
+            findings.append(
+                {
+                    "id": "managed_system_marker_missing",
+                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
+                    "system": system_id,
+                    "path": raw_path,
+                    "missing_markers": missing_markers,
+                    "message": "Registered Telegram managed system exists but required marker files are missing.",
+                }
+            )
+
+    deletion_policy = policy.get("deletion_policy") if isinstance(policy.get("deletion_policy"), dict) else {}
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "systems": rows,
+        "deletion_policy": deletion_policy,
+        "summary": {
+            "registered": len(rows),
+            "existing": sum(1 for row in rows if row.get("exists")),
+            "blocking_protected": sum(1 for row in rows if row.get("deletion_protection") == "blocking"),
+            "missing": sum(1 for row in rows if not row.get("exists")),
+            "kind_mismatches": sum(1 for row in rows if row.get("exists") and not row.get("kind_matches")),
+            "marker_mismatches": sum(1 for row in rows if row.get("missing_markers")),
+        },
+    }
+
+
 def _imported_tool_names(init_py: Path) -> list[str]:
     tree = ast.parse(init_py.read_text(encoding="utf-8"))
     names: list[str] = []
@@ -767,6 +913,7 @@ def audit_telecrawl() -> dict[str, Any]:
 
 def _collect_components() -> dict[str, dict[str, Any]]:
     return {
+        "managed_systems": audit_managed_systems(),
         "plugin_drift": audit_plugin_drift(),
         "mcp_surface": audit_mcp_surface(),
         "mcp_profiles": audit_mcp_profiles(),

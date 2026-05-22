@@ -7,6 +7,7 @@ import telegram_control_plane.audits as audits
 from telegram_control_plane.audits import (
     _dialog_annotation_map,
     _imported_tool_names,
+    audit_managed_systems,
     audit_mcp_surface,
     build_registry,
 )
@@ -114,6 +115,82 @@ def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path)
     assert any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
 
 
+def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-mirror",
+                        "role": "mirror_recovery_candidate",
+                        "path": "/definitely/missing/telegram-mirror",
+                        "expected_kind": "directory",
+                        "deletion_protection": "blocking",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "managed_system_missing" for item in report["findings"])
+
+
+def test_managed_systems_warns_for_missing_warn_only_path(monkeypatch) -> None:
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-plugin-cache",
+                        "role": "installed_plugin_cache",
+                        "path": "/definitely/missing/telegram-plugin-cache",
+                        "expected_kind": "directory",
+                        "deletion_protection": "warn",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "warn"
+    assert report["summary"]["missing"] == 1
+
+
+def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch, tmp_path: Path) -> None:
+    wrong_root = tmp_path / "telegram-mirror"
+    wrong_root.mkdir()
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-mirror",
+                        "role": "mirror_recovery_candidate",
+                        "path": str(wrong_root),
+                        "expected_kind": "directory",
+                        "required_markers": ["AGENTS.md", "scripts/telegram_mirror_allowlist_report.py"],
+                        "deletion_protection": "blocking",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "managed_system_marker_missing" for item in report["findings"])
+
+
 def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:
     private_components = {
         "plugin_drift": {"status": "ok", "findings": []},
@@ -180,6 +257,20 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
                 },
             },
         },
+        "managed_systems": {
+            "status": "ok",
+            "findings": [],
+            "summary": {"registered": 1, "existing": 1},
+            "systems": [
+                {
+                    "id": "telegram-mirror",
+                    "path": "/Users/sereja/Projects/tools/telegram-mirror",
+                    "exists": True,
+                    "deletion_protection": "blocking",
+                }
+            ],
+            "deletion_policy": {"default": "deny"},
+        },
     }
     monkeypatch.setattr(audits, "_collect_components", lambda: private_components)
 
@@ -198,6 +289,20 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
 
 def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
     monkeypatch.setattr(audits, "_collect_components", lambda: {
+        "managed_systems": {
+            "status": "ok",
+            "findings": [],
+            "summary": {"registered": 1, "existing": 1},
+            "systems": [
+                {
+                    "id": "telegram-mirror",
+                    "path": "/Users/sereja/Projects/tools/telegram-mirror",
+                    "exists": True,
+                    "deletion_protection": "blocking",
+                }
+            ],
+            "deletion_policy": {"default": "deny"},
+        },
         "plugin_drift": {"status": "ok", "findings": []},
         "mcp_surface": {"status": "ok", "findings": []},
         "mcp_profiles": {"status": "ok", "findings": [], "profiles": []},
@@ -229,11 +334,13 @@ def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
     assert "accounts" not in registry["components"]["telecrawl"]
     assert "default_archive_status" not in registry["components"]["telecrawl"]
     assert "runtime_state" not in registry["components"]["telegram_mirror"]
+    assert "managed_systems" in registry["components"]
 
 
 def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy(monkeypatch) -> None:
     components = {
         "plugin_drift": {"status": "ok", "findings": []},
+        "managed_systems": {"status": "ok", "findings": []},
         "mcp_surface": {"status": "ok", "findings": []},
         "mcp_profiles": {"status": "ok", "findings": []},
         "launchd": {"status": "ok", "findings": []},
@@ -256,9 +363,15 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
     assert encoded
     assert registry["status"] == "warn"
     assert registry["summary"]["blocking_findings"] == 0
-    assert {"plugin_drift", "mcp_surface", "launchd", "sessions", "telegram_mirror", "telecrawl"}.issubset(
-        registry["components"]
-    )
+    assert {
+        "managed_systems",
+        "plugin_drift",
+        "mcp_surface",
+        "launchd",
+        "sessions",
+        "telegram_mirror",
+        "telecrawl",
+    }.issubset(registry["components"])
 
 
 def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
@@ -269,6 +382,7 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
             "status": "warn",
             "summary": {
                 "components": {
+                    "managed_systems": "ok",
                     "plugin_drift": "ok",
                     "mcp_surface": "ok",
                     "launchd": "ok",
@@ -284,7 +398,8 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
     plan = build_repair_plan()
     assert plan["status"] == "ready"
     assert plan["safety"]["default_mode"] == "dry_run_only"
-    assert plan["recommended_order"][0] == "plugin-cache-parity"
+    assert plan["recommended_order"][0] == "managed-systems-inventory"
     by_id = {step["id"]: step for step in plan["steps"]}
+    assert by_id["managed-systems-inventory"]["apply_commands"] == []
     assert by_id["plugin-cache-parity"]["verification_commands"]
     assert by_id["launchd-inventory-and-cold-mode"]["apply_commands"] == []

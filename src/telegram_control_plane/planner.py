@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .audits import build_registry
-from .paths import MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
+from .paths import CONTROL_ROOT, MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
 
 
 def _finding_ids(registry: dict[str, Any]) -> set[str]:
@@ -50,6 +50,36 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
     registry = registry or build_registry()
     ids = _finding_ids(registry)
     steps: list[dict[str, Any]] = []
+
+    managed_blocked = _component_status(registry, "managed_systems") == "fail"
+    steps.append(
+        _step(
+            step_id="managed-systems-inventory",
+            title="Verify Telegram managed systems inventory before any cleanup or repair",
+            status="blocked_by_missing_or_wrong_managed_system" if managed_blocked else "already_clean",
+            reason=(
+                "A registered Telegram system is missing, has the wrong kind, or lacks required marker files."
+                if managed_blocked
+                else "Managed systems inventory is clean."
+            ),
+            touched_paths=[
+                str(CONTROL_ROOT / "policy/managed-systems.json"),
+                str(CONTROL_ROOT / "PROTECTION.md"),
+            ],
+            dry_run_commands=[
+                [str(CONTROL_ROOT / "bin/telegram-managed-systems"), "--json"],
+            ],
+            apply_commands=[],
+            rollback=[
+                "Policy-only inventory changes can be reverted without touching actual Telegram systems.",
+                "Do not delete or move any registered system from this step.",
+            ],
+            verifies=[
+                [str(CONTROL_ROOT / "bin/telegram-managed-systems"), "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-doctor"), "--json"],
+            ],
+        )
+    )
 
     plugin_blocked = _component_status(registry, "plugin_drift") == "fail"
     steps.append(
@@ -243,6 +273,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
     )
 
     recommended_order = [
+        "managed-systems-inventory",
         "plugin-cache-parity",
         "mcp-surface-allowlist",
         "launchd-inventory-and-cold-mode",
@@ -262,6 +293,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             "stateful_apply_requires_explicit_step": True,
             "do_not_do_first": [
                 "move repos",
+                "delete Telegram-related paths without managed-systems inventory",
                 "rewrite LaunchAgents",
                 "refresh plugin cache without dry-run evidence",
                 "sync skill-index before plugin cache parity",

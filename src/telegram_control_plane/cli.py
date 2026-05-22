@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .audits import (
     audit_launchd,
+    audit_managed_systems,
     audit_mcp_profiles,
     audit_mcp_surface,
     audit_mirror,
@@ -22,6 +23,7 @@ from .planner import build_repair_plan
 
 
 COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
+    "managed-systems": audit_managed_systems,
     "plugin-drift": audit_plugin_drift,
     "mcp-surface": audit_mcp_surface,
     "mcp-profiles": audit_mcp_profiles,
