@@ -1,0 +1,12 @@
+[project]
+name = "telegram-control-plane"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+  "integration: live machine smoke checks that touch launchctl, MCP daemons, telecrawl, mirror, or sibling repos",
+]

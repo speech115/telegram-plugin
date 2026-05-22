@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sereja.telegram-mirror-watch-pylesos</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/bin/python</string>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/scripts/telegram_mirror_watch_updates.py</string>
+    <string>--session</string>
+    <string>data/telegram_mirror_pylesos</string>
+    <string>--seed-session</string>
+    <string>data/telegram_mirror_pylesos</string>
+    <string>--config</string>
+    <string>config/telegram_channels_pylesos.yaml</string>
+    <string>--mirrors</string>
+    <string>data/telegram_sync/mirrors.json</string>
+    <string>--backfill-progress</string>
+    <string>data/telegram_sync/backfill_progress.json</string>
+    <string>--watch-progress</string>
+    <string>data/telegram_sync/watch_progress_pylesos.json</string>
+    <string>--watch-alert-state</string>
+    <string>data/telegram_sync/watch_alert_state_pylesos.json</string>
+    <string>--channel-id</string>
+    <string>1003740847993</string>
+    <string>--poll-seconds</string>
+    <string>5</string>
+    <string>--max-per-channel</string>
+    <string>200</string>
+    <string>--heartbeat-seconds</string>
+    <string>60</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/sereja</string>
+    <key>PATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/.venv/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_mirror_watch_pylesos_launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_mirror_watch_pylesos_launchd.log</string>
+</dict>
+</plist>

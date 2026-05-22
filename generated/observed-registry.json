@@ -1,0 +1,422 @@
+{
+  "components": {
+    "launchd": {
+      "findings": [],
+      "jobs": [
+        {
+          "has_secret_env": false,
+          "keep_alive": null,
+          "label": "com.sereja.telegram-mcp-http-logrotate",
+          "loaded": true,
+          "outside_allowed_roots": [],
+          "pid": null,
+          "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-logrotate.plist",
+          "program_arguments": [
+            "/bin/bash",
+            "-c",
+            "LOG=\"/Users/sereja/Library/Logs/telegram-mcp/http-launchd.log\"; [ -f \"$LOG\" ] && [ \"$(stat -f%z \"$LOG\" 2>/dev/null || echo 0)\" -gt 1048576 ] && mv \"$LOG\" \"$LOG.$(date +%Y%m%d)\" && touch \"$LOG\""
+          ],
+          "pythonpath": null,
+          "run_at_load": null,
+          "start_interval": null,
+          "telegram_mcp_port": null,
+          "telegram_session_dir": null,
+          "uses_legacy_mirror_alias": false,
+          "working_directory": null
+        },
+        {
+          "has_secret_env": false,
+          "keep_alive": null,
+          "label": "com.sereja.telegram-mcp-http-pl-logrotate",
+          "loaded": true,
+          "outside_allowed_roots": [],
+          "pid": null,
+          "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-pl-logrotate.plist",
+          "program_arguments": [
+            "/bin/bash",
+            "-c",
+            "LOG=\"/Users/sereja/Library/Logs/telegram-mcp-pl/http-launchd.log\"; [ -f \"$LOG\" ] && [ \"$(stat -f%z \"$LOG\" 2>/dev/null || echo 0)\" -gt 1048576 ] && mv \"$LOG\" \"$LOG.$(date +%Y%m%d)\" && touch \"$LOG\""
+          ],
+          "pythonpath": null,
+          "run_at_load": null,
+          "start_interval": null,
+          "telegram_mcp_port": null,
+          "telegram_session_dir": null,
+          "uses_legacy_mirror_alias": false,
+          "working_directory": null
+        },
+        {
+          "has_secret_env": false,
+          "keep_alive": true,
+          "label": "com.sereja.telegram-mcp-http-pl",
+          "loaded": true,
+          "outside_allowed_roots": [],
+          "pid": "90800",
+          "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-pl.plist",
+          "program_arguments": [
+            "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/launchd-run.sh"
+          ],
+          "pythonpath": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/src",
+          "run_at_load": true,
+          "start_interval": null,
+          "telegram_mcp_port": "8800",
+          "telegram_session_dir": "<redacted>",
+          "uses_legacy_mirror_alias": false,
+          "working_directory": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
+        },
+        {
+          "has_secret_env": false,
+          "keep_alive": true,
+          "label": "com.sereja.telegram-mcp-http",
+          "loaded": true,
+          "outside_allowed_roots": [],
+          "pid": "90794",
+          "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http.plist",
+          "program_arguments": [
+            "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/launchd-run.sh"
+          ],
+          "pythonpath": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/src",
+          "run_at_load": true,
+          "start_interval": null,
+          "telegram_mcp_port": "8799",
+          "telegram_session_dir": null,
+          "uses_legacy_mirror_alias": false,
+          "working_directory": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
+        }
+      ],
+      "loaded_jobs": {
+        "com.sereja.telecrawl.retry-gaps": {
+          "last_exit_status": "0",
+          "loaded": true,
+          "pid": null
+        },
+        "com.sereja.telegram-mcp-http": {
+          "last_exit_status": "-15",
+          "loaded": true,
+          "pid": "90794"
+        },
+        "com.sereja.telegram-mcp-http-logrotate": {
+          "last_exit_status": "1",
+          "loaded": true,
+          "pid": null
+        },
+        "com.sereja.telegram-mcp-http-pl": {
+          "last_exit_status": "-15",
+          "loaded": true,
+          "pid": "90800"
+        },
+        "com.sereja.telegram-mcp-http-pl-logrotate": {
+          "last_exit_status": "1",
+          "loaded": true,
+          "pid": null
+        }
+      },
+      "policy": {
+        "launchctl_only_labels": [
+          {
+            "known": true,
+            "label": "com.sereja.telecrawl.retry-gaps",
+            "program": "<redacted>",
+            "role": "telecrawl_gap_retry"
+          }
+        ],
+        "mirror_launchagents_allowed_in_user_launchagents": false,
+        "mirror_runtime_mode": "cold"
+      },
+      "status": "ok"
+    },
+    "mcp_profiles": {
+      "findings": [],
+      "profiles": [
+        {
+          "label": "com.sereja.telegram-mcp-http-pl",
+          "loaded": true,
+          "port": "8800",
+          "write_policy": "unrestricted_server_surface_until_allowlisted"
+        },
+        {
+          "label": "com.sereja.telegram-mcp-http",
+          "loaded": true,
+          "port": "8799",
+          "write_policy": "unrestricted_server_surface_until_allowlisted"
+        }
+      ],
+      "status": "ok"
+    },
+    "mcp_surface": {
+      "approved_facade_tools": [
+        "collect_context",
+        "collect_dialog_context",
+        "doctor_check",
+        "draft_reply",
+        "find_dialog",
+        "get_me",
+        "prepare_dialog_reply",
+        "prepare_reply_message",
+        "prepare_send_message",
+        "read_dialog",
+        "read_dialog_by_date",
+        "read_recent_dialog",
+        "read_today_dialog",
+        "resolve_dialog",
+        "search_dialog_messages"
+      ],
+      "default_surface_tools": [
+        "collect_context",
+        "collect_dialog_context",
+        "doctor_check",
+        "draft_reply",
+        "find_dialog",
+        "get_me",
+        "prepare_dialog_reply",
+        "prepare_reply_message",
+        "prepare_send_message",
+        "read_dialog",
+        "read_dialog_by_date",
+        "read_recent_dialog",
+        "read_today_dialog",
+        "resolve_dialog",
+        "search_dialog_messages"
+      ],
+      "dialog_facade_annotations": {
+        "collect_context": "readonly",
+        "collect_dialog_context": "readonly",
+        "draft_reply": "readonly",
+        "find_dialog": "readonly",
+        "prepare_dialog_reply": "readonly",
+        "prepare_reply_message": "readonly",
+        "prepare_send_message": "readonly",
+        "read_dialog": "readonly",
+        "read_dialog_by_date": "readonly",
+        "read_recent_dialog": "readonly",
+        "read_today_dialog": "readonly",
+        "reply_in_dialog": "additive",
+        "reply_message": "additive",
+        "resolve_dialog": "readonly",
+        "search_dialog_messages": "readonly",
+        "send_dialog_message": "additive"
+      },
+      "findings": [],
+      "non_facade_tools": [],
+      "plugin_mcp_servers": {
+        "telegram-local": {
+          "allowedTools": [
+            "doctor_check",
+            "get_me",
+            "collect_context",
+            "collect_dialog_context",
+            "draft_reply",
+            "find_dialog",
+            "prepare_dialog_reply",
+            "prepare_reply_message",
+            "prepare_send_message",
+            "read_dialog",
+            "read_dialog_by_date",
+            "read_recent_dialog",
+            "read_today_dialog",
+            "resolve_dialog",
+            "search_dialog_messages"
+          ],
+          "note": "Local Telegram MCP server backed by telegram-mcp high-level dialog facade tools.",
+          "type": "http",
+          "url": "http://127.0.0.1:8799/mcp"
+        }
+      },
+      "status": "ok",
+      "tool_count": 77,
+      "unexpected_write_or_destructive_tools": []
+    },
+    "plugin_drift": {
+      "artifacts": {
+        "live_skill": "/Users/sereja/.agents/skills/telegram/SKILL.md",
+        "plugin_cache_skill": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram/0.1.3/skills/telegram/SKILL.md",
+        "plugin_source_skill": "/Users/sereja/plugins/telegram/skills/telegram/SKILL.md"
+      },
+      "findings": [],
+      "raw_status": "ok",
+      "sha256": {
+        "live_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4",
+        "plugin_cache_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4",
+        "plugin_source_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4"
+      },
+      "status": "ok",
+      "version": {
+        "cache": "0.1.3",
+        "source": "0.1.3"
+      }
+    },
+    "sessions": {
+      "findings": [],
+      "policy_summary": {
+        "recovery_runtime_allowed": 0,
+        "registered": 6,
+        "runtime_allowed": 2
+      },
+      "status": "ok",
+      "summary": {
+        "discovered": 6,
+        "existing": 6,
+        "lease_checked": 0,
+        "registered": 6,
+        "runtime_allowed": 2,
+        "schema_checked": 0
+      }
+    },
+    "telecrawl": {
+      "account_summary": {
+        "active": 4,
+        "archive_ready": true,
+        "inactive": 1,
+        "known_gap_count": 49,
+        "total": 5
+      },
+      "findings": [
+        {
+          "count": 1,
+          "id": "telecrawl_inactive_accounts",
+          "message": "Telecrawl account catalog contains inactive or missing archive accounts.",
+          "severity": "warn"
+        },
+        {
+          "id": "telecrawl_known_gaps",
+          "message": "Telecrawl default archive has known import gaps.",
+          "severity": "warn",
+          "summary": [
+            {
+              "attempts": 31,
+              "chats": 27,
+              "error_type": "TimeoutError"
+            },
+            {
+              "attempts": 16,
+              "chats": 16,
+              "error_type": "TypeNotFoundError"
+            },
+            {
+              "attempts": 2,
+              "chats": 1,
+              "error_type": "ChannelPrivateError"
+            }
+          ]
+        }
+      ],
+      "freshness": {
+        "generated_at": "2026-05-22T13:13:34.903025Z",
+        "last_complete_import_at": "2026-05-18T16:54:53.435471Z",
+        "newest_message_at": "2026-05-18T16:18:16Z"
+      },
+      "policy": {
+        "classification": "archive_snapshot",
+        "is_live": false,
+        "known_gaps_are_blocking_for_archive_search": false,
+        "known_gaps_are_blocking_for_current_claims": true,
+        "negative_results_claim": "no matches in this archive coverage",
+        "route_current_latest_today_send_reply_media_to": "live_mcp"
+      },
+      "status": "warn",
+      "wrapper": "/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-archive"
+    },
+    "telegram_mirror": {
+      "classification": "mirror-recovery",
+      "findings": [
+        {
+          "id": "mirror_not_git_repo",
+          "message": "telegram-mirror is not a clean git source repo.",
+          "severity": "warn"
+        },
+        {
+          "count": 5,
+          "id": "mirror_runtime_sessions_in_tree",
+          "message": "Session files exist inside telegram-mirror recovery tree.",
+          "severity": "warn"
+        },
+        {
+          "id": "mirror_runtime_exports_missing",
+          "message": "Canonical mirror runtime export root is missing.",
+          "severity": "warn"
+        }
+      ],
+      "policy": {
+        "classification": "mirror-recovery",
+        "missing_runtime_exports_are_blocking": false,
+        "requires_explicit_runtime_preflight_for_promotion": true,
+        "runtime_start_allowed": false,
+        "sessions_in_recovery_tree_are_blocking": false
+      },
+      "runtime_state_summary": {
+        "ledger_count": 4,
+        "runtime_exports_exists": false,
+        "session_count": 5
+      },
+      "status": "warn"
+    }
+  },
+  "findings": [
+    {
+      "component": "telegram_mirror",
+      "id": "mirror_not_git_repo",
+      "message": "telegram-mirror is not a clean git source repo.",
+      "severity": "warn"
+    },
+    {
+      "component": "telegram_mirror",
+      "count": 5,
+      "id": "mirror_runtime_sessions_in_tree",
+      "message": "Session files exist inside telegram-mirror recovery tree.",
+      "severity": "warn"
+    },
+    {
+      "component": "telegram_mirror",
+      "id": "mirror_runtime_exports_missing",
+      "message": "Canonical mirror runtime export root is missing.",
+      "severity": "warn"
+    },
+    {
+      "component": "telecrawl",
+      "count": 1,
+      "id": "telecrawl_inactive_accounts",
+      "message": "Telecrawl account catalog contains inactive or missing archive accounts.",
+      "severity": "warn"
+    },
+    {
+      "component": "telecrawl",
+      "id": "telecrawl_known_gaps",
+      "message": "Telecrawl default archive has known import gaps.",
+      "severity": "warn",
+      "summary": [
+        {
+          "attempts": 31,
+          "chats": 27,
+          "error_type": "TimeoutError"
+        },
+        {
+          "attempts": 16,
+          "chats": 16,
+          "error_type": "TypeNotFoundError"
+        },
+        {
+          "attempts": 2,
+          "chats": 1,
+          "error_type": "ChannelPrivateError"
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-05-22T13:13:34.912438Z",
+  "read_only_external_state": true,
+  "schema_version": 1,
+  "status": "warn",
+  "summary": {
+    "blocking_findings": 0,
+    "components": {
+      "launchd": "ok",
+      "mcp_profiles": "ok",
+      "mcp_surface": "ok",
+      "plugin_drift": "ok",
+      "sessions": "ok",
+      "telecrawl": "warn",
+      "telegram_mirror": "warn"
+    },
+    "warning_findings": 5
+  }
+}

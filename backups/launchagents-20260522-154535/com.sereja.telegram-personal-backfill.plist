@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sereja.telegram-personal-backfill</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/bin/python</string>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/scripts/personal_mirror_backfill.py</string>
+    <string>--session</string>
+    <string>data/telegram_personal_mirror_backfill</string>
+    <string>--seed-session</string>
+    <string>data/telegram_mirror</string>
+    <string>--sync-photo</string>
+    <string>--registry</string>
+    <string>data/telegram_sync/personal_mirrors.json</string>
+    <string>--watch-progress</string>
+    <string>data/telegram_sync/personal_mirror_watch_progress.json</string>
+    <string>--state-dir</string>
+    <string>data/telegram_sync/personal_mirror_state</string>
+    <string>--sync-state</string>
+    <string>data/telegram_sync/personal_dialog_sync_state.json</string>
+    <string>--export-root</string>
+    <string>data/telegram_exports</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/sereja</string>
+    <key>PATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/.venv/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_personal_backfill_launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_personal_backfill_launchd.log</string>
+</dict>
+</plist>

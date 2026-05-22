@@ -1,0 +1,46 @@
+{
+  "sessions": [
+    {
+      "path": "/Users/sereja/.telegram-mcp/session.session",
+      "account_key": "telegram-mcp-main",
+      "owner": "com.sereja.telegram-mcp-http",
+      "allowed_consumers": ["telegram_mcp_main"],
+      "runtime_allowed": true
+    },
+    {
+      "path": "/Users/sereja/.telegram-mcp-pl/session.session",
+      "account_key": "telegram-mcp-pl",
+      "owner": "com.sereja.telegram-mcp-http-pl",
+      "allowed_consumers": ["telegram_mcp_pl"],
+      "runtime_allowed": true
+    },
+    {
+      "path": "/Users/sereja/Projects/tools/telegram-mirror/data/telegram_mirror_watch_prime.session",
+      "account_key": "prime-mirror-recovery",
+      "owner": "telegram-mirror-recovery",
+      "allowed_consumers": ["recovery_inspection"],
+      "runtime_allowed": false
+    },
+    {
+      "path": "/Users/sereja/Projects/tools/telegram-mirror/data/telegram_mirror_watch_prime_chat.session",
+      "account_key": "prime-chat-mirror-recovery",
+      "owner": "telegram-mirror-recovery",
+      "allowed_consumers": ["recovery_inspection"],
+      "runtime_allowed": false
+    },
+    {
+      "path": "/Users/sereja/Projects/tools/telegram-mirror/data/telegram_mirror_watch_prime_chat_readonly.session",
+      "account_key": "prime-chat-readonly-recovery",
+      "owner": "telegram-mirror-recovery",
+      "allowed_consumers": ["recovery_inspection"],
+      "runtime_allowed": false
+    },
+    {
+      "path": "/Users/sereja/Projects/tools/telegram-mirror/data/telegram_mirror_watch_prime_readonly.session",
+      "account_key": "prime-readonly-recovery",
+      "owner": "telegram-mirror-recovery",
+      "allowed_consumers": ["recovery_inspection"],
+      "runtime_allowed": false
+    }
+  ]
+}

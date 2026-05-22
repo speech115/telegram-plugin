@@ -1,0 +1,35 @@
+{
+  "allowed_roots": [
+    {
+      "role": "control_plane",
+      "path": "/Users/sereja/Projects/tools/telegram"
+    },
+    {
+      "role": "live_mcp",
+      "path": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
+    },
+    {
+      "role": "plugin_source",
+      "path": "/Users/sereja/plugins/telegram"
+    },
+    {
+      "role": "plugin_cache",
+      "path": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram"
+    },
+    {
+      "role": "mirror_recovery",
+      "path": "/Users/sereja/Projects/tools/telegram-mirror"
+    },
+    {
+      "role": "telecrawl_archive",
+      "path": "/Users/sereja/Projects/.artifacts/telecrawl"
+    }
+  ],
+  "temporary_compatibility_aliases": [
+    {
+      "path": "/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror",
+      "allowed_for": "discovery_only",
+      "runtime_start_allowed": false
+    }
+  ]
+}

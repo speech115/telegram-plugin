@@ -1,0 +1,12 @@
+{
+  "launchctl_only_labels": [
+    {
+      "label": "com.sereja.telecrawl.retry-gaps",
+      "program": "/bin/bash /Users/sereja/Projects/.artifacts/telecrawl/retry-gaps.sh",
+      "role": "telecrawl_gap_retry",
+      "known": true
+    }
+  ],
+  "mirror_runtime_mode": "cold",
+  "mirror_launchagents_allowed_in_user_launchagents": false
+}

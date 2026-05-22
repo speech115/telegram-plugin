@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sereja.telegram-backfill-supervisor</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror" &amp;&amp; exec "/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/scripts/start_telegram_mirror_backfill_fast.sh" --foreground $TG_BACKFILL_LAUNCHD_ARGS</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/sereja</string>
+    <key>PATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/.venv/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key>
+    <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+    <key>TG_BACKFILL_NO_TMUX</key>
+    <string>1</string>
+    <key>TG_BACKFILL_LAUNCHD_ARGS</key>
+    <string></string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>20</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_backfill_launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror/logs/telegram_backfill_launchd.log</string>
+</dict>
+</plist>
