@@ -24,7 +24,7 @@ class ContractSmokeTests(unittest.TestCase):
         json_catalog = (
             '{"tools":['
             if truncated_list_json
-            else '{"tools":[{"name":"telegram.collect_dialog_context"},{"name":"telegram.prepare_dialog_reply"},{"name":"telegram.resolve_dialog"},{"name":"telegram.search_dialog_messages"},{"name":"telegram.find_dialog"},{"name":"telegram.read_dialog"},{"name":"telegram.collect_context"},{"name":"telegram.draft_reply"},{"name":"telegram.prepare_send_message"},{"name":"telegram.prepare_reply_message"},{"name":"telegram.prepare_media_inspection_manifest"}]}'
+            else '{"tools":[{"name":"telegram.collect_dialog_context"},{"name":"telegram.prepare_dialog_reply"},{"name":"telegram.resolve_dialog"},{"name":"telegram.search_dialog_messages"},{"name":"telegram.find_dialog"},{"name":"telegram.read_dialog"},{"name":"telegram.collect_context"},{"name":"telegram.draft_reply"},{"name":"telegram.prepare_send_message"},{"name":"telegram.prepare_reply_message"},{"name":"telegram.prepare_send_file"},{"name":"telegram.prepare_media_inspection_manifest"}]}'
         )
         prepare_payload = (
             '{"chat":{"id":123},"context":{},"preview_only":false,'
@@ -55,6 +55,7 @@ class ContractSmokeTests(unittest.TestCase):
                   printf '%s\\n' 'function draft_reply(chat: unknown, goal: string);'
                   printf '%s\\n' 'function prepare_send_message(chat: unknown, text: string);'
                   printf '%s\\n' 'function prepare_reply_message(chat: unknown, message_id: number, text: string);'
+                  printf '%s\\n' 'function prepare_send_file(chat: unknown, file_path: string);'
                   printf '%s\\n' 'function prepare_media_inspection_manifest(chat: unknown);'
                   exit 0
                 fi
@@ -92,6 +93,10 @@ class ContractSmokeTests(unittest.TestCase):
                 fi
                 if [ "$1" = "call" ] && [ "$2" = "telegram.prepare_reply_message" ]; then
                   echo '{{"chat":{{"id":123,"dialog_ref":"tg://dialog/user/123"}},"text":"contract smoke reply preview only","reply_target_message_id":1,"preview_only":true,"send_tool":"reply_in_dialog","send_args_preview":{{"chat":"tg://dialog/user/123","message_id":1,"text":"contract smoke reply preview only"}}}}'
+                  exit 0
+                fi
+                if [ "$1" = "call" ] && [ "$2" = "telegram.prepare_send_file" ]; then
+                  echo '{{"chat":{{"id":123,"dialog_ref":"tg://dialog/user/123"}},"file_path":"/tmp/contract-smoke.txt","file_name":"contract-smoke.txt","caption":"contract smoke file preview only","preview_only":true,"send_tool":"send_file","send_args_preview":{{"chat":"tg://dialog/user/123","file_path":"/tmp/contract-smoke.txt","caption":"contract smoke file preview only"}},"preview_token":"abcdef0123456789"}}'
                   exit 0
                 fi
                 if [ "$1" = "call" ] && [ "$2" = "telegram.read_dialog" ]; then
@@ -242,6 +247,7 @@ class ContractSmokeTests(unittest.TestCase):
             self.assertTrue(any("telegram.draft_reply" in line for line in lines))
             self.assertTrue(any("telegram.prepare_send_message" in line for line in lines))
             self.assertTrue(any("telegram.prepare_reply_message" in line for line in lines))
+            self.assertTrue(any("telegram.prepare_send_file" in line for line in lines))
             self.assertTrue(
                 any("telegram.prepare_media_inspection_manifest" in line for line in lines)
             )

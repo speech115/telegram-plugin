@@ -5,6 +5,11 @@ contains a full Telegram MCP surface and operator workflows. Those are not
 second-class features; they are explicit modes because they can change Telegram
 state, read in bulk, or create sensitive artifacts.
 
+Unified workflow for users:
+- Default path: Telegram facade in Default Mode.
+- Escalation path: Power Mode for explicit write/admin requests.
+- Non-default path: direct Telethon is operator/debug only.
+
 ## Default Mode
 
 Default Mode is the normal plugin path. It supports live read/search/context,

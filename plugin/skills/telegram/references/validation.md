@@ -51,6 +51,8 @@ Required final direction:
 - plugin source contains the live hard-stop safety rules;
 - `installer_flow.safe_to_apply=true` before any apply/materialization step;
 - the current-version plugin cache exists only after a deliberate source-first materialization.
+- onboarding docs describe source -> marketplace/cache materialization -> parity
+  verification; manual `.mcp.json` setup is fallback-only.
 
 ## Path Gates
 

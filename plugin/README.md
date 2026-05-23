@@ -6,6 +6,10 @@ client or Telegram LLC distribution.
 This plugin gives Codex a Telegram-flavored front door backed by the local
 `telegram-mcp` daemon at `http://127.0.0.1:8799/mcp`.
 
+Recommended onboarding path is plugin source -> marketplace/cache
+materialization -> parity check -> first live facade smoke. Manual `.mcp.json`
+copying is fallback-only when plugin install/materialization is unavailable.
+
 The default installed surface is Default Mode: read-only and preview tools for
 live dialog resolution, reading, searching, context collection, scoped media,
 voice transcription, and non-sending reply drafts.
@@ -30,6 +34,11 @@ What it does not do yet:
   plugin allowlist
 - it does not mint a real `app://telegram` id locally
 - it does not replace platform-side app provisioning
+
+Unified workflow: use Default Mode facade tools first for normal user tasks.
+Use Power Mode only when the user explicitly requests write/admin operations.
+Direct Telethon usage is not a normal user path; keep it for operator/debug
+workflows.
 
 Power Mode and Operator Workflows still exist in the broader local Telegram
 stack, but they require explicit non-default tooling and their own safety

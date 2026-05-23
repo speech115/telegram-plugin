@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.photos import DeletePhotosRequest, GetUserPhotosRequest
 from telethon.tl.types import (
@@ -15,7 +17,7 @@ from telethon.tl.types import (
     UserStatusRecently,
 )
 
-from .types import UserPhoto, UserStatus
+from .types import MediaInfo, UserPhoto, UserStatus
 
 
 class ProfileOperationsMixin:
@@ -133,4 +135,30 @@ class ProfileOperationsMixin:
             user_id=entity.id,
             status=status,
             last_online=last_online,
+        )
+
+    async def download_profile_photo(self, chat: str | int) -> MediaInfo:
+        entity = await self._resolve_entity(chat)
+
+        self.settings.ensure_dirs()
+        self._maybe_cleanup_download_dir()
+        path = await self._run_media(
+            "download_profile_photo",
+            lambda: self.client.download_profile_photo(
+                entity,
+                file=str(self.settings.download_dir) + "/",
+            ),
+        )
+        if not path:
+            raise ValueError("Failed to download profile photo")
+
+        local_path = str(path)
+        file_path = Path(local_path)
+        file_size = file_path.stat().st_size if file_path.exists() else None
+        return MediaInfo(
+            file_name=file_path.name,
+            file_size=file_size,
+            mime_type=None,
+            media_type="photo",
+            local_path=local_path,
         )

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 from telegram_mcp import server
 from telegram_mcp.types import (
     DialogContextResult,
+    DialogFileSendPreparation,
     DialogHandle,
     DialogReadRange,
     DialogReadResult,
@@ -627,6 +628,48 @@ class DialogFacadeToolTests(unittest.TestCase):
             chat="@example_user",
             message_id=3,
             text="pong",
+            parse_mode="md",
+        )
+
+    def test_prepare_send_file_is_preview_only(self):
+        wrapper = AsyncMock()
+        wrapper.prepare_send_file.return_value = DialogFileSendPreparation(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/user/1",
+                id=1,
+                name="Andrei",
+                type="user",
+                username="example_user",
+                resolved_from="@example_user",
+            ),
+            file_path="/tmp/demo.txt",
+            file_name="demo.txt",
+            caption="hi",
+            send_tool="send_file",
+            send_args_preview={
+                "chat": "tg://dialog/user/1",
+                "file_path": "/tmp/demo.txt",
+                "caption": "hi",
+                "parse_mode": "md",
+            },
+            preview_token="abcd1234abcd1234",
+            warnings=["preview_only: this tool validates and prepares file send arguments but never sends."],
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(
+                server.prepare_send_file(
+                    chat="@example_user",
+                    file_path="/tmp/demo.txt",
+                    caption="hi",
+                )
+            )
+
+        self.assertTrue(result.preview_only)
+        wrapper.prepare_send_file.assert_awaited_once_with(
+            chat="@example_user",
+            file_path="/tmp/demo.txt",
+            caption="hi",
             parse_mode="md",
         )
 

@@ -15,6 +15,7 @@ class RegistrationTests(unittest.TestCase):
         names = {tool.name for tool in mcp._tool_manager.list_tools()}
 
         self.assertEqual(names, FACADE_TOOL_NAMES)
+        self.assertIn("download_profile_photo", names)
         self.assertNotIn("create_channel", names)
         self.assertNotIn("delete_messages", names)
 
@@ -81,6 +82,7 @@ class RegistrationTests(unittest.TestCase):
                 "draft_reply",
                 "prepare_send_message",
                 "prepare_reply_message",
+                "prepare_send_file",
                 "search_dialog_messages",
                 "send_dialog_message",
                 "reply_in_dialog",
@@ -111,6 +113,7 @@ class RegistrationTests(unittest.TestCase):
                 # Profile
                 "update_profile",
                 "delete_profile_photo",
+                "download_profile_photo",
                 "get_user_photos",
                 "get_user_status",
                 # Privacy & settings

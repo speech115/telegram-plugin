@@ -6,7 +6,7 @@ from mcp.types import ToolAnnotations
 
 from .. import runtime
 from ..errors import tool_error_handler
-from ..types import OperationResult, UserPhotosResult, UserStatus
+from ..types import MediaInfo, OperationResult, UserPhotosResult, UserStatus
 
 READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=True)
@@ -43,8 +43,19 @@ async def get_user_status(user_id: int) -> UserStatus:
     return await tg.get_user_status(user_id=user_id)
 
 
+async def download_profile_photo(chat: str | int) -> MediaInfo:
+    """Download the current profile photo of a user/chat."""
+    tg = await runtime.get_tg()
+    return await tg.download_profile_photo(chat=chat)
+
+
 def register(mcp) -> None:
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(update_profile))
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(delete_profile_photo))
     mcp.tool(annotations=READONLY)(tool_error_handler(get_user_photos))
     mcp.tool(annotations=READONLY)(tool_error_handler(get_user_status))
+    mcp.tool(annotations=READONLY)(tool_error_handler(download_profile_photo))
+
+
+def register_facade(mcp) -> None:
+    mcp.tool(annotations=READONLY)(tool_error_handler(download_profile_photo))

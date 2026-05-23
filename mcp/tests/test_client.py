@@ -80,6 +80,11 @@ class DownloadTelegramClient(DummyTelegramClient):
         target.write_bytes(b"new")
         return str(target)
 
+    async def download_profile_photo(self, _entity, file):
+        target = Path(file) / "profile.jpg"
+        target.write_bytes(b"profile")
+        return str(target)
+
 
 class BatchDownloadMessage:
     def __init__(self, *, message_id: int, has_media: bool = True):
@@ -2070,6 +2075,85 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(reply_preview.send_tool, "reply_in_dialog")
         self.assertEqual(reply_preview.reply_target_message_id, 7)
         wrapper.client.send_message.assert_not_awaited()
+
+    def test_prepare_send_file_is_preview_only_and_never_sends(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        wrapper.client.send_file = AsyncMock(side_effect=AssertionError("sent"))
+        preview = _run(
+            wrapper.prepare_send_file(
+                chat="@example_user",
+                file_path="/tmp/demo.txt",
+                caption="hello",
+            )
+        )
+
+        self.assertTrue(preview.preview_only)
+        self.assertEqual(preview.send_tool, "send_file")
+        self.assertEqual(
+            preview.send_args_preview["file_path"],
+            str(Path("/tmp/demo.txt").resolve(strict=False)),
+        )
+        self.assertEqual(preview.file_name, "demo.txt")
+        self.assertEqual(len(preview.preview_token), 16)
+        self.assertIn("never sends", preview.warnings[0])
+        wrapper.client.send_file.assert_not_awaited()
+
+    def test_prepare_send_file_rejects_unsafe_paths_before_resolve(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        with patch.object(wrapper, "resolve_dialog", AsyncMock()) as resolve_dialog:
+            with self.assertRaises(ToolContractError) as ctx:
+                _run(wrapper.prepare_send_file(chat="@example_user", file_path="/tmp/.env"))
+
+        self.assertEqual(ctx.exception.code, "unsafe_file_path")
+        resolve_dialog.assert_not_awaited()
+
+    def test_prepare_send_file_is_preview_only_and_validates_path(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            media_path = Path(tmp) / "demo.txt"
+            media_path.write_text("demo", encoding="utf-8")
+
+            with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+                wrapper = TelegramWrapper(settings)
+
+            wrapper.client.send_file = AsyncMock(side_effect=AssertionError("sent"))
+
+            preview = _run(
+                wrapper.prepare_send_file(
+                    chat="@example_user",
+                    file_path=str(media_path),
+                    caption="caption",
+                )
+            )
+
+        self.assertTrue(preview.preview_only)
+        self.assertEqual(preview.send_tool, "send_file")
+        self.assertEqual(preview.send_args_preview["chat"], "tg://dialog/unknown/1")
+        self.assertEqual(preview.send_args_preview["file_path"], str(media_path.resolve()))
+        self.assertEqual(preview.send_args_preview["caption"], "caption")
+        self.assertIn("preview_only", preview.warnings[0])
+        wrapper.client.send_file.assert_not_awaited()
+
+    def test_download_profile_photo_returns_local_media_info(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DownloadTelegramClient):
+            wrapper = TelegramWrapper(settings)
+            result = _run(wrapper.download_profile_photo(chat="@example_user"))
+
+        self.assertEqual(result.media_type, "photo")
+        self.assertEqual(result.file_name, "profile.jpg")
+        self.assertTrue(result.local_path.endswith("profile.jpg"))
+        self.assertEqual(Path(result.local_path).read_bytes(), b"profile")
 
     def test_mark_as_read_invalidates_list_chats_cache(self):
         settings = Settings(api_id=1, api_hash="hash")

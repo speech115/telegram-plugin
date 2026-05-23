@@ -43,10 +43,12 @@ APPROVED_FACADE_TOOLS = {
     "draft_reply",
     "prepare_send_message",
     "prepare_reply_message",
+    "prepare_send_file",
     "prepare_media_inspection_manifest",
     "download_media",
     "download_media_batch",
     "download_dialog_media",
+    "download_profile_photo",
     "transcribe_voice",
     "search_dialog_messages",
 }

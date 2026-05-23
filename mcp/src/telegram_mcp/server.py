@@ -59,6 +59,7 @@ from .tools import (
     draft_reply,
     download_dialog_media,
     prepare_dialog_reply,
+    prepare_send_file,
     prepare_reply_message,
     prepare_send_message,
     prepare_media_inspection_manifest,

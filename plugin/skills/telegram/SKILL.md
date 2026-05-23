@@ -12,6 +12,10 @@ is the install/materialization source only when it matches the live standalone
 tree. If they differ, repair parity before install, materialization, or cache
 refresh.
 
+Unified user path: facade tools in Default Mode are the standard route. Use
+Power Mode only for explicit write/admin intent. Direct Telethon calls are
+operator/debug-only and not a normal user workflow.
+
 ## Non-Negotiables
 
 - **No accidental writes:** never call `send_dialog_message` or
@@ -68,7 +72,8 @@ When exposed, use these preview/media helpers before writes or media-heavy work:
 - `download_dialog_media`
 
 Use lower-level Telegram tools only when the current host exposes them and the
-facade cannot express the request.
+facade cannot express the request. Do not default users to direct Telethon
+calls.
 
 ## Decision Preflight
 
@@ -121,6 +126,7 @@ telecrawl, and source-label details.
 
 - Low-stakes "что нового", "последние", "глянь чат" -> `collect_dialog_context` with `mode="fast"`, `recent_limit=15-30`, `include_pinned=false`.
 - Low-stakes "за сегодня" -> `read_today_dialog` with `limit=30`, `include_voice_transcription=false` for the first pass.
+- Scoped one-on-one "за сегодня с HH:MM" reads -> resolve once, read today's local calendar day with `include_voice_transcription=false`, and if the requested start time is near local midnight also check the previous UTC day. Filter the result in the answer; do not inspect media, page, or run repo/vault checks unless text evidence requires it.
 - Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `read_today_dialog` or `collect_dialog_context(date_from=..., date_to=...)`, include voice transcription, and page while completeness requires it.
 - "найди сообщение про X" in a known dialog -> `search_dialog_messages` first, then fetch surrounding context only for important matches.
 - "подготовь ответ", "что ответить" -> `prepare_dialog_reply` first; fetch more context only when warnings or evidence gaps require it.

@@ -246,6 +246,22 @@ async def prepare_reply_message(
     )
 
 
+async def prepare_send_file(
+    chat: str | int,
+    file_path: str,
+    caption: str = "",
+    parse_mode: str = "md",
+):
+    """Prepare a file-send preview package. This validates path and never sends."""
+    tg = await runtime.get_tg()
+    return await tg.prepare_send_file(
+        chat=chat,
+        file_path=file_path,
+        caption=caption,
+        parse_mode=parse_mode,
+    )
+
+
 async def search_dialog_messages(
     chat: str | int,
     query: str,
@@ -313,6 +329,7 @@ def register(mcp, *, include_writes: bool = False) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(draft_reply))
     mcp.tool(annotations=READONLY)(tool_error_handler(prepare_send_message))
     mcp.tool(annotations=READONLY)(tool_error_handler(prepare_reply_message))
+    mcp.tool(annotations=READONLY)(tool_error_handler(prepare_send_file))
     mcp.tool(annotations=READONLY)(tool_error_handler(search_dialog_messages))
     if include_writes:
         mcp.tool(annotations=ADDITIVE)(tool_error_handler(send_dialog_message))

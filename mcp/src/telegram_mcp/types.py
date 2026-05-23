@@ -160,6 +160,19 @@ class DialogSendPreparation(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DialogFileSendPreparation(BaseModel):
+    chat: DialogHandle
+    file_path: str
+    file_name: str
+    caption: str = ""
+    parse_mode: str | None = "md"
+    preview_only: bool = True
+    send_tool: str
+    send_args_preview: dict[str, object]
+    preview_token: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ChatInfo(BaseModel):
     id: int
     name: str

@@ -86,11 +86,21 @@ cd mcp
 ./bin/contract-smoke --profile all --check-cache-stats --json
 ```
 
-5. Point your local Codex plugin setup at `plugin/` and the MCP endpoint in
-`plugin/.mcp.json` (`http://127.0.0.1:8799/mcp` by default). For HTTP daemon
-mode, configure `TELEGRAM_MCP_AUTH_TOKEN` in the client environment before
-connecting; the plugin MCP config references that variable via
-`bearer_token_env_var`.
+5. Materialize the plugin through Codex plugin cache flow (preferred), then use
+manual `.mcp.json` wiring only as a fallback:
+
+- Source: `plugin/` in this repository.
+- Install/materialize into plugin cache with your local plugin manager flow,
+  then verify source/cache parity (see `docs/publication-checklist.md` and
+  `plugin/skills/telegram/references/validation.md`).
+- Keep default client MCP config on `plugin/.mcp.json`
+  (`http://127.0.0.1:8799/mcp` by default).
+- For HTTP daemon mode, set `TELEGRAM_MCP_AUTH_TOKEN` in client environment;
+  the plugin MCP config references it via `bearer_token_env_var`.
+
+6. Unified workflow rule: use facade tools in Default Mode first. Switch to
+Power Mode only for explicit write/admin operations. Direct Telethon calls are
+an operator/debug path, not normal user onboarding.
 
 To inspect the full server surface locally, run the daemon with:
 

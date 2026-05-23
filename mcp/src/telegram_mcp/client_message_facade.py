@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 from .errors import ToolContractError
+from .file_path_policy import validate_outbound_media_path
 from .types import (
     DialogContextResult,
+    DialogFileSendPreparation,
     DialogReplyPreparation,
     DialogSendPreparation,
     MessageInfo,
@@ -189,6 +194,40 @@ class MessageFacadeMixin:
                 "text": text,
                 "parse_mode": parse_mode or None,
             },
+        )
+
+    async def prepare_send_file(
+        self,
+        chat: str | int,
+        file_path: str,
+        caption: str = "",
+        parse_mode: str = "md",
+    ) -> DialogFileSendPreparation:
+        safe_file_path = validate_outbound_media_path(file_path)
+        handle = await self.resolve_dialog(chat)
+        file_name = Path(safe_file_path).name
+        send_args_preview: dict[str, object] = {
+            "chat": handle.dialog_ref,
+            "file_path": safe_file_path,
+            "caption": caption,
+            "parse_mode": parse_mode or None,
+        }
+        token_seed = f"{handle.dialog_ref}\n{safe_file_path}\n{caption}\n{parse_mode or ''}"
+        preview_token = hashlib.sha256(token_seed.encode("utf-8")).hexdigest()[:16]
+        warnings = [
+            "preview_only: this tool validates and prepares file send arguments but never sends.",
+        ]
+        return DialogFileSendPreparation(
+            chat=handle,
+            file_path=safe_file_path,
+            file_name=file_name,
+            caption=caption,
+            parse_mode=parse_mode or None,
+            preview_only=True,
+            send_tool="send_file",
+            send_args_preview=send_args_preview,
+            preview_token=preview_token,
+            warnings=warnings,
         )
 
     async def send_dialog_message(

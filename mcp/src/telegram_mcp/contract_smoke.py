@@ -26,6 +26,7 @@ APP_MEDIA_REQUIRED_TOOLS = {
     "find_dialog",
     "prepare_reply_message",
     "prepare_send_message",
+    "prepare_send_file",
     "prepare_media_inspection_manifest",
     "read_dialog",
 }
@@ -509,6 +510,20 @@ def run_contract_smoke(
                 results=results,
             ),
             "telegram.prepare_reply_message",
+        )
+        _require_send_preview_shape(
+            _call_json(
+                mcporter_bin,
+                "telegram.prepare_send_file",
+                [
+                    f"chat={dialog_ref}",
+                    "file_path=/tmp/contract-smoke.txt",
+                    "caption=contract smoke file preview only",
+                ],
+                timeout=timeout,
+                results=results,
+            ),
+            "telegram.prepare_send_file",
         )
         _require_media_manifest_shape(
             _call_json(

@@ -5,12 +5,21 @@
 - Live/current tasks require live MCP facade tools or aliases. If they are not
   exposed, report that live Telegram is unavailable for the task; do not replace
   a current-state answer with mirror or archive evidence.
+- Scoped one-on-one reads like "прочитай переписку с @user за сегодня с HH:MM"
+  should complete in one fast pass: resolve the dialog once, read the requested
+  local calendar day with `include_voice_transcription=false`, and if the start
+  time is near local midnight also read the previous UTC calendar day before
+  summarizing. Do not inspect media, page, or run repo/vault checks unless the
+  text evidence says those artifacts are necessary.
 - Quick orientation: `collect_dialog_context(mode="fast", recent_limit=15-30, include_pinned=false)`.
 - Date-specific today reads: use `read_today_dialog` instead of manually computing today's range.
 - One-on-one fast reads: pass `include_sender_name=false` unless speaker identity is unclear.
 - Groups: keep sender names when attribution matters.
 - Reuse the canonical `dialog_ref` returned by the first facade call for follow-up calls.
 - Use `mode="full"` only when sender names, voice transcripts, pinned messages, or richer evidence are needed.
+- If the default endpoint has a transient timeout but an alternate configured
+  live MCP profile succeeds on `get_me`, use the healthy profile immediately;
+  do not spend multiple rounds proving the unhealthy profile is broken.
 
 ## App-Style Aliases
 
@@ -38,6 +47,9 @@ Prefer canonical facade names in agent routing unless the host exposes only the 
 - If `has_more_before=true` or `truncated=true` and the user asked for complete context, page with `next_offset_id` or `offset_id` using the same facade tool.
 - If `voice_transcription_status` is `partial`, `omitted`, or `failed` and the voice content could change the answer, call `transcribe_voice` only for needed message ids.
 - If `media_message_ids` is non-empty and the user asked about visuals, download and inspect the files.
+- If media exists but the user asks for text decisions, proposed fixes, or a
+  project summary, first summarize from text and only download media that is
+  directly referenced by the text or needed to answer.
 - If `collection_mode="fast"` gives enough evidence for a low-stakes status summary, stop there.
 
 ## Paging Budget
