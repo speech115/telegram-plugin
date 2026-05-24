@@ -21,21 +21,35 @@
       "safe_delete": "never_without_explicit_plan"
     },
     {
-      "id": "telegram-plugin-source",
-      "role": "user_facing_plugin_source",
-      "path": "/Users/sereja/plugins/telegram",
+      "id": "telegram-plugin-package",
+      "role": "canonical_portable_plugin_package",
+      "path": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
       "expected_kind": "directory",
       "required_markers": [".codex-plugin/plugin.json", ".mcp.json", "skills/telegram/SKILL.md"],
       "source_of_truth": true,
       "deletion_protection": "blocking",
-      "safe_delete": "never_without_explicit_plan"
+      "safe_delete": "only_after_rebuild_or_replacement_package_verified"
+    },
+    {
+      "id": "telegram-plugin-source",
+      "role": "local_marketplace_plugin_alias",
+      "path": "/Users/sereja/plugins/telegram",
+      "expected_kind": "symlink",
+      "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
+      "required_markers": [".codex-plugin/plugin.json", ".mcp.json", "skills/telegram/SKILL.md"],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "only_after_marketplace_source_repointed"
     },
     {
       "id": "telegram-plugin-cache",
       "role": "installed_plugin_cache",
       "path": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram",
       "expected_kind": "directory",
-      "required_markers": ["0.1.3/.codex-plugin/plugin.json", "0.1.3/skills/telegram/SKILL.md"],
+      "required_markers": [
+        "{plugin_source_version}/.codex-plugin/plugin.json",
+        "{plugin_source_version}/skills/telegram/SKILL.md"
+      ],
       "source_of_truth": false,
       "deletion_protection": "warn",
       "safe_delete": "only_via_plugin_reinstall_plan"
@@ -44,7 +58,8 @@
       "id": "telegram-live-skill",
       "role": "runtime_skill_facade",
       "path": "/Users/sereja/.agents/skills/telegram",
-      "expected_kind": "directory",
+      "expected_kind": "symlink",
+      "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package/skills/telegram",
       "required_markers": ["SKILL.md", "references/source-evidence-broker.md"],
       "source_of_truth": false,
       "deletion_protection": "blocking",

@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "telegram-local": {
+      "type": "http",
+      "url": "http://127.0.0.1:8799/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
+      "note": "Local Telegram MCP server backed by telegram-mcp high-level dialog facade tools.",
+      "allowedTools": [
+        "doctor_check",
+        "get_me",
+        "collect_context",
+        "collect_dialog_context",
+        "draft_reply",
+        "find_dialog",
+        "telegram_read",
+        "telegram_search",
+        "telegram_prepare_reply",
+        "telegram_inspect_media",
+        "prepare_dialog_reply",
+        "prepare_reply_message",
+        "prepare_send_message",
+        "prepare_media_inspection_manifest",
+        "download_media",
+        "download_media_batch",
+        "download_dialog_media",
+        "read_dialog",
+        "read_dialog_by_date",
+        "read_recent_dialog",
+        "read_today_dialog",
+        "resolve_dialog",
+        "search_dialog_messages",
+        "transcribe_voice"
+      ]
+    }
+  }
+}

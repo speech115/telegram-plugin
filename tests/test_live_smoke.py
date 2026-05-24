@@ -39,7 +39,14 @@ def test_live_mcporter_default_surface_has_no_write_tools() -> None:
     )
 
     output = completed.stdout
-    assert "15 tools" in output
+    for name in [
+        "prepare_media_inspection_manifest",
+        "download_media",
+        "download_media_batch",
+        "download_dialog_media",
+        "transcribe_voice",
+    ]:
+        assert f"function {name}(" in output
     for name in [
         "send_dialog_message",
         "reply_in_dialog",

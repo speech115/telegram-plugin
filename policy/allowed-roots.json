@@ -9,7 +9,11 @@
       "path": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
     },
     {
-      "role": "plugin_source",
+      "role": "plugin_package",
+      "path": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package"
+    },
+    {
+      "role": "plugin_marketplace_alias",
       "path": "/Users/sereja/plugins/telegram"
     },
     {

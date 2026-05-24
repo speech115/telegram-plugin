@@ -18,6 +18,7 @@ from .paths import (
     MIRROR_ROOT,
     POLICY_DIR,
     PLUGIN_CACHE,
+    PLUGIN_CACHE_ROOT,
     PLUGIN_SOURCE,
     TELECRAWL_ARCHIVE,
 )
@@ -39,6 +40,15 @@ APPROVED_FACADE_TOOLS = {
     "draft_reply",
     "prepare_send_message",
     "prepare_reply_message",
+    "prepare_media_inspection_manifest",
+    "download_media",
+    "download_media_batch",
+    "download_dialog_media",
+    "telegram_inspect_media",
+    "telegram_prepare_reply",
+    "telegram_read",
+    "telegram_search",
+    "transcribe_voice",
     "search_dialog_messages",
 }
 
@@ -135,6 +145,14 @@ def _expected_kind_matches(path: Path, expected_kind: str) -> bool:
     return False
 
 
+def _policy_marker(marker: str) -> str:
+    source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
+    source_version = source_manifest.get("version")
+    cache_version = PLUGIN_CACHE.name if PLUGIN_CACHE.parent == PLUGIN_CACHE_ROOT else ""
+    version = source_version if isinstance(source_version, str) and source_version else cache_version
+    return marker.replace("{plugin_source_version}", version)
+
+
 def audit_managed_systems() -> dict[str, Any]:
     policy = load_json(POLICY_DIR / "managed-systems.json") or {}
     systems_policy = policy.get("systems") if isinstance(policy.get("systems"), list) else []
@@ -158,13 +176,14 @@ def audit_managed_systems() -> dict[str, Any]:
         expected_kind = str(item.get("expected_kind") or "path")
         deletion_protection = str(item.get("deletion_protection") or "blocking")
         required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
+        expected_resolved = item.get("expected_resolved") if isinstance(item.get("expected_resolved"), str) else None
         path = Path(raw_path) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
         missing_markers = sorted(
             str(marker)
             for marker in required_markers
-            if isinstance(marker, str) and not (path / marker).exists()
+            if isinstance(marker, str) and not (path / _policy_marker(marker)).exists()
         )
         resolved = str(path.resolve(strict=False)) if raw_path else None
         row = {
@@ -180,6 +199,8 @@ def audit_managed_systems() -> dict[str, Any]:
             "deletion_protection": deletion_protection,
             "safe_delete": item.get("safe_delete"),
         }
+        if expected_resolved:
+            row["expected_resolved"] = expected_resolved
         rows.append(row)
         if not system_id:
             findings.append(
@@ -249,6 +270,18 @@ def audit_managed_systems() -> dict[str, Any]:
                     "path": raw_path,
                     "missing_markers": missing_markers,
                     "message": "Registered Telegram managed system exists but required marker files are missing.",
+                }
+            )
+        elif expected_resolved and resolved != expected_resolved:
+            findings.append(
+                {
+                    "id": "managed_system_resolved_target_mismatch",
+                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
+                    "system": system_id,
+                    "path": raw_path,
+                    "resolved": resolved,
+                    "expected_resolved": expected_resolved,
+                    "message": "Registered Telegram managed system resolves to an unexpected target.",
                 }
             )
 

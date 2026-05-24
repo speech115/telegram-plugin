@@ -13,6 +13,7 @@ from telegram_control_plane.audits import (
 )
 import telegram_control_plane.planner as planner
 from telegram_control_plane.planner import build_repair_plan
+from telegram_control_plane.paths import PLUGIN_SOURCE
 
 
 def test_imported_tool_names_excludes_register_aliases(tmp_path: Path) -> None:
@@ -61,6 +62,28 @@ def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
 
     assert report["status"] == "fail"
     assert any(item["id"] == "mcp_endpoint_unsafe_allowlist_tool" for item in report["findings"])
+
+
+def test_plugin_package_has_no_private_runtime_artifacts() -> None:
+    forbidden_names = {".env", "__pycache__"}
+    forbidden_suffixes = {".session", ".pyc"}
+    findings: list[str] = []
+
+    for path in PLUGIN_SOURCE.rglob("*"):
+        relative = path.relative_to(PLUGIN_SOURCE)
+        if path.name in forbidden_names or path.suffix in forbidden_suffixes:
+            findings.append(str(relative))
+            continue
+        if not path.is_file() or path.stat().st_size > 1_000_000:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "/Users/sereja" in text:
+            findings.append(f"{relative}: hardcoded private path")
+
+    assert findings == []
 
 
 def test_launchd_blocks_malformed_plist(monkeypatch, tmp_path: Path) -> None:
@@ -189,6 +212,38 @@ def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch
 
     assert report["status"] == "fail"
     assert any(item["id"] == "managed_system_marker_missing" for item in report["findings"])
+
+
+def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path: Path) -> None:
+    expected = tmp_path / "expected"
+    actual = tmp_path / "actual"
+    link = tmp_path / "telegram"
+    expected.mkdir()
+    actual.mkdir()
+    link.symlink_to(actual, target_is_directory=True)
+
+    def fake_load_json(path: Path):
+        if str(path).endswith("managed-systems.json"):
+            return {
+                "systems": [
+                    {
+                        "id": "telegram-plugin-source",
+                        "role": "local_marketplace_plugin_alias",
+                        "path": str(link),
+                        "expected_kind": "symlink",
+                        "expected_resolved": str(expected),
+                        "deletion_protection": "blocking",
+                    }
+                ]
+            }
+        return {}
+
+    monkeypatch.setattr(audits, "load_json", fake_load_json)
+
+    report = audit_managed_systems()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "managed_system_resolved_target_mismatch" for item in report["findings"])
 
 
 def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:

@@ -21,6 +21,41 @@ desired policy.
 ./bin/telegram-repair-plan --json
 ```
 
+## Plugin Packaging
+
+The canonical portable Telegram plugin package is:
+
+```bash
+generated/telegram-plugin-package
+```
+
+This directory is the editable package source for local materialization. The
+marketplace entrypoint `/Users/sereja/plugins/telegram` is only a symlink alias
+to this package root.
+
+To build a fresh package from an independent staging source into an empty output
+directory, use:
+
+```bash
+/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/bin/build-plugin-package \
+  --source-dir /path/to/telegram-plugin-staging \
+  --output-dir /path/to/empty/telegram-plugin-package \
+  --json
+```
+
+The builder fails closed if the package would contain private paths, `.env`,
+`.session`, `__pycache__`, or `*.pyc` artifacts. The local marketplace still
+enters through `/Users/sereja/plugins/telegram`, but that path is now a symlink
+alias to the portable package root, not the canonical artifact source.
+
+After rebuilding the package, materialize Codex's local marketplace cache with:
+
+```bash
+codex plugin marketplace remove sereja-local && codex plugin marketplace add /Users/sereja
+./bin/telegram-plugin-drift --json
+./bin/telegram-mcp-surface --json
+```
+
 ## Human Entry Points
 
 - `MAP.md` explains where every Telegram-related system lives.
@@ -58,8 +93,8 @@ manifest paths, subscriber exports, media payloads, or raw private errors.
 - `telegram-managed-systems --json` is the canonical inventory of Telegram
   source repos, plugin/skill surfaces, runtime data roots, and archive tools.
   A missing blocking-protected path is a fail-closed defect.
-- Plugin source and installed cache are aligned at local Telegram plugin
-  version `0.1.3`; previous cache version `0.1.2` is left as rollback.
+- Portable plugin package, marketplace alias, live skill, and installed cache are
+  aligned at local Telegram plugin version `0.1.8`.
 - The default MCP tool profile is the restricted facade profile. Admin/channel
   management tools require an explicit full/admin profile.
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they

@@ -19,9 +19,14 @@ Start here when working on local Telegram tooling.
 
 ## User-Facing Plugin And Skills
 
+- `/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package`
+  - role: canonical portable Telegram plugin package
+  - use for: release/package source, plugin metadata, MCP allowlist, assets,
+    user-facing skill
+
 - `/Users/sereja/plugins/telegram`
-  - role: local Telegram plugin source
-  - use for: plugin package metadata, MCP allowlist, assets, user-facing skill
+  - role: local marketplace compatibility symlink
+  - use for: Codex marketplace discovery through `/Users/sereja`
 
 - `/Users/sereja/.codex/plugins/cache/sereja-local/telegram`
   - role: installed plugin cache
@@ -29,6 +34,7 @@ Start here when working on local Telegram tooling.
 
 - `/Users/sereja/.agents/skills/telegram`
   - role: live Telegram skill facade
+  - note: symlink to `generated/telegram-plugin-package/skills/telegram`
   - use for: normal live dialog work, media/voice inspection, draft/send flows
 
 - `/Users/sereja/Projects/.codex/skills/telegram-local-mirror`
@@ -76,4 +82,3 @@ Do not delete Telegram-related paths directly. First run:
 
 Then use a dry-run cleanup plan, recoverable safe-trash or backup, and explicit
 approval before any stateful action.
-

@@ -12,9 +12,7 @@
           "pid": null,
           "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-logrotate.plist",
           "program_arguments": [
-            "/bin/bash",
-            "-c",
-            "LOG=\"/Users/sereja/Library/Logs/telegram-mcp/http-launchd.log\"; [ -f \"$LOG\" ] && [ \"$(stat -f%z \"$LOG\" 2>/dev/null || echo 0)\" -gt 1048576 ] && mv \"$LOG\" \"$LOG.$(date +%Y%m%d)\" && touch \"$LOG\""
+            "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/rotate-logs.sh"
           ],
           "pythonpath": null,
           "run_at_load": null,
@@ -33,9 +31,7 @@
           "pid": null,
           "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-pl-logrotate.plist",
           "program_arguments": [
-            "/bin/bash",
-            "-c",
-            "LOG=\"/Users/sereja/Library/Logs/telegram-mcp-pl/http-launchd.log\"; [ -f \"$LOG\" ] && [ \"$(stat -f%z \"$LOG\" 2>/dev/null || echo 0)\" -gt 1048576 ] && mv \"$LOG\" \"$LOG.$(date +%Y%m%d)\" && touch \"$LOG\""
+            "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/rotate-logs.sh"
           ],
           "pythonpath": null,
           "run_at_load": null,
@@ -51,7 +47,7 @@
           "label": "com.sereja.telegram-mcp-http-pl",
           "loaded": true,
           "outside_allowed_roots": [],
-          "pid": "90800",
+          "pid": "17754",
           "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http-pl.plist",
           "program_arguments": [
             "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/launchd-run.sh"
@@ -70,7 +66,7 @@
           "label": "com.sereja.telegram-mcp-http",
           "loaded": true,
           "outside_allowed_roots": [],
-          "pid": "90794",
+          "pid": "17733",
           "plist": "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-mcp-http.plist",
           "program_arguments": [
             "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/scripts/launchd-run.sh"
@@ -91,22 +87,22 @@
           "pid": null
         },
         "com.sereja.telegram-mcp-http": {
-          "last_exit_status": "-15",
+          "last_exit_status": "0",
           "loaded": true,
-          "pid": "90794"
+          "pid": "17733"
         },
         "com.sereja.telegram-mcp-http-logrotate": {
-          "last_exit_status": "1",
+          "last_exit_status": "0",
           "loaded": true,
           "pid": null
         },
         "com.sereja.telegram-mcp-http-pl": {
-          "last_exit_status": "-15",
+          "last_exit_status": "0",
           "loaded": true,
-          "pid": "90800"
+          "pid": "17754"
         },
         "com.sereja.telegram-mcp-http-pl-logrotate": {
-          "last_exit_status": "1",
+          "last_exit_status": "0",
           "loaded": true,
           "pid": null
         }
@@ -145,12 +141,12 @@
       "findings": [],
       "status": "ok",
       "summary": {
-        "blocking_protected": 9,
-        "existing": 12,
+        "blocking_protected": 10,
+        "existing": 13,
         "kind_mismatches": 0,
         "marker_mismatches": 0,
         "missing": 0,
-        "registered": 12
+        "registered": 13
       },
       "systems": [
         {
@@ -183,14 +179,28 @@
           "deletion_protection": "blocking",
           "exists": true,
           "expected_kind": "directory",
+          "id": "telegram-plugin-package",
+          "kind_matches": true,
+          "missing_markers": [],
+          "path": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
+          "resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
+          "role": "canonical_portable_plugin_package",
+          "safe_delete": "only_after_rebuild_or_replacement_package_verified",
+          "source_of_truth": true
+        },
+        {
+          "deletion_protection": "blocking",
+          "exists": true,
+          "expected_kind": "symlink",
+          "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
           "id": "telegram-plugin-source",
           "kind_matches": true,
           "missing_markers": [],
           "path": "/Users/sereja/plugins/telegram",
-          "resolved": "/Users/sereja/plugins/telegram",
-          "role": "user_facing_plugin_source",
-          "safe_delete": "never_without_explicit_plan",
-          "source_of_truth": true
+          "resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
+          "role": "local_marketplace_plugin_alias",
+          "safe_delete": "only_after_marketplace_source_repointed",
+          "source_of_truth": false
         },
         {
           "deletion_protection": "warn",
@@ -208,12 +218,13 @@
         {
           "deletion_protection": "blocking",
           "exists": true,
-          "expected_kind": "directory",
+          "expected_kind": "symlink",
+          "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package/skills/telegram",
           "id": "telegram-live-skill",
           "kind_matches": true,
           "missing_markers": [],
           "path": "/Users/sereja/.agents/skills/telegram",
-          "resolved": "/Users/sereja/.agents/skills/telegram",
+          "resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package/skills/telegram",
           "role": "runtime_skill_facade",
           "safe_delete": "only_after_plugin_skill_parity_verified",
           "source_of_truth": false
@@ -333,10 +344,14 @@
         "collect_context",
         "collect_dialog_context",
         "doctor_check",
+        "download_dialog_media",
+        "download_media",
+        "download_media_batch",
         "draft_reply",
         "find_dialog",
         "get_me",
         "prepare_dialog_reply",
+        "prepare_media_inspection_manifest",
         "prepare_reply_message",
         "prepare_send_message",
         "read_dialog",
@@ -344,16 +359,25 @@
         "read_recent_dialog",
         "read_today_dialog",
         "resolve_dialog",
-        "search_dialog_messages"
+        "search_dialog_messages",
+        "telegram_inspect_media",
+        "telegram_prepare_reply",
+        "telegram_read",
+        "telegram_search",
+        "transcribe_voice"
       ],
       "default_surface_tools": [
         "collect_context",
         "collect_dialog_context",
         "doctor_check",
+        "download_dialog_media",
+        "download_media",
+        "download_media_batch",
         "draft_reply",
         "find_dialog",
         "get_me",
         "prepare_dialog_reply",
+        "prepare_media_inspection_manifest",
         "prepare_reply_message",
         "prepare_send_message",
         "read_dialog",
@@ -361,7 +385,12 @@
         "read_recent_dialog",
         "read_today_dialog",
         "resolve_dialog",
-        "search_dialog_messages"
+        "search_dialog_messages",
+        "telegram_inspect_media",
+        "telegram_prepare_reply",
+        "telegram_read",
+        "telegram_search",
+        "transcribe_voice"
       ],
       "dialog_facade_annotations": {
         "collect_context": "readonly",
@@ -379,7 +408,11 @@
         "reply_message": "additive",
         "resolve_dialog": "readonly",
         "search_dialog_messages": "readonly",
-        "send_dialog_message": "additive"
+        "send_dialog_message": "additive",
+        "telegram_confirmed_send": "additive",
+        "telegram_prepare_reply": "readonly",
+        "telegram_read": "readonly",
+        "telegram_search": "readonly"
       },
       "findings": [],
       "non_facade_tools": [],
@@ -392,42 +425,52 @@
             "collect_dialog_context",
             "draft_reply",
             "find_dialog",
+            "telegram_read",
+            "telegram_search",
+            "telegram_prepare_reply",
+            "telegram_inspect_media",
             "prepare_dialog_reply",
             "prepare_reply_message",
             "prepare_send_message",
+            "prepare_media_inspection_manifest",
+            "download_media",
+            "download_media_batch",
+            "download_dialog_media",
             "read_dialog",
             "read_dialog_by_date",
             "read_recent_dialog",
             "read_today_dialog",
             "resolve_dialog",
-            "search_dialog_messages"
+            "search_dialog_messages",
+            "transcribe_voice"
           ],
+          "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
           "note": "Local Telegram MCP server backed by telegram-mcp high-level dialog facade tools.",
           "type": "http",
           "url": "http://127.0.0.1:8799/mcp"
         }
       },
       "status": "ok",
-      "tool_count": 77,
+      "tool_count": 82,
       "unexpected_write_or_destructive_tools": []
     },
     "plugin_drift": {
       "artifacts": {
         "live_skill": "/Users/sereja/.agents/skills/telegram/SKILL.md",
-        "plugin_cache_skill": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram/0.1.3/skills/telegram/SKILL.md",
+        "plugin_cache_skill": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram/0.1.8/skills/telegram/SKILL.md",
         "plugin_source_skill": "/Users/sereja/plugins/telegram/skills/telegram/SKILL.md"
       },
       "findings": [],
       "raw_status": "ok",
       "sha256": {
-        "live_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4",
-        "plugin_cache_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4",
-        "plugin_source_skill": "1b8d016b301eaf12d85cbdbaac1d20f30271a0a8f68d68f78d9d53e8d6d0e8c4"
+        "live_skill": "91aa3d44838ba4c9274ae5cc3c83db8970a2a6af6b7aa73c764fa8eaa3cca304",
+        "plugin_cache_skill": "91aa3d44838ba4c9274ae5cc3c83db8970a2a6af6b7aa73c764fa8eaa3cca304",
+        "plugin_source_skill": "91aa3d44838ba4c9274ae5cc3c83db8970a2a6af6b7aa73c764fa8eaa3cca304"
       },
       "status": "ok",
       "version": {
-        "cache": "0.1.3",
-        "source": "0.1.3"
+        "cache": "0.1.8",
+        "source": "0.1.8"
       }
     },
     "sessions": {
@@ -486,7 +529,7 @@
         }
       ],
       "freshness": {
-        "generated_at": "2026-05-22T16:37:00.013076Z",
+        "generated_at": "2026-05-24T05:57:19.680884Z",
         "last_complete_import_at": "2026-05-18T16:54:53.435471Z",
         "newest_message_at": "2026-05-18T16:18:16Z"
       },
@@ -529,7 +572,7 @@
         "sessions_in_recovery_tree_are_blocking": false
       },
       "runtime_state_summary": {
-        "ledger_count": 4,
+        "ledger_count": 7,
         "runtime_exports_exists": false,
         "session_count": 5
       },
@@ -587,7 +630,7 @@
       ]
     }
   ],
-  "generated_at": "2026-05-22T16:37:00.023177Z",
+  "generated_at": "2026-05-24T05:57:19.691504Z",
   "read_only_external_state": true,
   "schema_version": 1,
   "status": "warn",

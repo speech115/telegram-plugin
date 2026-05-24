@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "telegram-local-power": {
+      "type": "http",
+      "url": "http://127.0.0.1:8799/mcp",
+      "note": "Power Mode example. Start telegram-mcp with TELEGRAM_MCP_TOOL_PROFILE=full before using this. This exposes write/admin/destructive Telegram tools to the client.",
+      "allowedTools": [
+        "*"
+      ]
+    }
+  }
+}
