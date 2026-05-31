@@ -1,21 +1,46 @@
-# Telegram Plugin
+<p align="center">
+  <img src="plugin/assets/telegram-logo.svg" alt="Telegram Plugin logo" width="96">
+</p>
 
-Safe local Telegram access for AI coding agents.
+<h1 align="center">Telegram Plugin</h1>
 
-This is a community-maintained integration project and is not an official
-Telegram product or Telegram LLC publication.
+<p align="center">
+  Safe local Telegram access for AI coding agents.
+</p>
 
-This is an alpha open-source packaging of a working local stack: a Telegram MCP
-server, a Codex plugin bundle, and an optional audit/control-plane layer that
-keeps the runtime explainable before agents read live chats or prepare reply
-drafts.
+<p align="center">
+  <a href="https://github.com/speech115/telegram-plugin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/speech115/telegram-plugin/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/speech115/telegram-plugin/releases"><img alt="Release" src="https://img.shields.io/github/v/release/speech115/telegram-plugin?label=release"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/speech115/telegram-plugin"></a>
+  <img alt="Default mode" src="https://img.shields.io/badge/default%20mode-read%2Fsearch%2Fdraft-229ED9">
+</p>
 
-The project is not trying to be another raw Telegram MCP wrapper. The main
-opinion is that Telegram access for agents needs a narrow default surface,
-source routing, drift checks, and explicit boundaries around sessions, media,
-archives, and write actions.
+> Community-maintained integration. Not an official Telegram product or
+> Telegram LLC publication.
 
-## What v0.1 Alpha Includes
+Telegram Plugin packages a working local stack for agent-safe Telegram access:
+a Telethon-backed MCP server, a Codex plugin bundle, and an optional
+control-plane for local audits and repair planning.
+
+Most Telegram automation tools expose too much too quickly. This project takes
+the opposite position: agents should start with a narrow read/search/context
+surface, clear source routing, drift checks, and explicit boundaries around
+sessions, media, archives, and write actions.
+
+## Why It Exists
+
+Use this project when you want an AI coding agent to inspect Telegram context
+without handing it the whole account by default.
+
+- **Local-first:** Telegram credentials and sessions stay on your machine.
+- **Narrow by default:** Default Mode reads, searches, collects context, drafts,
+  previews, downloads scoped media, and transcribes voice locally.
+- **Explicit writes:** sending, admin actions, profile changes, and broad export
+  workflows require separate Power Mode or operator wiring.
+- **Auditable setup:** contract smoke checks, plugin drift checks, and
+  control-plane reports make the local state explainable.
+
+## What Is Included
 
 - `mcp/` - a Telethon-backed MCP server with high-level dialog facade tools.
 - `plugin/` - a Codex plugin bundle that points at a local MCP daemon and
@@ -24,10 +49,19 @@ archives, and write actions.
   drift, LaunchAgent inventory, sessions, source routing, and repair planning.
 - `docs/` - safety model and routing notes for operating the stack.
 
-Default Mode is read/search/context/draft first. Media download
-and voice transcription are local inspection tools; message sending, admin
-actions, and subscriber export are intentionally outside the default path unless
-you wire them explicitly.
+## Operating Modes
+
+| Mode | Use it for | Can change Telegram? | Enabled by default |
+| --- | --- | --- | --- |
+| Default Mode | read, search, context, drafts, previews, scoped media, voice transcription | No direct writes | Yes |
+| Power Mode | send/reply, contacts, groups/channels, stories, profile, privacy state | Yes | No |
+| Operator Workflows | mirror/archive, subscriber export, control-plane repair and audits | Can read in bulk or create sensitive artifacts | No |
+
+Power Mode is not a hidden feature. It is the explicit mode for users who want
+the broader Telegram MCP surface and accept that agents can perform externally
+visible actions.
+
+## Safety Model
 
 The runtime boundary is enforced in two layers:
 
@@ -38,17 +72,14 @@ The runtime boundary is enforced in two layers:
 - HTTP/SSE daemon transports require `TELEGRAM_MCP_AUTH_TOKEN`; stdio remains
   local process-only.
 
-The project has three operating modes:
-
-| Mode | Use it for | Can change Telegram? | Default |
-| --- | --- | --- | --- |
-| Default Mode | read, search, context, drafts, previews, scoped media, voice transcription | No direct writes | Yes |
-| Power Mode | full MCP surface: send/reply, contacts, groups/channels, stories, profile, privacy state | Yes | No |
-| Operator Workflows | mirror/archive, subscriber export, control-plane repair and audits | Can read in bulk or create sensitive artifacts | No |
-
-Power Mode is not a weaker or hidden product. It is the explicit mode for users
-who want the whole Telegram MCP surface and accept that agents can perform
-externally visible actions.
+```mermaid
+flowchart LR
+  Agent["AI agent"] --> Plugin["Codex plugin<br/>restricted allowlist"]
+  Plugin --> MCP["Local Telegram MCP<br/>default profile"]
+  MCP --> Telethon["Telethon session<br/>on this machine"]
+  Control["Control-plane audits"] -.-> Plugin
+  Control -.-> MCP
+```
 
 ## Quick Start
 
@@ -115,6 +146,24 @@ Dependency strategy for `mcp/`: commit and review `uv.lock` changes for
 reproducible installs. Do not run broad upgrades as part of routine docs or
 metadata edits.
 
+## Useful Checks
+
+Run these before publishing a local change or trusting a materialized plugin
+cache:
+
+```bash
+cd mcp
+./bin/contract-smoke --json
+./bin/contract-smoke --check-cache-stats --json
+./bin/check-plugin-drift --json
+```
+
+```bash
+cd control-plane
+.venv/bin/python -m pytest -q
+TELEGRAM_CONTROL_PLANE_ROOT="$PWD" .venv/bin/python -m telegram_control_plane doctor --json --no-write
+```
+
 ## Configuration
 
 The MCP server and plugin bundle are the portable default path. The
@@ -160,3 +209,8 @@ See [docs/threat-model.md](docs/threat-model.md) and
 [docs/source-routing.md](docs/source-routing.md) for the operating model. See
 [docs/operator-workflows.md](docs/operator-workflows.md) before using Power Mode,
 mirror/archive, or subscriber-export workflows.
+
+## Project Status
+
+This is an alpha package around a working local stack. Expect the default
+surface and operator tooling to keep tightening as the plugin matures.
