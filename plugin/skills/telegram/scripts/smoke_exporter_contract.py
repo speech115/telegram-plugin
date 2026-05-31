@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
 EXPORTER = ROOT / "export_channel_subscribers.py"
+sys.dont_write_bytecode = True
 
 
 def load_exporter():
@@ -60,6 +62,62 @@ def main() -> None:
 
     assert "access_hash" not in exporter.user_record(FakeUser())
     assert exporter.user_record(FakeUser(), include_access_hash=True)["access_hash"] == 999
+    assert exporter.effective_counter_gap(accept_counter_gap=5, require_exact=False) == 5
+    assert exporter.effective_counter_gap(accept_counter_gap=5, require_exact=True) == 0
+    assert exporter.counter_gap_satisfied(visible_count=1188, exported_count=1184, accept_counter_gap=5)
+    assert not exporter.counter_gap_satisfied(visible_count=1188, exported_count=1178, accept_counter_gap=5)
+    assert not exporter.counter_gap_satisfied(visible_count=None, exported_count=1178, accept_counter_gap=5)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        blocked = repo / "exports"
+        (repo / ".git").mkdir(parents=True)
+        try:
+            exporter.validate_pii_output_dir(blocked)
+        except SystemExit as exc:
+            assert "PII" in str(exc)
+        else:
+            raise AssertionError("git output dirs must require explicit durable PII approval")
+
+        exporter.validate_pii_output_dir(blocked, allow_durable_pii=True)
+
+        cloud = Path(tmp) / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "exports"
+        try:
+            exporter.validate_pii_output_dir(cloud)
+        except SystemExit as exc:
+            assert "PII" in str(exc)
+        else:
+            raise AssertionError("cloud output dirs must require explicit durable PII approval")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        seed = Path(tmp) / "seed.session"
+        seed.write_text("stub", encoding="utf-8")
+        env_file = Path(tmp) / ".env"
+        env_file.write_text("TELEGRAM_API_ID=1\nTELEGRAM_API_HASH=hash\n", encoding="utf-8")
+        argv = [
+            "export_channel_subscribers.py",
+            "@example",
+            "--env-file",
+            str(env_file),
+            "--seed-session",
+            str(seed),
+            "--fast-mcp-only",
+        ]
+        with patch.dict(os.environ, {}, clear=True), patch("sys.argv", argv):
+            try:
+                exporter.parse_args()
+            except SystemExit as exc:
+                assert "test-only" in str(exc)
+            else:
+                raise AssertionError("--fast-mcp-only must be unavailable outside test mode")
+
+        with patch.dict(os.environ, {"TELEGRAM_EXPORTER_TEST_MODE": "1"}, clear=True), patch("sys.argv", argv):
+            try:
+                exporter.parse_args()
+            except SystemExit as exc:
+                assert "PII" in str(exc)
+            else:
+                raise AssertionError("--fast-mcp-only must not bypass PII acknowledgement")
 
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp) / "out"

@@ -35,6 +35,15 @@ DEFAULT_RUNTIME_DIR = Path(
     )
 )
 DEFAULT_OUT_DIR = DEFAULT_RUNTIME_DIR / "artifacts"
+CLOUD_PATH_MARKERS = (
+    "clouddocs",
+    "dropbox",
+    "google drive",
+    "googledrive",
+    "icloud drive",
+    "mobile documents",
+    "onedrive",
+)
 
 
 def load_env(path: Path) -> None:
@@ -58,6 +67,23 @@ def load_api_config(env_file: Path) -> tuple[int, str]:
     if not api_id_raw or not api_hash:
         raise SystemExit("TELEGRAM_API_ID and TELEGRAM_API_HASH are required")
     return int(api_id_raw), api_hash
+
+
+def validate_pii_output_dir(path: Path, *, allow_durable_pii: bool = False) -> None:
+    resolved = path.expanduser().resolve()
+    if allow_durable_pii:
+        return
+    if any((parent / ".git").exists() for parent in (resolved, *resolved.parents)):
+        raise SystemExit(
+            "Refusing to write subscriber PII into a git working tree. "
+            "Use the default private temp output or pass --allow-durable-pii-output."
+        )
+    resolved_text = str(resolved).lower()
+    if any(marker in resolved_text for marker in CLOUD_PATH_MARKERS):
+        raise SystemExit(
+            "Refusing to write subscriber PII into a synced/cloud directory. "
+            "Use the default private temp output or pass --allow-durable-pii-output."
+        )
 
 
 def md_escape(value: Any) -> str:
@@ -93,6 +119,23 @@ def search_queries(*, profile: str) -> list[str]:
         queries += list("àáâãäåæçèéêëìíîïñòóôõöøùúûüýÿğışİŞĞÇÖÜ")
         queries += list("աբգդեզէըթժիլխծկհձղճմյնշոչպջռսվտրցւփքօֆ")
     return list(dict.fromkeys(queries))
+
+
+def effective_counter_gap(*, accept_counter_gap: int, require_exact: bool) -> int:
+    if require_exact:
+        return 0
+    return max(accept_counter_gap, 0)
+
+
+def counter_gap_satisfied(
+    *,
+    visible_count: int | None,
+    exported_count: int,
+    accept_counter_gap: int,
+) -> bool:
+    if visible_count is None:
+        return False
+    return max(visible_count - exported_count, 0) <= accept_counter_gap
 
 
 def slug_for_chat(chat: str) -> str:
@@ -291,6 +334,7 @@ async def request_participants(client: TelegramClient, entity: Any, filter_obj: 
 
 async def export(args: argparse.Namespace) -> dict[str, Any]:
     api_id, api_hash = load_api_config(args.env_file)
+    validate_pii_output_dir(args.out_dir, allow_durable_pii=args.allow_durable_pii_output)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.runtime_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(args.runtime_dir, 0o700)
@@ -317,6 +361,10 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
         "profile": args.profile,
         "max_depth": args.max_depth,
         "accept_counter_gap": args.accept_counter_gap,
+        "effective_counter_gap": effective_counter_gap(
+            accept_counter_gap=args.accept_counter_gap,
+            require_exact=args.require_exact,
+        ),
         "queries_run": 0,
         "capped_queries": [],
         "extra_filters": {},
@@ -352,6 +400,13 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
                 return
             query, depth = search_queue.popleft()
             while True:
+                if not collect_capped and counter_gap_satisfied(
+                    visible_count=visible_count,
+                    exported_count=len(records),
+                    accept_counter_gap=diagnostics["effective_counter_gap"],
+                ):
+                    search_queue.clear()
+                    break
                 if query not in completed_queries:
                     query_index += 1
                     diagnostics["queries_run"] = query_index
@@ -391,7 +446,7 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
         should_split = (
             capped_queries
             and args.max_depth > 0
-            and (missing is None or missing > args.accept_counter_gap)
+            and (missing is None or missing > diagnostics["effective_counter_gap"])
         )
         if should_split:
             split_queue: deque[tuple[str, int]] = deque()
@@ -405,7 +460,7 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
         elif args.progress and capped_queries:
             print(
                 f"[telegram-subscribers] skip capped split: missing={missing} "
-                f"acceptable_gap={args.accept_counter_gap} unique={len(records)} visible={visible_count}",
+                f"acceptable_gap={diagnostics['effective_counter_gap']} unique={len(records)} visible={visible_count}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -459,13 +514,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true", help="Resume from the channel checkpoint in out-dir.")
     parser.add_argument("--slice-limit", type=int, default=200, help="Telegram participant page limit; 200 is the useful maximum.")
     parser.add_argument("--max-depth", type=int, default=1, help="Split capped search slices this many characters deep.")
-    parser.add_argument("--accept-counter-gap", type=int, default=1, help="Skip slow capped-slice splitting when only this many visible-counter users are missing.")
+    parser.add_argument("--accept-counter-gap", type=int, default=5, help="Skip or stop slow capped-slice splitting when only this many visible-counter users are missing. Use 0 with --require-exact for strict audits.")
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save progress after this many search requests.")
     parser.add_argument("--require-exact", action="store_true", help="Exit non-zero if exported_count is lower than Telegram's visible counter.")
     parser.add_argument(
         "--acknowledge-pii-export",
         action="store_true",
         help="Required for real exports: confirms you understand subscriber data is PII.",
+    )
+    parser.add_argument(
+        "--allow-durable-pii-output",
+        action="store_true",
+        help="Allow writing subscriber PII to git/synced/durable output directories.",
     )
     parser.add_argument("--debug-direct-only", action="store_true", help="Debug only: export the direct first API page, usually incomplete.")
     parser.add_argument("--include-access-hash", action="store_true", help="Debug only: include Telethon access_hash values in JSON output.")
@@ -474,8 +534,10 @@ def parse_args() -> argparse.Namespace:
     args.env_file = args.env_file or args.telegram_mirror_repo / ".env"
     args.seed_session = args.seed_session or args.telegram_mirror_repo / "data" / "telegram_mirror.session"
     if getattr(args, "fast_mcp_only", False):
+        if os.environ.get("TELEGRAM_EXPORTER_TEST_MODE") != "1":
+            raise SystemExit("--fast-mcp-only is test-only; set TELEGRAM_EXPORTER_TEST_MODE=1")
         args.debug_direct_only = True
-    if not args.acknowledge_pii_export and not args.fast_mcp_only:
+    if not args.acknowledge_pii_export:
         raise SystemExit(
             "Explicit PII acknowledgement is required: pass --acknowledge-pii-export"
         )

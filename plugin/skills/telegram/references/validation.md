@@ -1,17 +1,28 @@
 # Validation
 
-Use runtime smoke gates before ordinary live use, and full gates before calling
-the repaired plugin source safe for install, materialization, or cache refresh.
+Do not use this file before ordinary live reads. Ordinary current-state reads
+should call the exposed Telegram facade directly and report a live-tool gap only
+after the needed read path fails.
+
+Use these gates for install, materialization, cache refresh, release packaging,
+source repair, or after a real live-tool failure.
 
 ## Runtime Smoke Gates
 
-For ordinary Telegram use, verify only the live surface needed for the task:
+For post-failure/default-read surface checks, verify only the live surface
+needed for the task:
 
 ```bash
+<telegram-control-plane>/bin/telegram-fast-read-today me --limit 1
 mcporter list telegram --json
 ```
 
-Expected live facade names, when the host exposes the Telegram MCP facade:
+Use `telegram-fast-read-today` as the host-local simple-read smoke. It is not a
+replacement for `mcporter list` or contract smoke when validating the full
+facade surface.
+
+Expected default-read facade names, when the host exposes the Telegram MCP
+facade:
 
 - `resolve_dialog`
 - `read_today_dialog`
@@ -20,9 +31,11 @@ Expected live facade names, when the host exposes the Telegram MCP facade:
 - `search_dialog_messages`
 - `download_media`
 - `download_media_batch`
-- `send_dialog_message`
-- `reply_in_dialog`
 - `transcribe_voice`
+- `telegram_read`
+- `telegram_search`
+- `telegram_prepare_reply`
+- `telegram_inspect_media`
 
 Optional helpers:
 
@@ -31,6 +44,13 @@ Optional helpers:
 - `prepare_media_inspection_manifest`
 - `download_dialog_media`
 
+Power/write names are expected only when an explicit local Power/Write Mode is
+enabled:
+
+- `send_dialog_message`
+- `reply_in_dialog`
+- `telegram_confirmed_send`
+
 If a live/current task needs a missing facade, report the live-tool gap and do
 not substitute mirror/archive evidence. If only app-style aliases are exposed,
 route through the aliases described in `facade-routing.md`.
@@ -38,7 +58,7 @@ route through the aliases described in `facade-routing.md`.
 ## Skill And Source Gates
 
 ```bash
-python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" plugin/skills/telegram
+python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" skills/telegram
 python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" "$HOME/Projects/.codex/skills/telegram-local-mirror"
 <telegram-mcp-repo>/bin/check-plugin-drift --json
 ```
@@ -47,7 +67,7 @@ Required final direction:
 
 - live/source/cache relationships are explained;
 - `$HOME/.agents/skills/telegram` is the live behavioral source of truth;
-- `<repo>/plugin/skills/telegram` is the install/materialization source only when it matches the live tree;
+- the packaged `skills/telegram` tree is the install/materialization source only when it matches the live tree;
 - plugin source contains the live hard-stop safety rules;
 - `installer_flow.safe_to_apply=true` before any apply/materialization step;
 - the current-version plugin cache exists only after a deliberate source-first materialization.
@@ -59,14 +79,14 @@ Required final direction:
 Verify every `SKILL.md` reference exists:
 
 ```bash
-test -f plugin/skills/telegram/scripts/export_channel_subscribers.py
-test -f plugin/skills/telegram/references/facade-routing.md
-test -f plugin/skills/telegram/references/media-and-voice.md
-test -f plugin/skills/telegram/references/source-evidence-broker.md
-test -f plugin/skills/telegram/references/subscriber-export.md
-test -f plugin/skills/telegram/references/validation.md
-test -f plugin/skills/telegram/scripts/smoke_exporter_contract.py
-test -f plugin/skills/telegram/scripts/run_export_channel_subscribers.py
+test -f skills/telegram/scripts/export_channel_subscribers.py
+test -f skills/telegram/references/facade-routing.md
+test -f skills/telegram/references/media-and-voice.md
+test -f skills/telegram/references/source-evidence-broker.md
+test -f skills/telegram/references/subscriber-export.md
+test -f skills/telegram/references/validation.md
+test -f skills/telegram/scripts/smoke_exporter_contract.py
+test -f skills/telegram/scripts/run_export_channel_subscribers.py
 ```
 
 Do not bundle `.env`, `.session`, downloaded media, caches, `__pycache__`,
@@ -75,7 +95,7 @@ Do not bundle `.env`, `.session`, downloaded media, caches, `__pycache__`,
 Verify standalone/plugin parity:
 
 ```bash
-diff -ru "$HOME/.agents/skills/telegram" plugin/skills/telegram
+diff -ru "$HOME/.agents/skills/telegram" skills/telegram
 ```
 
 ## Tool And Contract Gates
@@ -89,8 +109,9 @@ cd <telegram-mcp-repo>
 ./bin/contract-smoke --json
 ./bin/contract-smoke --profile app-media --json
 ./bin/contract-smoke --check-cache-stats --json
-python3 -B plugin/skills/telegram/scripts/smoke_exporter_contract.py
-python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py --help
+<telegram-control-plane>/bin/telegram-fast-read-today me --limit 1
+python3 -B skills/telegram/scripts/smoke_exporter_contract.py
+python3 skills/telegram/scripts/run_export_channel_subscribers.py --help
 ```
 
 If a helper is not exposed, keep the skill wording conditional or route through the canonical exposed tool.

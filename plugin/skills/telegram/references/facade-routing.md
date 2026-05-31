@@ -3,20 +3,32 @@
 ## Fast Defaults
 
 - Live/current tasks require live MCP facade tools or aliases. If they are not
-  exposed, report that live Telegram is unavailable for the task; do not replace
-  a current-state answer with mirror or archive evidence.
+  exposed in the current chat tool surface, first try a host-configured local
+  read-only shortcut when available. This portable plugin package intentionally
+  does not hardcode machine-local adapter paths.
+  Only report live Telegram unavailable after both the exposed facade path and
+  the bounded local MCP shortcut fail. Do not replace a current-state answer
+  with mirror or archive evidence.
+- On the local Sereja host, the supported simple-read shortcut is
+  `telegram-fast-read-today`. Use it before `mcporter` only for simple read-only
+  today reads; fall back to the live facade for writes, media inspection,
+  subscriber export, fuzzy identity work, or complete-context paging.
 - Scoped one-on-one reads like "прочитай переписку с @user за сегодня с HH:MM"
-  should complete in one fast pass: resolve the dialog once, read the requested
-  local calendar day with `include_voice_transcription=false`, and if the start
-  time is near local midnight also read the previous UTC calendar day before
-  summarizing. Do not inspect media, page, or run repo/vault checks unless the
-  text evidence says those artifacts are necessary.
+  should complete in one fast pass: read the requested local calendar day with
+  `include_voice_transcription=false`, `include_sender_name=false`, and a
+  bounded timeout. If the read payload returns a canonical `dialog_ref`, reuse it
+  for any follow-up call. If the start time is near local midnight, also read
+  the previous UTC calendar day before summarizing. Do not inspect media, page,
+  run repo/vault checks, or use `mcporter` unless the text evidence or a real
+  MCP failure requires it.
 - Quick orientation: `collect_dialog_context(mode="fast", recent_limit=15-30, include_pinned=false)`.
 - Date-specific today reads: use `read_today_dialog` instead of manually computing today's range.
 - One-on-one fast reads: pass `include_sender_name=false` unless speaker identity is unclear.
 - Groups: keep sender names when attribution matters.
 - Reuse the canonical `dialog_ref` returned by the first facade call for follow-up calls.
 - Use `mode="full"` only when sender names, voice transcripts, pinned messages, or richer evidence are needed.
+- Do not call `tool_search`, read plugin README files, inspect launchd configs,
+  or run broad Telegram status commands before a simple low-stakes today read.
 - If the default endpoint has a transient timeout but an alternate configured
   live MCP profile succeeds on `get_me`, use the healthy profile immediately;
   do not spend multiple rounds proving the unhealthy profile is broken.
