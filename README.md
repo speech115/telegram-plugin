@@ -63,8 +63,10 @@ codex plugin marketplace remove sereja-local && codex plugin marketplace add /Us
 - `PLAN.md` records the current control-plane rollout strategy.
 - `PROTECTION.md` defines the cleanup and deletion safety contract.
 
-`telegram-doctor --json` writes `generated/observed-registry.json` and exits
-non-zero while blocking defects are present.
+`telegram-doctor --json` writes the runtime-only
+`generated/observed-registry.json` snapshot and exits non-zero while blocking
+defects are present. The snapshot is intentionally ignored by git because it
+contains live PIDs, timestamps, and host inventory state.
 
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
@@ -89,10 +91,10 @@ and falls back conceptually to the normal live MCP facade when unavailable. It
 is read-only and must not be used for send/reply, media inspection, subscriber
 export, or any workflow that needs the full facade.
 
-`generated/observed-registry.json` is an allowlist-only persisted snapshot. It
-must not contain Telegram user IDs, Telegram handles, phone numbers, exact
-session paths, Telegram Desktop `tdata` paths, archive database paths, archive
-manifest paths, subscriber exports, media payloads, or raw private errors.
+`generated/observed-registry.json` is an allowlist-only runtime snapshot. It must
+not contain Telegram user IDs, Telegram handles, phone numbers, exact session
+paths, Telegram Desktop `tdata` paths, archive database paths, archive manifest
+paths, subscriber exports, media payloads, or raw private errors.
 
 ## Current Status
 
