@@ -18,6 +18,7 @@ from .paths import (
     MCP_REPO,
     MIRROR_LEGACY_ALIAS,
     MIRROR_ROOT,
+    MIRROR_RUNTIME_ROOT,
     POLICY_DIR,
     PLUGIN_CACHE,
     PLUGIN_CACHE_ROOT,
@@ -805,9 +806,10 @@ def audit_mirror() -> dict[str, Any]:
         "RECOVERY.md": MIRROR_ROOT / "RECOVERY.md",
         "PROVENANCE.md": MIRROR_ROOT / "PROVENANCE.md",
     }
-    sessions = sorted(str(path) for path in MIRROR_ROOT.glob("data/*.session*"))
-    ledgers = sorted(str(path) for path in (MIRROR_ROOT / "data/telegram_sync").glob("*.json"))
-    runtime_exports = MIRROR_ROOT / "runtime/ingest/telegram/exports"
+    recovery_sessions = sorted(str(path) for path in MIRROR_ROOT.glob("data/*.session*"))
+    runtime_sessions = sorted(str(path) for path in MIRROR_RUNTIME_ROOT.glob("data/*.session*"))
+    ledgers = sorted(str(path) for path in (MIRROR_RUNTIME_ROOT / "data/telegram_sync").glob("*.json"))
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
     legacy_alias_exists = MIRROR_LEGACY_ALIAS.exists()
     findings: list[dict[str, Any]] = []
     if not (MIRROR_ROOT / ".git").exists():
@@ -818,13 +820,21 @@ def audit_mirror() -> dict[str, Any]:
                 "message": "telegram-mirror is not a clean git source repo.",
             }
         )
-    if sessions:
+    if recovery_sessions:
         findings.append(
             {
                 "id": "mirror_runtime_sessions_in_tree",
                 "severity": "warn" if recovery_mode else "blocking",
                 "message": "Session files exist inside telegram-mirror recovery tree.",
-                "count": len(sessions),
+                "count": len(recovery_sessions),
+            }
+        )
+    if not MIRROR_RUNTIME_ROOT.exists():
+        findings.append(
+            {
+                "id": "mirror_runtime_root_missing",
+                "severity": "warn" if recovery_mode else "blocking",
+                "message": "External telegram-mirror runtime root is missing.",
             }
         )
     if not runtime_exports.exists():
@@ -841,6 +851,7 @@ def audit_mirror() -> dict[str, Any]:
         "findings": findings,
         "policy": mirror_policy,
         "root": str(MIRROR_ROOT),
+        "runtime_root": str(MIRROR_RUNTIME_ROOT),
         "legacy_alias": {
             "path": str(MIRROR_LEGACY_ALIAS),
             "exists": legacy_alias_exists,
@@ -848,8 +859,10 @@ def audit_mirror() -> dict[str, Any]:
         },
         "recovery_docs": {name: {"path": str(path), "exists": path.exists()} for name, path in recovery_docs.items()},
         "runtime_state": {
-            "sessions": sessions,
+            "recovery_sessions": recovery_sessions,
+            "sessions": runtime_sessions,
             "ledgers": ledgers,
+            "runtime_root_exists": MIRROR_RUNTIME_ROOT.exists(),
             "runtime_exports_exists": runtime_exports.exists(),
         },
     }
@@ -1193,12 +1206,17 @@ def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str,
     if name == "telegram_mirror":
         runtime_state = report.get("runtime_state") if isinstance(report.get("runtime_state"), dict) else {}
         sessions = runtime_state.get("sessions") if isinstance(runtime_state.get("sessions"), list) else []
+        recovery_sessions = (
+            runtime_state.get("recovery_sessions") if isinstance(runtime_state.get("recovery_sessions"), list) else []
+        )
         ledgers = runtime_state.get("ledgers") if isinstance(runtime_state.get("ledgers"), list) else []
         return {
             **report,
             "runtime_state_summary": {
                 "session_count": len(sessions),
+                "recovery_session_count": len(recovery_sessions),
                 "ledger_count": len(ledgers),
+                "runtime_root_exists": bool(runtime_state.get("runtime_root_exists")),
                 "runtime_exports_exists": bool(runtime_state.get("runtime_exports_exists")),
             },
         }

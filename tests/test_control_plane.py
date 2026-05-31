@@ -117,6 +117,37 @@ def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) 
     assert any(item["id"] == "telecrawl_inactive_accounts" for item in report["findings"])
 
 
+def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -> None:
+    checkout = tmp_path / "telegram-mirror"
+    runtime = tmp_path / "runtime" / "telegram-mirror"
+    (checkout / ".git").mkdir(parents=True)
+    (checkout / "data").mkdir()
+    for name in ["AGENTS.md", "RECOVERY.md", "PROVENANCE.md"]:
+        (checkout / name).write_text("", encoding="utf-8")
+    (runtime / "data" / "telegram_sync").mkdir(parents=True)
+    (runtime / "runtime" / "ingest" / "telegram" / "exports").mkdir(parents=True)
+    (runtime / "data" / "telegram_mirror_watch_prime.session").write_text("", encoding="utf-8")
+    (runtime / "data" / "telegram_sync" / "watch_progress_prime.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(audits, "MIRROR_ROOT", checkout)
+    monkeypatch.setattr(audits, "MIRROR_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(audits, "MIRROR_LEGACY_ALIAS", tmp_path / "missing-alias")
+    monkeypatch.setattr(audits, "load_json", lambda path: {"classification": "mirror-recovery"})
+
+    report = audits.audit_mirror()
+
+    finding_ids = {item["id"] for item in report["findings"]}
+    assert "mirror_runtime_exports_missing" not in finding_ids
+    assert "mirror_runtime_sessions_in_tree" not in finding_ids
+    assert report["runtime_root"] == str(runtime)
+    assert report["runtime_state"]["runtime_root_exists"] is True
+    assert report["runtime_state"]["runtime_exports_exists"] is True
+    assert report["runtime_state"]["sessions"] == [str(runtime / "data" / "telegram_mirror_watch_prime.session")]
+    assert report["runtime_state"]["ledgers"] == [
+        str(runtime / "data" / "telegram_sync" / "watch_progress_prime.json")
+    ]
+
+
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
     original_load_json = audits.load_json
 
