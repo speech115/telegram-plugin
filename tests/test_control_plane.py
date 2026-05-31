@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import telegram_control_plane.audits as audits
@@ -65,6 +66,55 @@ def test_registry_includes_fast_read_adapter_component() -> None:
 
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
     assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+
+
+def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) -> None:
+    db = tmp_path / "telecrawl-fast.db"
+    manifest = tmp_path / "telecrawl-fast.db.manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "source_kind": "archive_snapshot",
+                "manifest_status": "complete",
+                "coverage_claim": "full_verified_archive_snapshot",
+                "import": {"last_complete_import_at": "2026-05-18T16:54:53Z"},
+                "counts": {"chats": 2, "messages": 3, "newest_message": "2026-05-18T16:18:16Z"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE import_errors (
+                chat_jid text,
+                error_type text
+            );
+            INSERT INTO import_errors VALUES ('1', 'TimeoutError'), ('1', 'TimeoutError'), ('2', 'TypeNotFoundError');
+            """
+        )
+
+    def fake_telecrawl_json(args: list[str], *, timeout: int = 90):
+        assert args == ["accounts"]
+        return {
+            "ok": True,
+            "accounts": [
+                {"active": 1, "db_exists": True},
+                {"active": 0, "db_exists": False},
+            ],
+        }
+
+    monkeypatch.setattr(audits, "TELECRAWL_DEFAULT_DB", db)
+    monkeypatch.setattr(audits, "_safe_read_telecrawl_json", fake_telecrawl_json)
+
+    report = audits.audit_telecrawl()
+
+    assert report["default_archive_status"]["read_strategy"] == "manifest_plus_import_errors"
+    assert report["default_archive_status"]["source_kind"] == "archive_snapshot"
+    assert report["freshness"]["last_complete_import_at"] == "2026-05-18T16:54:53Z"
+    assert report["freshness"]["newest_message_at"] == "2026-05-18T16:18:16Z"
+    assert any(item["id"] == "telecrawl_known_gaps" for item in report["findings"])
+    assert any(item["id"] == "telecrawl_inactive_accounts" for item in report["findings"])
 
 
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:

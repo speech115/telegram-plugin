@@ -13,6 +13,7 @@ LIVE_SKILL = Path("/Users/sereja/.agents/skills/telegram")
 MIRROR_ROOT = Path("/Users/sereja/Projects/tools/telegram-mirror")
 MIRROR_LEGACY_ALIAS = Path("/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror")
 TELECRAWL_ARCHIVE = Path("/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-archive")
+TELECRAWL_DEFAULT_DB = Path("/Users/sereja/Projects/.artifacts/telecrawl/telecrawl-fast.db")
 FAST_READ_ADAPTER = CONTROL_ROOT / "bin/telegram-fast-read-today"
 LAUNCHAGENTS_DIR = HOME / "Library/LaunchAgents"
 GENERATED_DIR = CONTROL_ROOT / "generated"

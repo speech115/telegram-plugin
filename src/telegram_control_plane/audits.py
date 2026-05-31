@@ -5,6 +5,7 @@ import copy
 import json
 import plistlib
 import re
+import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from .paths import (
     PLUGIN_CACHE_ROOT,
     PLUGIN_SOURCE,
     TELECRAWL_ARCHIVE,
+    TELECRAWL_DEFAULT_DB,
 )
 from .util import load_json, run_json, status_from_findings
 
@@ -974,10 +976,79 @@ def _safe_read_telecrawl_json(args: list[str], *, timeout: int = 90) -> dict[str
     return run_json([str(TELECRAWL_ARCHIVE), *args], timeout=timeout)
 
 
+def _telecrawl_manifest_path(db_path: Path | None = None) -> Path:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    return db_path.with_name(f"{db_path.name}.manifest.json")
+
+
+def _telecrawl_import_gaps(db_path: Path | None = None) -> dict[str, Any]:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    if not db_path.exists():
+        return {"has_known_gaps": False, "errors": 0, "error_chats": 0, "error_summary": []}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+            if "import_errors" not in tables:
+                return {"has_known_gaps": False, "errors": 0, "error_chats": 0, "error_summary": []}
+            summary = [
+                {"error_type": row[0], "chats": int(row[1] or 0), "attempts": int(row[2] or 0)}
+                for row in conn.execute(
+                    "SELECT error_type, COUNT(DISTINCT chat_jid) AS chats, COUNT(*) AS attempts "
+                    "FROM import_errors GROUP BY error_type ORDER BY attempts DESC"
+                ).fetchall()
+            ]
+            row = conn.execute(
+                "SELECT COUNT(*) AS errors, COUNT(DISTINCT chat_jid) AS error_chats FROM import_errors"
+            ).fetchone()
+    except sqlite3.Error as exc:
+        return {
+            "has_known_gaps": True,
+            "errors": None,
+            "error_chats": None,
+            "error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
+            "read_error": str(exc),
+        }
+    return {
+        "has_known_gaps": bool(row and row[0]),
+        "errors": int(row[0] or 0) if row else 0,
+        "error_chats": int(row[1] or 0) if row else 0,
+        "error_summary": summary,
+    }
+
+
+def _telecrawl_default_archive_status(db_path: Path | None = None) -> dict[str, Any]:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    manifest = load_json(_telecrawl_manifest_path(db_path)) or {}
+    import_state = manifest.get("import") if isinstance(manifest.get("import"), dict) else {}
+    counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
+    gaps = _telecrawl_import_gaps(db_path)
+    return {
+        "ok": True,
+        "source": "telecrawl",
+        "source_kind": manifest.get("source_kind", "archive_snapshot"),
+        "read_strategy": "manifest_plus_import_errors",
+        "coverage_claim": manifest.get("coverage_claim", "unknown_archive_snapshot"),
+        "manifest_status": manifest.get("manifest_status"),
+        "import_gaps": gaps,
+        "last_complete_import_at": import_state.get("last_complete_import_at"),
+        "status": {
+            "chats": counts.get("chats"),
+            "messages": counts.get("messages"),
+            "media_messages": counts.get("media_messages"),
+            "oldest_message": counts.get("oldest_message"),
+            "newest_message": counts.get("newest_message"),
+        },
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+
+
 def audit_telecrawl() -> dict[str, Any]:
     telecrawl_policy = load_json(POLICY_DIR / "telecrawl.json") or {}
     accounts = _safe_read_telecrawl_json(["accounts"], timeout=30)
-    status = _safe_read_telecrawl_json(["status"], timeout=90)
+    status = _telecrawl_default_archive_status()
     findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
     inactive = [row for row in account_rows if not row.get("active")]
