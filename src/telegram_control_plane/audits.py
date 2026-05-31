@@ -810,6 +810,7 @@ def audit_mirror() -> dict[str, Any]:
     runtime_sessions = sorted(str(path) for path in MIRROR_RUNTIME_ROOT.glob("data/*.session*"))
     ledgers = sorted(str(path) for path in (MIRROR_RUNTIME_ROOT / "data/telegram_sync").glob("*.json"))
     runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
+    export_coverage = _mirror_export_coverage(runtime_exports)
     legacy_alias_exists = MIRROR_LEGACY_ALIAS.exists()
     findings: list[dict[str, Any]] = []
     if not (MIRROR_ROOT / ".git").exists():
@@ -843,6 +844,18 @@ def audit_mirror() -> dict[str, Any]:
                 "id": "mirror_runtime_exports_missing",
                 "severity": "warn" if recovery_mode else "blocking",
                 "message": "Canonical mirror runtime export root is missing.",
+                "expected_exports": export_coverage.get("expected_count"),
+            }
+        )
+    elif export_coverage.get("missing_count"):
+        findings.append(
+            {
+                "id": "mirror_runtime_exports_incomplete",
+                "severity": "warn" if recovery_mode else "blocking",
+                "message": "Canonical mirror runtime export root is missing expected channel exports.",
+                "expected_exports": export_coverage.get("expected_count"),
+                "ready_exports": export_coverage.get("ready_count"),
+                "missing_exports": export_coverage.get("missing_count"),
             }
         )
     return {
@@ -864,7 +877,33 @@ def audit_mirror() -> dict[str, Any]:
             "ledgers": ledgers,
             "runtime_root_exists": MIRROR_RUNTIME_ROOT.exists(),
             "runtime_exports_exists": runtime_exports.exists(),
+            "export_coverage": export_coverage,
         },
+    }
+
+
+def _mirror_export_coverage(export_root: Path) -> dict[str, Any]:
+    allowlist_report = run_json(
+        ["python3", str(MIRROR_ROOT / "scripts/telegram_mirror_allowlist_report.py"), "--json"],
+        timeout=30,
+    )
+    channels = allowlist_report.get("channels") if isinstance(allowlist_report.get("channels"), list) else []
+    expected = [
+        str(channel.get("export_folder") or "").strip()
+        for channel in channels
+        if isinstance(channel, dict) and channel.get("retained") and str(channel.get("export_folder") or "").strip()
+    ]
+    ready = [
+        folder
+        for folder in expected
+        if (export_root / folder / "messages_raw.jsonl").exists()
+    ]
+    return {
+        "source": "allowlist_report",
+        "export_root": str(export_root),
+        "expected_count": len(expected),
+        "ready_count": len(ready),
+        "missing_count": len(expected) - len(ready),
     }
 
 
@@ -1212,6 +1251,9 @@ def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str,
             runtime_state.get("recovery_sessions") if isinstance(runtime_state.get("recovery_sessions"), list) else []
         )
         ledgers = runtime_state.get("ledgers") if isinstance(runtime_state.get("ledgers"), list) else []
+        export_coverage = (
+            runtime_state.get("export_coverage") if isinstance(runtime_state.get("export_coverage"), dict) else {}
+        )
         return {
             **report,
             "runtime_state_summary": {
@@ -1220,6 +1262,9 @@ def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str,
                 "ledger_count": len(ledgers),
                 "runtime_root_exists": bool(runtime_state.get("runtime_root_exists")),
                 "runtime_exports_exists": bool(runtime_state.get("runtime_exports_exists")),
+                "export_expected_count": export_coverage.get("expected_count"),
+                "export_ready_count": export_coverage.get("ready_count"),
+                "export_missing_count": export_coverage.get("missing_count"),
             },
         }
     if name == "telecrawl":

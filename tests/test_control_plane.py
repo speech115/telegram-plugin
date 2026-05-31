@@ -129,11 +129,19 @@ def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -
     (runtime / "runtime" / "ingest" / "telegram" / "exports").mkdir(parents=True)
     (runtime / "data" / "telegram_mirror_watch_prime.session").write_text("", encoding="utf-8")
     (runtime / "data" / "telegram_sync" / "watch_progress_prime.json").write_text("{}", encoding="utf-8")
+    export_messages = runtime / "runtime" / "ingest" / "telegram" / "exports" / "prime" / "messages_raw.jsonl"
+    export_messages.parent.mkdir(parents=True)
+    export_messages.write_text("{}", encoding="utf-8")
 
     monkeypatch.setattr(audits, "MIRROR_ROOT", checkout)
     monkeypatch.setattr(audits, "MIRROR_RUNTIME_ROOT", runtime)
     monkeypatch.setattr(audits, "MIRROR_LEGACY_ALIAS", tmp_path / "missing-alias")
     monkeypatch.setattr(audits, "load_json", lambda path: {"classification": "mirror-recovery"})
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {"channels": [{"retained": True, "export_folder": "prime"}]},
+    )
 
     report = audits.audit_mirror()
 
@@ -147,6 +155,13 @@ def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -
     assert report["runtime_state"]["ledgers"] == [
         str(runtime / "data" / "telegram_sync" / "watch_progress_prime.json")
     ]
+    assert report["runtime_state"]["export_coverage"] == {
+        "source": "allowlist_report",
+        "export_root": str(runtime / "runtime" / "ingest" / "telegram" / "exports"),
+        "expected_count": 1,
+        "ready_count": 1,
+        "missing_count": 0,
+    }
 
 
 def test_mirror_preflight_externalizes_only_recovery_sessions(monkeypatch, tmp_path: Path) -> None:
