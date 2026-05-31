@@ -99,7 +99,7 @@ paths, subscriber exports, media payloads, or raw private errors.
 ## Current Status
 
 - `telegram-doctor --json` is expected to return `warn` with `0` blocking
-  findings and `5` warning findings while recovery/archive caveats remain.
+  findings while recovery/archive caveats remain.
 - `telegram-fast-read-today me --limit 1` is the local fast smoke for the
   supported simple-read shortcut.
 - `telegram-managed-systems --json` is the canonical inventory of Telegram
