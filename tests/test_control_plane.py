@@ -137,6 +137,32 @@ def test_telecrawl_audit_warns_for_active_missing_archive(monkeypatch, tmp_path:
     assert any(item["id"] == "telecrawl_active_archives_incomplete" for item in report["findings"])
 
 
+def test_telecrawl_access_denied_gaps_are_terminal_not_retryable(tmp_path: Path) -> None:
+    db = tmp_path / "telecrawl-fast.db"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE import_errors (
+                chat_jid text,
+                error_type text
+            );
+            INSERT INTO import_errors VALUES ('1', 'ChannelPrivateError'), ('1', 'ChannelPrivateError');
+            INSERT INTO import_errors VALUES ('2', 'TimeoutError');
+            """
+        )
+
+    gaps = audits._telecrawl_import_gaps(db, non_retryable_error_types={"ChannelPrivateError"})
+
+    assert gaps["errors"] == 3
+    assert gaps["retryable_errors"] == 1
+    assert gaps["terminal_errors"] == 2
+    assert gaps["has_retryable_gaps"] is True
+    assert gaps["has_terminal_gaps"] is True
+    assert gaps["retryable_error_summary"] == [{"error_type": "TimeoutError", "chats": 1, "attempts": 1}]
+    assert gaps["terminal_error_summary"] == [{"error_type": "ChannelPrivateError", "chats": 1, "attempts": 2}]
+    assert gaps["retry_policy"]["do_not_retry_terminal_gaps"] is True
+
+
 def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -> None:
     checkout = tmp_path / "telegram-mirror"
     runtime = tmp_path / "runtime" / "telegram-mirror"

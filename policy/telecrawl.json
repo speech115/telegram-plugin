@@ -3,6 +3,16 @@
   "is_live": false,
   "known_gaps_are_blocking_for_archive_search": false,
   "known_gaps_are_blocking_for_current_claims": true,
+  "non_retryable_error_types": [
+    "ChannelPrivateError",
+    "ChatAdminRequiredError",
+    "UserBannedInChannelError",
+    "UserNotParticipantError",
+    "ChannelInvalidError",
+    "InviteHashExpiredError",
+    "InviteHashInvalidError"
+  ],
+  "retry_terminal_access_errors": false,
   "negative_results_claim": "no matches in this archive coverage",
   "route_current_latest_today_send_reply_media_to": "live_mcp"
 }

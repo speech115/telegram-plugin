@@ -80,6 +80,18 @@ PRIVATE_PATH_SUBSTRINGS = (
     "/Users/sereja/Projects/.artifacts/telecrawl",
 )
 
+DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS = frozenset(
+    {
+        "ChannelPrivateError",
+        "ChatAdminRequiredError",
+        "UserBannedInChannelError",
+        "UserNotParticipantError",
+        "ChannelInvalidError",
+        "InviteHashExpiredError",
+        "InviteHashInvalidError",
+    }
+)
+
 
 def audit_plugin_drift() -> dict[str, Any]:
     command = [str(MCP_REPO / "bin/check-plugin-drift"), "--json"]
@@ -1035,10 +1047,34 @@ def _telecrawl_manifest_path(db_path: Path | None = None) -> Path:
     return db_path.with_name(f"{db_path.name}.manifest.json")
 
 
-def _telecrawl_import_gaps(db_path: Path | None = None) -> dict[str, Any]:
+def _telecrawl_non_retryable_error_types(policy: dict[str, Any] | None = None) -> set[str]:
+    configured = policy.get("non_retryable_error_types") if isinstance(policy, dict) else None
+    if not isinstance(configured, list):
+        return set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
+    return {item for item in configured if isinstance(item, str) and item}
+
+
+def _telecrawl_import_gaps(
+    db_path: Path | None = None,
+    *,
+    non_retryable_error_types: set[str] | None = None,
+) -> dict[str, Any]:
     db_path = db_path or TELECRAWL_DEFAULT_DB
+    non_retryable_error_types = non_retryable_error_types or set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
     if not db_path.exists():
-        return {"has_known_gaps": False, "errors": 0, "error_chats": 0, "error_summary": []}
+        return {
+            "has_known_gaps": False,
+            "has_retryable_gaps": False,
+            "has_terminal_gaps": False,
+            "errors": 0,
+            "retryable_errors": 0,
+            "terminal_errors": 0,
+            "error_chats": 0,
+            "error_summary": [],
+            "retryable_error_summary": [],
+            "terminal_error_summary": [],
+            "non_retryable_error_types": sorted(non_retryable_error_types),
+        }
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
             tables = {
@@ -1046,7 +1082,19 @@ def _telecrawl_import_gaps(db_path: Path | None = None) -> dict[str, Any]:
                 for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             }
             if "import_errors" not in tables:
-                return {"has_known_gaps": False, "errors": 0, "error_chats": 0, "error_summary": []}
+                return {
+                    "has_known_gaps": False,
+                    "has_retryable_gaps": False,
+                    "has_terminal_gaps": False,
+                    "errors": 0,
+                    "retryable_errors": 0,
+                    "terminal_errors": 0,
+                    "error_chats": 0,
+                    "error_summary": [],
+                    "retryable_error_summary": [],
+                    "terminal_error_summary": [],
+                    "non_retryable_error_types": sorted(non_retryable_error_types),
+                }
             summary = [
                 {"error_type": row[0], "chats": int(row[1] or 0), "attempts": int(row[2] or 0)}
                 for row in conn.execute(
@@ -1054,31 +1102,58 @@ def _telecrawl_import_gaps(db_path: Path | None = None) -> dict[str, Any]:
                     "FROM import_errors GROUP BY error_type ORDER BY attempts DESC"
                 ).fetchall()
             ]
+            retryable_summary = [row for row in summary if row["error_type"] not in non_retryable_error_types]
+            terminal_summary = [row for row in summary if row["error_type"] in non_retryable_error_types]
             row = conn.execute(
                 "SELECT COUNT(*) AS errors, COUNT(DISTINCT chat_jid) AS error_chats FROM import_errors"
             ).fetchone()
     except sqlite3.Error as exc:
         return {
             "has_known_gaps": True,
+            "has_retryable_gaps": True,
+            "has_terminal_gaps": False,
             "errors": None,
+            "retryable_errors": None,
+            "terminal_errors": None,
             "error_chats": None,
             "error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
+            "retryable_error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
+            "terminal_error_summary": [],
+            "non_retryable_error_types": sorted(non_retryable_error_types),
             "read_error": str(exc),
         }
+    total_errors = int(row[0] or 0) if row else 0
+    terminal_errors = sum(int(item["attempts"] or 0) for item in terminal_summary)
+    retryable_errors = total_errors - terminal_errors
     return {
-        "has_known_gaps": bool(row and row[0]),
-        "errors": int(row[0] or 0) if row else 0,
+        "has_known_gaps": bool(total_errors),
+        "has_retryable_gaps": retryable_errors > 0,
+        "has_terminal_gaps": terminal_errors > 0,
+        "errors": total_errors,
+        "retryable_errors": retryable_errors,
+        "terminal_errors": terminal_errors,
         "error_chats": int(row[1] or 0) if row else 0,
         "error_summary": summary,
+        "retryable_error_summary": retryable_summary,
+        "terminal_error_summary": terminal_summary,
+        "non_retryable_error_types": sorted(non_retryable_error_types),
+        "retry_policy": {
+            "retry_only_when_has_retryable_gaps": True,
+            "do_not_retry_terminal_gaps": True,
+        },
     }
 
 
-def _telecrawl_default_archive_status(db_path: Path | None = None) -> dict[str, Any]:
+def _telecrawl_default_archive_status(
+    db_path: Path | None = None,
+    *,
+    non_retryable_error_types: set[str] | None = None,
+) -> dict[str, Any]:
     db_path = db_path or TELECRAWL_DEFAULT_DB
     manifest = load_json(_telecrawl_manifest_path(db_path)) or {}
     import_state = manifest.get("import") if isinstance(manifest.get("import"), dict) else {}
     counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
-    gaps = _telecrawl_import_gaps(db_path)
+    gaps = _telecrawl_import_gaps(db_path, non_retryable_error_types=non_retryable_error_types)
     manifest_status = manifest.get("manifest_status")
     coverage_claim = manifest.get("coverage_claim", "unknown_archive_snapshot")
     if gaps.get("has_known_gaps"):
@@ -1107,8 +1182,9 @@ def _telecrawl_default_archive_status(db_path: Path | None = None) -> dict[str, 
 
 def audit_telecrawl() -> dict[str, Any]:
     telecrawl_policy = load_json(POLICY_DIR / "telecrawl.json") or {}
+    non_retryable_error_types = _telecrawl_non_retryable_error_types(telecrawl_policy)
     accounts = _safe_read_telecrawl_json(["accounts"], timeout=30)
-    status = _telecrawl_default_archive_status()
+    status = _telecrawl_default_archive_status(non_retryable_error_types=non_retryable_error_types)
     findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
     active_incomplete = [
@@ -1138,6 +1214,9 @@ def audit_telecrawl() -> dict[str, Any]:
                 "severity": severity,
                 "message": "Telecrawl default archive has known import gaps.",
                 "summary": import_gaps.get("error_summary"),
+                "retryable_summary": import_gaps.get("retryable_error_summary"),
+                "terminal_summary": import_gaps.get("terminal_error_summary"),
+                "retry_policy": import_gaps.get("retry_policy"),
             }
         )
     if status.get("source_kind") != "archive_snapshot":
