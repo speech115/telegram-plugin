@@ -62,6 +62,11 @@ def main() -> None:
 
     assert "access_hash" not in exporter.user_record(FakeUser())
     assert exporter.user_record(FakeUser(), include_access_hash=True)["access_hash"] == 999
+    assert exporter.effective_counter_gap(accept_counter_gap=5, require_exact=False) == 5
+    assert exporter.effective_counter_gap(accept_counter_gap=5, require_exact=True) == 0
+    assert exporter.counter_gap_satisfied(visible_count=1188, exported_count=1184, accept_counter_gap=5)
+    assert not exporter.counter_gap_satisfied(visible_count=1188, exported_count=1178, accept_counter_gap=5)
+    assert not exporter.counter_gap_satisfied(visible_count=None, exported_count=1178, accept_counter_gap=5)
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp) / "repo"

@@ -9,6 +9,7 @@ from telegram_control_plane.audits import (
     _imported_tool_names,
     audit_managed_systems,
     audit_mcp_surface,
+    audit_plugin_drift,
     build_registry,
 )
 import telegram_control_plane.planner as planner
@@ -48,6 +49,24 @@ def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
     assert not report["unexpected_write_or_destructive_tools"]
 
 
+def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
+    report = audits.audit_fast_read_adapter()
+
+    assert report["status"] == "ok"
+    assert report["adapter"]["exists"] is True
+    assert report["adapter"]["executable"] is True
+    assert report["adapter"]["command"][-1] == "--help"
+    assert report["routing"]["first_path_for"] == ["simple_today_read"]
+    assert report["routing"]["fallback"] == "live_mcp_facade"
+
+
+def test_registry_includes_fast_read_adapter_component() -> None:
+    registry = build_registry()
+
+    assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
+    assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+
+
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
     original_load_json = audits.load_json
 
@@ -84,6 +103,42 @@ def test_plugin_package_has_no_private_runtime_artifacts() -> None:
             findings.append(f"{relative}: hardcoded private path")
 
     assert findings == []
+
+
+def test_plugin_drift_uses_mcp_checker_tree_output(monkeypatch) -> None:
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "installer_ready_drift",
+            "live_skill": {"sha256": "skill-sha"},
+            "plugin_source_skill": {"sha256": "skill-sha"},
+            "plugin_cache_skill": {"sha256": "skill-sha"},
+            "plugin_source_skill_tree": {"sha256": "source-tree", "file_count": 9},
+            "plugin_cache_skill_tree": {"sha256": "cache-tree", "file_count": 9},
+            "plugin_source_package_tree": {"sha256": "source-package", "file_count": 18},
+            "plugin_cache_package_tree": {"sha256": "cache-package", "file_count": 18},
+            "tree_diff": {
+                "plugin_source_vs_cache_skill_tree": {
+                    "left_only": [],
+                    "right_only": [],
+                    "changed": ["references/facade-routing.md"],
+                }
+            },
+        },
+    )
+
+    report = audit_plugin_drift()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "plugin_drift" for item in report["findings"])
+    assert report["sha256"]["plugin_cache_skill"] == "skill-sha"
+    assert report["tree_sha256"]["plugin_source_skill_tree"] == "source-tree"
+    assert report["tree_sha256"]["plugin_cache_package"] == "cache-package"
+    assert report["tree_file_counts"]["plugin_source_package"] == 18
+    assert report["tree_diff"]["plugin_source_vs_cache_skill_tree"]["changed"] == [
+        "references/facade-routing.md"
+    ]
 
 
 def test_launchd_blocks_malformed_plist(monkeypatch, tmp_path: Path) -> None:

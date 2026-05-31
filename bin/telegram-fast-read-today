@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MCP_REPO="/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
+PYTHON="${MCP_REPO}/.venv/bin/python"
+
+if [ ! -x "${PYTHON}" ]; then
+  printf 'telegram-fast-read-today: missing MCP venv python: %s\n' "${PYTHON}" >&2
+  exit 2
+fi
+
+export PYTHONPATH="${MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec "${PYTHON}" - "$@" <<'PY'
+import argparse
+import asyncio
+import json
+import os
+import time
+from datetime import date, timedelta
+from pathlib import Path
+
+import httpx
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :]
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+        if key.startswith("TELEGRAM_") and key not in os.environ:
+            os.environ[key] = value
+
+
+def _endpoint(default_endpoint: str | None) -> str:
+    if default_endpoint:
+        return default_endpoint
+    host = os.environ.get("TELEGRAM_MCP_HOST", "127.0.0.1")
+    port = os.environ.get("TELEGRAM_MCP_PORT", "8799")
+    path = os.environ.get("TELEGRAM_MCP_HTTP_PATH", "/mcp")
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"http://{host}:{port}{path}"
+
+
+def _content_payload(result):
+    if not result.content:
+        return None
+    first = result.content[0]
+    text = getattr(first, "text", None)
+    if text is None:
+        return str(first)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+async def _read(args: argparse.Namespace) -> dict:
+    env_file = Path(args.env_file).expanduser()
+    _load_env_file(env_file)
+
+    token = os.environ.get("TELEGRAM_MCP_AUTH_TOKEN", "").strip()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    endpoint = _endpoint(args.endpoint)
+
+    timeout = httpx.Timeout(
+        args.timeout,
+        connect=min(args.timeout, 3.0),
+        read=args.timeout,
+        write=args.timeout,
+        pool=min(args.timeout, 3.0),
+    )
+
+    started = time.perf_counter()
+    async with httpx.AsyncClient(headers=headers, timeout=timeout) as http_client:
+        async with streamable_http_client(endpoint, http_client=http_client) as (
+            read_stream,
+            write_stream,
+            _,
+        ):
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                read_timeout_seconds=timedelta(seconds=args.timeout),
+            ) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "read_today_dialog",
+                    {
+                        "chat": args.chat,
+                        "day": args.day,
+                        "limit": args.limit,
+                        "offset_id": args.offset_id,
+                        "include_voice_transcription": args.voice,
+                        "include_sender_name": args.sender_names,
+                    },
+                )
+
+    payload = _content_payload(result)
+    return {
+        "ok": True,
+        "mode": "telegram_fast_read_today",
+        "endpoint": endpoint,
+        "elapsed_seconds": round(time.perf_counter() - started, 3),
+        "payload": payload,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="telegram-fast-read-today",
+        description="Fast read-only Telegram today dialog via the local MCP HTTP daemon."
+    )
+    parser.add_argument("chat", help="@username, dialog ref, or peer id")
+    parser.add_argument("--day", default=date.today().isoformat())
+    parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--offset-id", type=int, default=0)
+    parser.add_argument("--sender-names", action="store_true")
+    parser.add_argument("--voice", action="store_true")
+    parser.add_argument("--timeout", type=float, default=20.0)
+    parser.add_argument(
+        "--env-file",
+        default="~/.telegram-mcp/launchd.env",
+        help="Local Telegram MCP env file; secrets are loaded but never printed.",
+    )
+    parser.add_argument("--endpoint", default=None)
+    args = parser.parse_args()
+
+    try:
+        output = asyncio.run(_read(args))
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "mode": "telegram_fast_read_today",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1
+
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+    return 0
+
+
+raise SystemExit(main())
+PY

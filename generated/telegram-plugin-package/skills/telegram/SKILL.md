@@ -42,8 +42,16 @@ operator/debug-only and not a normal user workflow.
 
 Before a live task, confirm the current host exposes Telegram MCP facade tools
 or aliases. Prefer canonical facade names, but use app-style aliases when they
-are the only exposed option. If the needed live facade is unavailable, stop and
+are the only exposed option. For simple low-stakes local reads such as
+"прочитай переписку с @user за сегодня", if the chat tool surface does not expose
+the facade but the current host provides a local read-only fast-path adapter,
+use that configured adapter first. This portable plugin package intentionally
+does not hardcode machine-local adapter paths.
+
+If both the exposed facade path and the local shortcut are unavailable, stop and
 report the live-tool gap; do not route a current-state task to mirror/archive.
+Do not use `mcporter`, plugin README reads, launchd inspection, or broad status
+checks before the fast read unless the fast read fails.
 
 For install, materialization, cache refresh, or source repair, follow
 [validation.md](references/validation.md) rather than this lightweight runtime
@@ -132,7 +140,9 @@ telecrawl, and source-label details.
 ## Routing Matrix
 
 - Low-stakes "что нового", "последние", "глянь чат" -> `collect_dialog_context` with `mode="fast"`, `recent_limit=15-30`, `include_pinned=false`.
-- Low-stakes "за сегодня" -> `read_today_dialog` with `limit=30`, `include_voice_transcription=false` for the first pass.
+- Low-stakes "за сегодня" -> `read_today_dialog` with `limit=30`,
+  `include_voice_transcription=false`, `include_sender_name=false`, and a
+  bounded timeout for the first pass.
 - Scoped one-on-one "за сегодня с HH:MM" reads -> resolve once, read today's local calendar day with `include_voice_transcription=false`, and if the requested start time is near local midnight also check the previous UTC day. Filter the result in the answer; do not inspect media, page, or run repo/vault checks unless text evidence requires it.
 - Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `read_today_dialog` or `collect_dialog_context(date_from=..., date_to=...)`, include voice transcription, and page while completeness requires it.
 - "найди сообщение про X" in a known dialog -> `search_dialog_messages` first, then fetch surrounding context only for important matches.
@@ -168,7 +178,7 @@ fast-path defaults, paging rules, and double-work avoidance.
 For all channel/group subscribers or members, run the bundled exporter:
 
 ```bash
-python3 plugin/skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
+python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
 ```
 
 If the plugin bundle is unavailable but the live standalone skill is installed,

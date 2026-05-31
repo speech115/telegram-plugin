@@ -11,6 +11,7 @@ desired policy.
 ```bash
 ./bin/telegram-doctor --json
 ./bin/telegram-status --json
+./bin/telegram-fast-read-today me --limit 1
 ./bin/telegram-managed-systems --json
 ./bin/telegram-plugin-drift --json
 ./bin/telegram-mcp-surface --json
@@ -81,6 +82,13 @@ Write-capable tools such as `send_dialog_message`, `reply_in_dialog`, and
 The control-plane treats any write-capable tool in the default profile or plugin
 allowlist as a blocking defect.
 
+For simple low-stakes "read today" tasks, `bin/telegram-fast-read-today` is the
+supported first path on this host. It talks directly to the local MCP HTTP daemon
+with the same bearer token env file, skips `mcporter` process/discovery overhead,
+and falls back conceptually to the normal live MCP facade when unavailable. It
+is read-only and must not be used for send/reply, media inspection, subscriber
+export, or any workflow that needs the full facade.
+
 `generated/observed-registry.json` is an allowlist-only persisted snapshot. It
 must not contain Telegram user IDs, Telegram handles, phone numbers, exact
 session paths, Telegram Desktop `tdata` paths, archive database paths, archive
@@ -90,11 +98,13 @@ manifest paths, subscriber exports, media payloads, or raw private errors.
 
 - `telegram-doctor --json` is expected to return `warn` with `0` blocking
   findings and `5` warning findings while recovery/archive caveats remain.
+- `telegram-fast-read-today me --limit 1` is the local fast smoke for the
+  supported simple-read shortcut.
 - `telegram-managed-systems --json` is the canonical inventory of Telegram
   source repos, plugin/skill surfaces, runtime data roots, and archive tools.
   A missing blocking-protected path is a fail-closed defect.
 - Portable plugin package, marketplace alias, live skill, and installed cache are
-  aligned at local Telegram plugin version `0.1.8`.
+  aligned at local Telegram plugin version `0.1.9`.
 - The default MCP tool profile is the restricted facade profile. Admin/channel
   management tools require an explicit full/admin profile.
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they

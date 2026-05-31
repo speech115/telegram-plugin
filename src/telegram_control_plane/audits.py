@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import (
+    FAST_READ_ADAPTER,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
@@ -22,7 +23,7 @@ from .paths import (
     PLUGIN_SOURCE,
     TELECRAWL_ARCHIVE,
 )
-from .util import file_sha256, load_json, run_json, status_from_findings
+from .util import load_json, run_json, status_from_findings
 
 
 APPROVED_FACADE_TOOLS = {
@@ -90,25 +91,6 @@ def audit_plugin_drift() -> dict[str, Any]:
                 "message": f"Plugin drift checker status is {status!r}.",
             }
         )
-    live_sha = raw.get("live_skill", {}).get("sha256") if isinstance(raw.get("live_skill"), dict) else None
-    source_sha = (
-        raw.get("plugin_source_skill", {}).get("sha256")
-        if isinstance(raw.get("plugin_source_skill"), dict)
-        else None
-    )
-    cache_sha = (
-        raw.get("plugin_cache_skill", {}).get("sha256")
-        if isinstance(raw.get("plugin_cache_skill"), dict)
-        else None
-    )
-    if live_sha and source_sha and cache_sha and len({live_sha, source_sha, cache_sha}) > 1:
-        findings.append(
-            {
-                "id": "plugin_skill_sha_mismatch",
-                "severity": "blocking",
-                "message": "Live/source/cache Telegram skill SHA values do not all match.",
-            }
-        )
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
     cache_manifest = load_json(PLUGIN_CACHE / ".codex-plugin/plugin.json") or {}
     return {
@@ -125,11 +107,115 @@ def audit_plugin_drift() -> dict[str, Any]:
             "plugin_cache_skill": str(PLUGIN_CACHE / "skills/telegram/SKILL.md"),
         },
         "sha256": {
-            "live_skill": live_sha or file_sha256(LIVE_SKILL / "SKILL.md"),
-            "plugin_source_skill": source_sha or file_sha256(PLUGIN_SOURCE / "skills/telegram/SKILL.md"),
-            "plugin_cache_skill": cache_sha or file_sha256(PLUGIN_CACHE / "skills/telegram/SKILL.md"),
+            "live_skill": _raw_sha(raw, "live_skill"),
+            "plugin_source_skill": _raw_sha(raw, "plugin_source_skill"),
+            "plugin_cache_skill": _raw_sha(raw, "plugin_cache_skill"),
         },
+        "tree_sha256": {
+            "live_skill_tree": _raw_tree_sha(raw, "live_skill_tree"),
+            "plugin_source_skill_tree": _raw_tree_sha(raw, "plugin_source_skill_tree"),
+            "plugin_cache_skill_tree": _raw_tree_sha(raw, "plugin_cache_skill_tree"),
+            "plugin_source_package": _raw_tree_sha(raw, "plugin_source_package_tree"),
+            "plugin_cache_package": _raw_tree_sha(raw, "plugin_cache_package_tree"),
+        },
+        "tree_file_counts": {
+            "live_skill_tree": _raw_tree_file_count(raw, "live_skill_tree"),
+            "plugin_source_skill_tree": _raw_tree_file_count(raw, "plugin_source_skill_tree"),
+            "plugin_cache_skill_tree": _raw_tree_file_count(raw, "plugin_cache_skill_tree"),
+            "plugin_source_package": _raw_tree_file_count(raw, "plugin_source_package_tree"),
+            "plugin_cache_package": _raw_tree_file_count(raw, "plugin_cache_package_tree"),
+        },
+        "tree_diff": raw.get("tree_diff") if isinstance(raw.get("tree_diff"), dict) else {},
         "raw": raw,
+    }
+
+
+def _raw_sha(raw: dict[str, Any], key: str) -> str | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("sha256")
+    return value if isinstance(value, str) else None
+
+
+def _raw_tree_sha(raw: dict[str, Any], key: str) -> str | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("sha256")
+    return value if isinstance(value, str) else None
+
+
+def _raw_tree_file_count(raw: dict[str, Any], key: str) -> int | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("file_count")
+    return value if isinstance(value, int) else None
+
+
+def audit_fast_read_adapter() -> dict[str, Any]:
+    """Verify the local read-only fast path used before mcporter for simple reads."""
+
+    exists = FAST_READ_ADAPTER.is_file()
+    executable = exists and FAST_READ_ADAPTER.stat().st_mode & 0o111 != 0
+    command = [str(FAST_READ_ADAPTER), "--help"]
+    help_probe: dict[str, Any] = {"ran": False}
+    findings: list[dict[str, Any]] = []
+
+    if not exists:
+        findings.append(
+            {
+                "id": "fast_read_adapter_missing",
+                "severity": "blocking",
+                "message": "telegram-fast-read-today adapter is missing.",
+            }
+        )
+    elif not executable:
+        findings.append(
+            {
+                "id": "fast_read_adapter_not_executable",
+                "severity": "blocking",
+                "message": "telegram-fast-read-today adapter exists but is not executable.",
+            }
+        )
+    else:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        help_probe = {
+            "ran": True,
+            "exit_code": completed.returncode,
+            "stdout_contains_usage": "telegram-fast-read-today" in completed.stdout,
+        }
+        if completed.returncode != 0 or "telegram-fast-read-today" not in completed.stdout:
+            findings.append(
+                {
+                    "id": "fast_read_adapter_help_failed",
+                    "severity": "blocking",
+                    "message": "telegram-fast-read-today --help did not return the expected CLI contract.",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "adapter": {
+            "path": str(FAST_READ_ADAPTER),
+            "exists": exists,
+            "executable": bool(executable),
+            "command": command,
+            "help_probe": help_probe,
+        },
+        "routing": {
+            "first_path_for": ["simple_today_read"],
+            "fallback": "live_mcp_facade",
+            "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
+        },
     }
 
 
@@ -948,6 +1034,7 @@ def _collect_components() -> dict[str, dict[str, Any]]:
     return {
         "managed_systems": audit_managed_systems(),
         "plugin_drift": audit_plugin_drift(),
+        "fast_read_adapter": audit_fast_read_adapter(),
         "mcp_surface": audit_mcp_surface(),
         "mcp_profiles": audit_mcp_profiles(),
         "launchd": audit_launchd(),

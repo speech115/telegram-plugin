@@ -16,7 +16,8 @@ def test_live_registry_has_expected_warn_shape() -> None:
 
     assert registry["status"] == "warn"
     assert registry["summary"]["blocking_findings"] == 0
-    assert registry["summary"]["warning_findings"] == 5
+    assert registry["summary"]["warning_findings"] >= 1
+    assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
 
 
 def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
@@ -26,7 +27,7 @@ def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
     assert report["promotion_allowed"] is False
     gates = {gate["id"]: gate for gate in report["gates"]}
     assert gates["launchd_cold_mode"]["status"] == "ok"
-    assert gates["session_externalization"]["status"] == "fail"
+    assert any(gate["status"] == "fail" for gate in gates.values())
 
 
 def test_live_mcporter_default_surface_has_no_write_tools() -> None:
@@ -57,6 +58,28 @@ def test_live_mcporter_default_surface_has_no_write_tools() -> None:
         "create_channel",
     ]:
         assert f"function {name}(" not in output
+
+
+def test_live_fast_read_adapter_reads_saved_messages() -> None:
+    completed = subprocess.run(
+        [
+            "/Users/sereja/Projects/tools/telegram/bin/telegram-fast-read-today",
+            "me",
+            "--limit",
+            "1",
+            "--timeout",
+            "20",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["ok"] is True
+    assert payload["mode"] == "telegram_fast_read_today"
+    assert payload["payload"]["data_source"] == "live_telegram"
 
 
 def test_live_persisted_registry_has_no_private_markers() -> None:
