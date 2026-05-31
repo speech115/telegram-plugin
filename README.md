@@ -49,10 +49,10 @@ The builder fails closed if the package would contain private paths, `.env`,
 enters through `/Users/sereja/plugins/telegram`, but that path is now a symlink
 alias to the portable package root, not the canonical artifact source.
 
-After rebuilding the package, materialize Codex's local marketplace cache with:
+After rebuilding the package, materialize Codex's local plugin cache with:
 
 ```bash
-codex plugin marketplace remove sereja-local && codex plugin marketplace add /Users/sereja
+codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-local
 ./bin/telegram-plugin-drift --json
 ./bin/telegram-mcp-surface --json
 ```
