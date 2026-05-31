@@ -1079,13 +1079,19 @@ def _telecrawl_default_archive_status(db_path: Path | None = None) -> dict[str, 
     import_state = manifest.get("import") if isinstance(manifest.get("import"), dict) else {}
     counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
     gaps = _telecrawl_import_gaps(db_path)
+    manifest_status = manifest.get("manifest_status")
+    coverage_claim = manifest.get("coverage_claim", "unknown_archive_snapshot")
+    if gaps.get("has_known_gaps"):
+        coverage_claim = "partial_archive_snapshot_with_known_gaps"
     return {
         "ok": True,
         "source": "telecrawl",
         "source_kind": manifest.get("source_kind", "archive_snapshot"),
         "read_strategy": "manifest_plus_import_errors",
-        "coverage_claim": manifest.get("coverage_claim", "unknown_archive_snapshot"),
-        "manifest_status": manifest.get("manifest_status"),
+        "coverage_claim": coverage_claim,
+        "manifest_coverage_claim": manifest.get("coverage_claim"),
+        "manifest_status": manifest_status,
+        "archive_ready": db_path.exists() and manifest_status == "complete",
         "import_gaps": gaps,
         "last_complete_import_at": import_state.get("last_complete_import_at"),
         "status": {
@@ -1105,14 +1111,18 @@ def audit_telecrawl() -> dict[str, Any]:
     status = _telecrawl_default_archive_status()
     findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
-    inactive = [row for row in account_rows if not row.get("active")]
-    if inactive:
+    active_incomplete = [
+        row
+        for row in account_rows
+        if row.get("active") and (not row.get("db_exists") or row.get("manifest_stale_or_missing"))
+    ]
+    if active_incomplete:
         findings.append(
             {
-                "id": "telecrawl_inactive_accounts",
+                "id": "telecrawl_active_archives_incomplete",
                 "severity": "warn",
-                "message": "Telecrawl account catalog contains inactive or missing archive accounts.",
-                "count": len(inactive),
+                "message": "Telecrawl account catalog contains active accounts with missing or stale archives.",
+                "count": len(active_incomplete),
             }
         )
     import_gaps = status.get("import_gaps") if isinstance(status.get("import_gaps"), dict) else {}

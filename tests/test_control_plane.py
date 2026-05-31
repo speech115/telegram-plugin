@@ -112,10 +112,29 @@ def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) 
 
     assert report["default_archive_status"]["read_strategy"] == "manifest_plus_import_errors"
     assert report["default_archive_status"]["source_kind"] == "archive_snapshot"
+    assert report["default_archive_status"]["archive_ready"] is True
+    assert report["default_archive_status"]["manifest_coverage_claim"] == "full_verified_archive_snapshot"
+    assert report["default_archive_status"]["coverage_claim"] == "partial_archive_snapshot_with_known_gaps"
     assert report["freshness"]["last_complete_import_at"] == "2026-05-18T16:54:53Z"
     assert report["freshness"]["newest_message_at"] == "2026-05-18T16:18:16Z"
     assert any(item["id"] == "telecrawl_known_gaps" for item in report["findings"])
-    assert any(item["id"] == "telecrawl_inactive_accounts" for item in report["findings"])
+    assert not any(item["id"] == "telecrawl_active_archives_incomplete" for item in report["findings"])
+
+
+def test_telecrawl_audit_warns_for_active_missing_archive(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(audits, "TELECRAWL_DEFAULT_DB", tmp_path / "missing.db")
+    monkeypatch.setattr(
+        audits,
+        "_safe_read_telecrawl_json",
+        lambda *args, **kwargs: {
+            "ok": True,
+            "accounts": [{"active": 1, "db_exists": False, "manifest_stale_or_missing": True}],
+        },
+    )
+
+    report = audits.audit_telecrawl()
+
+    assert any(item["id"] == "telecrawl_active_archives_incomplete" for item in report["findings"])
 
 
 def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -> None:
