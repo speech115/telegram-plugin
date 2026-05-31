@@ -878,10 +878,10 @@ def audit_mirror_preflight() -> dict[str, Any]:
     )
     launchd = audit_launchd()
     session_report = audit_sessions()
-    runtime_exports = MIRROR_ROOT / "runtime/ingest/telegram/exports"
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
     venv_python = MIRROR_ROOT / ".venv/bin/python"
     ledgers = mirror.get("runtime_state", {}).get("ledgers")
-    sessions = mirror.get("runtime_state", {}).get("sessions")
+    recovery_sessions = mirror.get("runtime_state", {}).get("recovery_sessions")
     loaded_jobs = launchd.get("loaded_jobs") if isinstance(launchd.get("loaded_jobs"), dict) else {}
     loaded_mirror_jobs = sorted(
         label
@@ -927,9 +927,11 @@ def audit_mirror_preflight() -> dict[str, Any]:
         },
         {
             "id": "session_externalization",
-            "status": "ok" if not sessions else "fail",
+            "status": "ok" if not recovery_sessions else "fail",
             "message": "Runtime sessions must be owned outside the recovery source tree before promotion.",
-            "evidence": {"session_count_in_tree": len(sessions) if isinstance(sessions, list) else None},
+            "evidence": {
+                "session_count_in_tree": len(recovery_sessions) if isinstance(recovery_sessions, list) else None
+            },
         },
         {
             "id": "runtime_exports",

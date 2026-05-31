@@ -9,6 +9,7 @@ from telegram_control_plane.audits import (
     _dialog_annotation_map,
     _imported_tool_names,
     audit_managed_systems,
+    audit_mirror_preflight,
     audit_mcp_surface,
     audit_plugin_drift,
     build_registry,
@@ -146,6 +147,40 @@ def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -
     assert report["runtime_state"]["ledgers"] == [
         str(runtime / "data" / "telegram_sync" / "watch_progress_prime.json")
     ]
+
+
+def test_mirror_preflight_externalizes_only_recovery_sessions(monkeypatch, tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime" / "telegram-mirror"
+    (runtime / "runtime" / "ingest" / "telegram" / "exports").mkdir(parents=True)
+    monkeypatch.setattr(audits, "MIRROR_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(audits, "MIRROR_ROOT", tmp_path / "telegram-mirror")
+    monkeypatch.setattr(
+        audits,
+        "audit_mirror",
+        lambda: {
+            "status": "warn",
+            "classification": "mirror-recovery",
+            "findings": [],
+            "runtime_state": {
+                "recovery_sessions": [],
+                "sessions": ["runtime.session"],
+                "ledgers": ["watch_progress.json"],
+                "runtime_root_exists": True,
+                "runtime_exports_exists": True,
+            },
+        },
+    )
+    monkeypatch.setattr(audits, "run_json", lambda *args, **kwargs: {"policy_exists": True, "registry": {"mirrors_count": 1}})
+    monkeypatch.setattr(audits, "audit_launchd", lambda: {"loaded_jobs": {}})
+    monkeypatch.setattr(audits, "audit_sessions", lambda: {"status": "ok", "findings": []})
+
+    report = audit_mirror_preflight()
+    gates = {gate["id"]: gate for gate in report["gates"]}
+
+    assert gates["session_externalization"]["status"] == "ok"
+    assert gates["session_externalization"]["evidence"]["session_count_in_tree"] == 0
+    assert gates["runtime_exports"]["status"] == "ok"
+    assert gates["runtime_exports"]["evidence"]["path"] == str(runtime / "runtime" / "ingest" / "telegram" / "exports")
 
 
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
