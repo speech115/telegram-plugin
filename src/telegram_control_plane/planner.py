@@ -104,8 +104,8 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 ["diff", "-ru", str(PLUGIN_SOURCE / "skills/telegram"), str(PLUGIN_CACHE / "skills/telegram")],
             ],
             apply_commands=[
-                ["codex", "plugin", "marketplace", "remove", "sereja-local"],
-                ["codex", "plugin", "marketplace", "add", "/Users/sereja"],
+                ["codex", "plugin", "remove", "telegram@sereja-local"],
+                ["codex", "plugin", "add", "telegram@sereja-local"],
             ],
             rollback=[
                 "Leave older versioned cache directories intact.",
@@ -217,15 +217,33 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    mirror_blocked = _component_status(registry, "telegram_mirror") == "fail"
+    mirror_status = _component_status(registry, "telegram_mirror")
+    mirror_blocked = mirror_status == "fail"
+    mirror_exports_missing = bool(ids & {"mirror_runtime_exports_missing", "mirror_runtime_exports_incomplete"})
+    mirror_component = registry.get("components", {}).get("telegram_mirror")
+    mirror_summary = (
+        mirror_component.get("runtime_state_summary")
+        if isinstance(mirror_component, dict) and isinstance(mirror_component.get("runtime_state_summary"), dict)
+        else {}
+    )
+    mirror_export_counts = (
+        f"{mirror_summary.get('export_ready_count')}/{mirror_summary.get('export_expected_count')} ready, "
+        f"{mirror_summary.get('export_missing_count')} missing"
+    )
     steps.append(
         _step(
             step_id="mirror-runtime-promotion-policy",
             title="Keep telegram-mirror recovery-scoped until runtime preflight exists",
-            status="blocked_by_recovery_state" if mirror_blocked else "already_clean",
+            status=(
+                "blocked_by_recovery_state"
+                if mirror_blocked
+                else "needs_runtime_exports" if mirror_exports_missing else "already_clean"
+            ),
             reason=(
                 "telegram-mirror has recovery/runtime ambiguity, sessions in-tree, or missing canonical runtime exports."
                 if mirror_blocked
+                else f"Mirror export coverage is incomplete: {mirror_export_counts}."
+                if mirror_exports_missing
                 else "Mirror gate is clean."
             ),
             touched_paths=[
@@ -234,6 +252,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             ],
             dry_run_commands=[
                 ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight", "--json"],
             ],
             apply_commands=[],
             rollback=[

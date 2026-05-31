@@ -633,6 +633,7 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
                 }
             },
             "findings": [],
+            "components": {},
         },
     )
 
@@ -643,4 +644,49 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
     by_id = {step["id"]: step for step in plan["steps"]}
     assert by_id["managed-systems-inventory"]["apply_commands"] == []
     assert by_id["plugin-cache-parity"]["verification_commands"]
+    assert by_id["plugin-cache-parity"]["apply_commands"] == [
+        ["codex", "plugin", "remove", "telegram@sereja-local"],
+        ["codex", "plugin", "add", "telegram@sereja-local"],
+    ]
     assert by_id["launchd-inventory-and-cold-mode"]["apply_commands"] == []
+
+
+def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
+    monkeypatch.setattr(
+        planner,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {
+                "components": {
+                    "managed_systems": "ok",
+                    "plugin_drift": "ok",
+                    "mcp_surface": "ok",
+                    "launchd": "ok",
+                    "sessions": "ok",
+                    "telegram_mirror": "warn",
+                    "telecrawl": "ok",
+                }
+            },
+            "findings": [{"component": "telegram_mirror", "id": "mirror_runtime_exports_missing", "severity": "warn"}],
+            "components": {
+                "telegram_mirror": {
+                    "runtime_state_summary": {
+                        "export_expected_count": 36,
+                        "export_ready_count": 0,
+                        "export_missing_count": 36,
+                    }
+                }
+            },
+        },
+    )
+
+    plan = build_repair_plan()
+    by_id = {step["id"]: step for step in plan["steps"]}
+
+    assert by_id["mirror-runtime-promotion-policy"]["status"] == "needs_runtime_exports"
+    assert "0/36 ready, 36 missing" in by_id["mirror-runtime-promotion-policy"]["reason"]
+    assert [
+        "/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight",
+        "--json",
+    ] in by_id["mirror-runtime-promotion-policy"]["dry_run_commands"]
