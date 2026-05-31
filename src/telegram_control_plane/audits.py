@@ -888,22 +888,22 @@ def _mirror_export_coverage(export_root: Path) -> dict[str, Any]:
         timeout=30,
     )
     channels = allowlist_report.get("channels") if isinstance(allowlist_report.get("channels"), list) else []
-    expected = [
-        str(channel.get("export_folder") or "").strip()
-        for channel in channels
-        if isinstance(channel, dict) and channel.get("retained") and str(channel.get("export_folder") or "").strip()
-    ]
-    ready = [
-        folder
-        for folder in expected
-        if (export_root / folder / "messages_raw.jsonl").exists()
-    ]
+    expected = []
+    for channel in channels:
+        if not isinstance(channel, dict) or not channel.get("retained"):
+            continue
+        folder = str(channel.get("export_folder") or "").strip()
+        if folder:
+            expected.append({"name": channel.get("name"), "export_folder": folder})
+    ready = [item for item in expected if (export_root / item["export_folder"] / "messages_raw.jsonl").exists()]
+    missing = [item for item in expected if item not in ready]
     return {
         "source": "allowlist_report",
         "export_root": str(export_root),
         "expected_count": len(expected),
         "ready_count": len(ready),
-        "missing_count": len(expected) - len(ready),
+        "missing_count": len(missing),
+        "missing": missing,
     }
 
 

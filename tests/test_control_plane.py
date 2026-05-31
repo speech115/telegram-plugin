@@ -161,6 +161,7 @@ def test_mirror_audit_reads_external_runtime_root(monkeypatch, tmp_path: Path) -
         "expected_count": 1,
         "ready_count": 1,
         "missing_count": 0,
+        "missing": [],
     }
 
 
