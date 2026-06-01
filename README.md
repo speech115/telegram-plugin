@@ -61,6 +61,9 @@ Power Mode is not a hidden feature. It is the explicit mode for users who want
 the broader Telegram MCP surface and accept that agents can perform externally
 visible actions.
 
+For a short, private-data-free example, see
+[Default Mode demo](docs/demo-default-mode.md).
+
 ## Safety Model
 
 The runtime boundary is enforced in two layers:
