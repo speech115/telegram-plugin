@@ -17,8 +17,10 @@ from .paths import (
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
+    MCP_TELEMETRY_DIR,
     MCP_TELEMETRY_LOG,
     MCP_TELEMETRY_STATS,
+    TELEMETRY_ALERT_THRESHOLDS,
     MIRROR_LEGACY_ALIAS,
     MIRROR_ROOT,
     MIRROR_RUNTIME_ROOT,
@@ -162,13 +164,37 @@ def audit_plugin_drift() -> dict[str, Any]:
     }
 
 
-def audit_mcp_telemetry(*, window_hours: float = 24.0) -> dict[str, Any]:
+def _telemetry_thresholds() -> dict[str, Any]:
+    payload = load_json(TELEMETRY_ALERT_THRESHOLDS) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _prometheus_target_status(port: int, *, timeout: float = 2.0) -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/metrics"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            body = response.read(512).decode("utf-8", errors="replace")
+            return {
+                "port": port,
+                "status": "ok" if response.status == 200 else "fail",
+                "http_status": response.status,
+                "sample": body.splitlines()[:3],
+            }
+    except urllib.error.URLError as exc:
+        return {"port": port, "status": "down", "error": str(exc)}
+
+
+def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     python_bin = MCP_REPO / ".venv/bin/python"
-    log_path = Path(MCP_TELEMETRY_LOG)
+    thresholds = _telemetry_thresholds()
+    effective_window = float(window_hours if window_hours is not None else thresholds.get("window_hours", 24))
 
     summary: dict[str, Any]
-    if log_path.exists() and python_bin.exists():
+    if python_bin.exists():
         summary = run_json(
             [
                 str(python_bin),
@@ -176,23 +202,27 @@ def audit_mcp_telemetry(*, window_hours: float = 24.0) -> dict[str, Any]:
                 "telegram_mcp.telemetry",
                 "--summarize",
                 "--json",
-                "--log-path",
-                str(log_path),
+                "--log-dir",
+                str(MCP_TELEMETRY_DIR),
                 "--window-hours",
-                str(window_hours),
+                str(effective_window),
             ],
             timeout=60,
         )
     else:
         summary = {
             "status": "missing",
-            "log_path": str(log_path),
+            "log_path": str(MCP_TELEMETRY_DIR),
             "events_in_window": 0,
         }
 
     summary_status = summary.get("status")
     events_in_window = int(summary.get("events_in_window") or 0)
     tool_errors = int(summary.get("tool_errors") or 0)
+    min_events = int(thresholds.get("min_events_for_rate_checks", 20))
+    max_tool_errors = int(thresholds.get("max_tool_errors", 10))
+    max_error_rate = float(thresholds.get("max_tool_error_rate", 0.25))
+    max_read_p95 = float(thresholds.get("max_telegram_read_p95_ms", 5000))
 
     if summary_status == "missing":
         findings.append(
@@ -200,7 +230,7 @@ def audit_mcp_telemetry(*, window_hours: float = 24.0) -> dict[str, Any]:
                 "id": "telemetry_log_missing",
                 "severity": "warn",
                 "message": (
-                    "MCP telemetry log is not present yet. Restart HTTP MCP with "
+                    "MCP telemetry logs are not present yet. Restart HTTP MCP with "
                     "TELEGRAM_TELEMETRY_ENABLED=true (default) to begin collecting events."
                 ),
             }
@@ -211,33 +241,84 @@ def audit_mcp_telemetry(*, window_hours: float = 24.0) -> dict[str, Any]:
                 "id": "telemetry_no_recent_events",
                 "severity": "warn",
                 "message": (
-                    f"No telemetry events in the last {window_hours:g}h. "
+                    f"No telemetry events in the last {effective_window:g}h. "
                     "Confirm MCP HTTP daemons are running and receiving tool traffic."
                 ),
             }
         )
-    elif tool_errors >= 10:
+    elif tool_errors >= max_tool_errors:
         findings.append(
             {
-                "id": "telemetry_high_tool_error_rate",
+                "id": "telemetry_high_tool_error_count",
                 "severity": "warn",
                 "message": f"MCP telemetry recorded {tool_errors} tool errors in the recent window.",
             }
         )
 
+    tool_calls = int(summary.get("event_counts", {}).get("tool_call", 0)) if isinstance(summary.get("event_counts"), dict) else 0
+    if tool_calls >= min_events and tool_errors / tool_calls > max_error_rate:
+        findings.append(
+            {
+                "id": "telemetry_high_tool_error_rate",
+                "severity": "warn",
+                "message": (
+                    f"Tool error rate {tool_errors}/{tool_calls} exceeds "
+                    f"{max_error_rate:.0%} in the telemetry window."
+                ),
+            }
+        )
+
+    tool_latency = summary.get("tool_latency") if isinstance(summary.get("tool_latency"), dict) else {}
+    read_stats = tool_latency.get("telegram_read") if isinstance(tool_latency.get("telegram_read"), dict) else {}
+    read_p95 = read_stats.get("p95_ms")
+    if isinstance(read_p95, int | float) and read_p95 > max_read_p95:
+        findings.append(
+            {
+                "id": "telemetry_slow_telegram_read",
+                "severity": "warn",
+                "message": f"telegram_read p95 {read_p95}ms exceeds {max_read_p95:g}ms threshold.",
+            }
+        )
+
+    prometheus_ports = thresholds.get("prometheus_metrics_ports")
+    metrics_targets: list[dict[str, Any]] = []
+    if isinstance(prometheus_ports, list):
+        for raw_port in prometheus_ports:
+            if isinstance(raw_port, int):
+                metrics_targets.append(_prometheus_target_status(raw_port))
+    metrics_up = [item for item in metrics_targets if item.get("status") == "ok"]
+    if isinstance(prometheus_ports, list) and prometheus_ports and not metrics_up:
+        findings.append(
+            {
+                "id": "telemetry_prometheus_down",
+                "severity": "warn",
+                "message": (
+                    "No Telegram MCP Prometheus /metrics targets responded. "
+                    "Set TELEGRAM_TELEMETRY_METRICS_PORT per LaunchAgent (e.g. 9109, 9110) and restart MCP."
+                ),
+            }
+        )
+
     cache = summary.get("cache") if isinstance(summary.get("cache"), dict) else {}
+    source_counts = summary.get("source_counts") if isinstance(summary.get("source_counts"), dict) else {}
     return {
         "status": status_from_findings(findings),
         "findings": findings,
         "summary": summary,
         "artifacts": {
-            "telemetry_log": str(log_path),
+            "telemetry_log": str(MCP_TELEMETRY_LOG),
+            "telemetry_log_dir": str(MCP_TELEMETRY_DIR),
             "telemetry_stats": str(MCP_TELEMETRY_STATS),
+            "prometheus_scrape": str(CONTROL_ROOT / "policy/telemetry/prometheus-scrape.yml"),
+            "prometheus_alerts": str(CONTROL_ROOT / "policy/telemetry/prometheus-alerts.yml"),
+            "grafana_dashboard": str(CONTROL_ROOT / "policy/telemetry/grafana-dashboard.json"),
         },
         "stats_file_present": MCP_TELEMETRY_STATS.exists(),
         "events_in_window": events_in_window,
         "tool_errors": tool_errors,
         "cache_hit_rate": cache.get("hit_rate"),
+        "source_counts": source_counts,
+        "prometheus_targets": metrics_targets,
     }
 
 
@@ -1689,6 +1770,8 @@ def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str,
             "cache_hit_rate": report.get("cache_hit_rate"),
             "stats_file_present": report.get("stats_file_present"),
             "tools_observed": sorted(tool_latency.keys())[:8],
+            "source_counts": report.get("source_counts"),
+            "prometheus_targets": report.get("prometheus_targets"),
         }
     if name == "sessions":
         sessions = report.get("sessions") if isinstance(report.get("sessions"), list) else []

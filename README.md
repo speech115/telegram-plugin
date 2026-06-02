@@ -91,6 +91,11 @@ applying changes.
 `telegram-repair-plan-apply --json` runs only allowlisted safe apply steps (today:
 `plugin-cache-materialize` when drift reports installer-ready cache lag).
 
+`telegram-telemetry-status --json` summarizes daily JSONL logs, checks Prometheus
+`/metrics` targets (9109/9110), and applies thresholds from
+`policy/telemetry/alert-thresholds.json`. Import `policy/telemetry/grafana-dashboard.json`
+into Grafana and include `policy/telemetry/prometheus-scrape.yml` in Prometheus.
+
 ## Surface Contract
 
 The default Telegram MCP endpoint is read-only toward external Telegram state.

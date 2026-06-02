@@ -25,7 +25,9 @@
       "tool_errors",
       "cache_hit_rate",
       "stats_file_present",
-      "tools_observed"
+      "tools_observed",
+      "source_counts",
+      "prometheus_targets"
     ],
     "fast_read_adapter": ["status", "findings", "adapter", "routing"],
     "mcp_surface": [
