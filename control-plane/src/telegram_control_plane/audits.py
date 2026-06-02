@@ -3,13 +3,14 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import os
 import plistlib
 import re
 import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .paths import (
     CONTROL_ROOT,
@@ -32,7 +33,19 @@ from .paths import (
     TELECRAWL_DEFAULT_DB,
     plugin_source_version,
 )
+from .policy_paths import _POLICY_PATH_RE, resolve_policy_path
 from .util import load_json, run_json, status_from_findings
+
+
+PORTABLE_REQUIRED_SYSTEMS = frozenset(
+    {
+        "telegram-control-plane",
+        "telegram-mcp",
+        "telegram-plugin-source",
+    }
+)
+
+_KNOWN_SYSTEM_PATHS: dict[str, Callable[[], Path]] = {}
 
 
 APPROVED_FACADE_TOOLS = {
@@ -435,7 +448,46 @@ def _policy_marker(marker: str) -> str:
     return marker.replace("{plugin_source_version}", version)
 
 
+def _managed_system_path(system_id: str, raw_path: str) -> Path:
+    text = raw_path.strip()
+    if _POLICY_PATH_RE.match(text):
+        return resolve_policy_path(text)
+    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "enabled",
+    }
+    if portable_ci and system_id in PORTABLE_REQUIRED_SYSTEMS:
+        resolver = _KNOWN_SYSTEM_PATHS.get(system_id)
+        if resolver is not None:
+            return resolver()
+    return Path(text).expanduser()
+
+
+def _init_known_system_paths() -> None:
+    if _KNOWN_SYSTEM_PATHS:
+        return
+    _KNOWN_SYSTEM_PATHS.update(
+        {
+            "telegram-control-plane": lambda: CONTROL_ROOT,
+            "telegram-mcp": lambda: MCP_REPO,
+            "telegram-plugin-source": lambda: PLUGIN_SOURCE,
+            "telegram-plugin-package": lambda: PLUGIN_PACKAGE,
+            "telegram-live-skill": lambda: LIVE_SKILL,
+            "telegram-plugin-cache": lambda: PLUGIN_CACHE_ROOT,
+        }
+    )
+
+
 def audit_managed_systems() -> dict[str, Any]:
+    _init_known_system_paths()
+    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "enabled",
+    }
     policy = load_json(POLICY_DIR / "managed-systems.json") or {}
     systems_policy = policy.get("systems") if isinstance(policy.get("systems"), list) else []
     rows: list[dict[str, Any]] = []
@@ -459,7 +511,7 @@ def audit_managed_systems() -> dict[str, Any]:
         deletion_protection = str(item.get("deletion_protection") or "blocking")
         required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
         expected_resolved = item.get("expected_resolved") if isinstance(item.get("expected_resolved"), str) else None
-        path = Path(raw_path) if raw_path else Path()
+        path = _managed_system_path(system_id, raw_path) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
         missing_markers = sorted(
@@ -520,8 +572,10 @@ def audit_managed_systems() -> dict[str, Any]:
                     "message": "Managed systems policy contains a duplicate path.",
                 }
             )
-        seen_paths.add(raw_path)
+        seen_paths.add(str(path))
         if not exists:
+            if portable_ci and system_id not in PORTABLE_REQUIRED_SYSTEMS:
+                continue
             findings.append(
                 {
                     "id": "managed_system_missing",

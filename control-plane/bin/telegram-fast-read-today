@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MCP_REPO="/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONTROL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MONOREPO_ROOT="$(cd "${CONTROL_ROOT}/.." && pwd)"
+MCP_REPO="${TELEGRAM_MCP_REPO:-${MONOREPO_ROOT}/mcp}"
 PYTHON="${MCP_REPO}/.venv/bin/python"
 
 if [ ! -x "${PYTHON}" ]; then

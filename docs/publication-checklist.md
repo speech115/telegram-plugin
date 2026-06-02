@@ -18,6 +18,6 @@
   making Power Mode look hidden or unsupported.
 - `SECURITY.md`, `CONTRIBUTING.md`, issue templates, PR template, and portable
   CI exist.
-- Quickstart has been tested from a fresh clone or clean venv.
+- `./scripts/fresh-install-smoke.sh` passes from a fresh clone (also run in CI).
 - Secret/path scan has been run before tagging.
 - Release is tagged (`vX.Y.Z`) and points to the commit used for release notes.

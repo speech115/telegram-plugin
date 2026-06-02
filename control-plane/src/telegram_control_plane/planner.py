@@ -3,7 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from .audits import build_registry
-from .paths import CONTROL_ROOT, MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
+from .paths import (
+    CONTROL_ROOT,
+    HOME,
+    LAUNCHAGENTS_DIR,
+    MCP_REPO,
+    MIRROR_ROOT,
+    PLUGIN_CACHE,
+    PLUGIN_SOURCE,
+    POLICY_DIR,
+)
 
 
 def _finding_ids(registry: dict[str, Any]) -> set[str]:
@@ -119,8 +128,8 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             touched_paths=[
                 str(PLUGIN_SOURCE),
                 str(PLUGIN_CACHE),
-                "/Users/sereja/.codex/config.toml",
-                "/Users/sereja/.agents/plugins/marketplace.json",
+                str(HOME / ".codex/config.toml"),
+                str(HOME / ".agents/plugins/marketplace.json"),
             ],
             dry_run_commands=[
                 [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
@@ -136,7 +145,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             ],
             verifies=[
                 [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-plugin-drift", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-plugin-drift"), "--json"],
             ],
         )
     )
@@ -195,12 +204,12 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Launchd gate is clean."
             ),
             touched_paths=[
-                "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-*.plist",
-                "/Users/sereja/Library/LaunchAgents/com.sereja.telecrawl*.plist",
-                "/Users/sereja/Projects/tools/telegram/policy/allowed-roots.json",
+                str(LAUNCHAGENTS_DIR / "com.sereja.telegram-*.plist"),
+                str(LAUNCHAGENTS_DIR / "com.sereja.telecrawl*.plist"),
+                str(POLICY_DIR / "allowed-roots.json"),
             ],
             dry_run_commands=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-launchd-audit", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-launchd-audit"), "--json"],
                 ["launchctl", "list"],
             ],
             apply_commands=[],
@@ -209,7 +218,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 "Use launchctl bootout/bootstrap only from an explicit later migration step.",
             ],
             verifies=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-launchd-audit", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-launchd-audit"), "--json"],
             ],
         )
     )
@@ -226,10 +235,10 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Session gate is clean."
             ),
             touched_paths=[
-                "/Users/sereja/Projects/tools/telegram/policy/sessions.json",
+                str(POLICY_DIR / "sessions.json"),
             ],
             dry_run_commands=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-session-audit", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-session-audit"), "--json"],
             ],
             apply_commands=[],
             rollback=[
@@ -237,7 +246,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 "Do not move or copy session files in this milestone.",
             ],
             verifies=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-session-audit", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-session-audit"), "--json"],
             ],
         )
     )
@@ -272,19 +281,19 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Mirror gate is clean."
             ),
             touched_paths=[
-                "/Users/sereja/Projects/tools/telegram/policy/source-routing.json",
-                "/Users/sereja/Projects/tools/telegram-mirror",
+                str(POLICY_DIR / "source-routing.json"),
+                str(MIRROR_ROOT),
             ],
             dry_run_commands=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-audit", "--json"],
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mirror-audit"), "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mirror-preflight"), "--json"],
             ],
             apply_commands=[],
             rollback=[
                 "Keep recovery classification until an explicit runtime preflight passes.",
             ],
             verifies=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-audit", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mirror-audit"), "--json"],
             ],
         )
     )
@@ -301,17 +310,17 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Telecrawl gate is clean."
             ),
             touched_paths=[
-                "/Users/sereja/Projects/tools/telegram/policy/source-routing.json",
+                str(POLICY_DIR / "source-routing.json"),
             ],
             dry_run_commands=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-telecrawl-status", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-telecrawl-status"), "--json"],
             ],
             apply_commands=[],
             rollback=[
                 "Policy-only archive routing can be reverted without touching archive DBs.",
             ],
             verifies=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-telecrawl-status", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-telecrawl-status"), "--json"],
             ],
         )
     )

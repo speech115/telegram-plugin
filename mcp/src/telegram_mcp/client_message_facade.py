@@ -6,10 +6,13 @@ import hashlib
 import secrets
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .errors import ToolContractError
+from .file_path_policy import validate_outbound_media_path
 from .types import (
     DialogContextResult,
+    DialogFileSendPreparation,
     DialogReplyPreparation,
     DialogSendPreparation,
     MessageInfo,
@@ -289,6 +292,38 @@ class MessageFacadeMixin:
             },
             confirmation_token=confirmation_token,
             confirmation_expires_at=confirmation_expires_at,
+        )
+
+    async def prepare_send_file(
+        self,
+        chat: str | int,
+        file_path: str,
+        caption: str = "",
+        parse_mode: str = "md",
+    ) -> DialogFileSendPreparation:
+        validated_path = validate_outbound_media_path(file_path)
+        handle = await self.resolve_dialog(chat)
+        media_path = Path(validated_path)
+        preview_token = secrets.token_urlsafe(12)[:16]
+        warnings = [
+            "preview_only: this tool never sends files; it validates and prepares send arguments only."
+        ]
+        return DialogFileSendPreparation(
+            chat=handle,
+            file_path=validated_path,
+            file_name=media_path.name,
+            caption=caption,
+            parse_mode=parse_mode or None,
+            preview_only=True,
+            send_tool="send_file",
+            send_args_preview={
+                "chat": handle.dialog_ref,
+                "file_path": validated_path,
+                "caption": caption,
+                "parse_mode": parse_mode or None,
+            },
+            preview_token=preview_token,
+            warnings=warnings,
         )
 
     async def send_dialog_message(

@@ -23,6 +23,7 @@ from .dialog_facade_tools import (
     draft_reply,
     find_dialog,
     prepare_reply_message,
+    prepare_send_file,
     prepare_send_message,
     prepare_dialog_reply,
     read_dialog,
@@ -93,9 +94,11 @@ from .privacy_tools import (
 )
 from .profile_tools import (
     delete_profile_photo,
+    download_profile_photo,
     get_user_photos,
     get_user_status,
     register as register_profile_tools,
+    register_facade as register_profile_facade_tools,
     update_profile,
 )
 from .story_tools import (
@@ -124,10 +127,12 @@ FACADE_TOOL_NAMES = {
     "download_dialog_media",
     "download_media",
     "download_media_batch",
+    "download_profile_photo",
     "find_dialog",
     "prepare_dialog_reply",
     "prepare_media_inspection_manifest",
     "prepare_reply_message",
+    "prepare_send_file",
     "prepare_send_message",
     "resolve_dialog",
     "search_dialog_messages",
@@ -158,6 +163,7 @@ def register_all_tools(mcp, *, profile: str | None = None) -> None:
         register_user_tools(mcp)
         register_dialog_facade_tools(mcp)
         register_media_facade_tools(mcp)
+        register_profile_facade_tools(mcp)
         return
 
     register_user_tools(mcp)

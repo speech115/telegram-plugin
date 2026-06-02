@@ -151,6 +151,14 @@ metadata edits.
 
 ## Useful Checks
 
+Portable install validation (no Telegram credentials required):
+
+```bash
+./scripts/fresh-install-smoke.sh
+```
+
+See [docs/fresh-install.md](docs/fresh-install.md) for the manual path.
+
 Run these before publishing a local change or trusting a materialized plugin
 cache:
 

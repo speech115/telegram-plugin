@@ -821,6 +821,6 @@ def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
     assert by_id["mirror-runtime-promotion-policy"]["status"] == "needs_runtime_exports"
     assert "0/36 ready, 36 missing" in by_id["mirror-runtime-promotion-policy"]["reason"]
     assert [
-        "/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight",
+        str(planner.CONTROL_ROOT / "bin/telegram-mirror-preflight"),
         "--json",
     ] in by_id["mirror-runtime-promotion-policy"]["dry_run_commands"]
