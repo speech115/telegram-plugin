@@ -16,7 +16,7 @@ from telegram_control_plane.audits import (
     build_registry,
 )
 import telegram_control_plane.planner as planner
-from telegram_control_plane.planner import build_repair_plan
+from telegram_control_plane.planner import apply_repair_plan, build_repair_plan
 from telegram_control_plane.paths import PLUGIN_SOURCE
 
 
@@ -95,11 +95,31 @@ def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
     assert report["routing"]["fallback"] == "live_mcp_facade"
 
 
+def test_fast_read_adapter_calls_task_shaped_tool() -> None:
+    wrapper = (Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today").read_text(
+        encoding="utf-8"
+    )
+    module = (
+        Path(__file__).resolve().parents[1].parents[1]
+        / "families/telegram/telegram-digest/telegram-mcp/src/telegram_mcp/fast_read_today.py"
+    ).read_text(encoding="utf-8")
+
+    assert "telegram_mcp.fast_read_today" in wrapper
+    assert '"telegram_read"' in module
+    assert '"read_today_dialog"' not in module
+
+
 def test_registry_includes_fast_read_adapter_component() -> None:
     registry = build_registry()
 
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
     assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+
+
+def test_agent_docs_sync_audit_passes() -> None:
+    report = audits.audit_agent_docs_sync()
+
+    assert report["status"] == "ok", report.get("findings")
 
 
 def test_release_gates_audit_passes() -> None:
@@ -824,3 +844,67 @@ def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
         "/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight",
         "--json",
     ] in by_id["mirror-runtime-promotion-policy"]["dry_run_commands"]
+
+
+def test_repair_plan_materialize_step_is_auto_apply_ready(monkeypatch) -> None:
+    monkeypatch.setattr(
+        planner,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {"components": {"plugin_drift": "warn"}},
+            "findings": [
+                {
+                    "component": "plugin_drift",
+                    "id": "plugin_cache_needs_materialization",
+                    "severity": "warn",
+                    "materialize_command": ["/tmp/materialize", "--json"],
+                }
+            ],
+            "components": {},
+        },
+    )
+
+    plan = build_repair_plan()
+    by_id = {step["id"]: step for step in plan["steps"]}
+    step = by_id["plugin-cache-materialize"]
+    assert step["status"] == "ready_to_apply"
+    assert step["auto_apply_allowed"] is True
+    assert step["apply_commands"] == [["/tmp/materialize", "--json"]]
+    assert "plugin-cache-materialize" in plan["recommended_order"]
+
+
+def test_apply_repair_plan_runs_only_auto_apply_steps(monkeypatch) -> None:
+    monkeypatch.setattr(
+        planner,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {"components": {"plugin_drift": "warn"}},
+            "findings": [
+                {
+                    "component": "plugin_drift",
+                    "id": "plugin_cache_needs_materialization",
+                    "severity": "warn",
+                    "materialize_command": ["materialize", "--json"],
+                }
+            ],
+            "components": {},
+        },
+    )
+    runs: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        runs.append(command)
+        class Result:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(planner.subprocess, "run", fake_run)
+
+    report = apply_repair_plan(verify=False)
+    assert report["status"] == "ok"
+    assert runs == [["materialize", "--json"]]

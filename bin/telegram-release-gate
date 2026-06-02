@@ -27,6 +27,7 @@ run_gate() {
 }
 
 if [[ "${ci_mode}" -eq 1 ]]; then
+  run_gate agent-docs ./bin/telegram-agent-docs-sync --check --no-restart --json
   run_gate docs-audit ./bin/telegram-docs-audit --json
   run_gate pytest python3 -m pytest -q
 else

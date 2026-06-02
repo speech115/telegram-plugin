@@ -42,9 +42,17 @@ operator/debug-only and not a normal user workflow.
 
 ## Runtime Preflight
 
-Before a live task, confirm the current host exposes Telegram MCP facade tools
-or aliases. Prefer canonical facade names, but use app-style aliases when they
-are the only exposed option. For simple low-stakes local reads such as
+Before a live task, prefer MCP resources over loading this full skill:
+
+- `telegram://docs/routing` — fast defaults and tool choice
+- `telegram://docs/tools` — default facade surface
+- `telegram://docs/sources` — live vs mirror vs archive
+- `telegram://docs/writes` / `telegram://docs/media` — when relevant
+- `telegram://docs/index` — catalog
+
+Confirm the current host exposes Telegram MCP facade tools or aliases. Prefer
+canonical facade names, but use app-style aliases when they are the only exposed
+option. For simple low-stakes local reads such as
 "прочитай переписку с @user за сегодня", if the chat tool surface does not expose
 the facade but the current host provides a local read-only fast-path adapter,
 use that configured adapter first. This portable plugin package intentionally
@@ -143,11 +151,11 @@ telecrawl, and source-label details.
 ## Routing Matrix
 
 - Low-stakes "что нового", "последние", "глянь чат" -> `collect_dialog_context` with `mode="fast"`, `recent_limit=15-30`, `include_pinned=false`.
-- Low-stakes "за сегодня" -> `read_today_dialog` with `limit=30`,
-  `include_voice_transcription=false`, `include_sender_name=false`, and a
-  bounded timeout for the first pass.
+- Low-stakes "за сегодня" -> `telegram_read` with `day=<today>`, `limit=30`,
+  `mode="fast"`, and a bounded timeout for the first pass. On this host, prefer
+  `telegram-fast-read-today` before MCP discovery for that path.
 - Scoped one-on-one "за сегодня с HH:MM" reads -> resolve once, read today's local calendar day with `include_voice_transcription=false`, and if the requested start time is near local midnight also check the previous UTC day. Filter the result in the answer; do not inspect media, page, or run repo/vault checks unless text evidence requires it.
-- Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `read_today_dialog` or `collect_dialog_context(date_from=..., date_to=...)`, include voice transcription, and page while completeness requires it.
+- Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `telegram_read` with `mode="full"` or `collect_dialog_context(date_from=..., date_to=..., mode="full")`, include voice transcription, and page while completeness requires it.
 - "найди сообщение про X" in a known dialog -> `search_dialog_messages` first, then fetch surrounding context only for important matches.
 - "подготовь ответ", "что ответить" -> `prepare_dialog_reply` first; fetch more context only when warnings or evidence gaps require it.
 - "отправь", "reply/send" -> use preview helpers when useful, then write only with explicit user write intent and unambiguous target/content.

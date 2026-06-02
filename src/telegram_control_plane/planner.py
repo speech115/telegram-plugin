@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+import subprocess
+from typing import Any, Iterable
 
 from .audits import build_registry
-from .paths import CONTROL_ROOT, MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
+from .paths import CONTROL_ROOT, MCP_REPO, PLUGIN_CACHE, PLUGIN_CACHE_ROOT, PLUGIN_SOURCE
+
+AUTO_APPLY_STEP_IDS = frozenset({"plugin-cache-materialize"})
 
 
 def _finding_ids(registry: dict[str, Any]) -> set[str]:
     return {str(item.get("id")) for item in registry.get("findings", []) if isinstance(item, dict)}
+
+
+def _finding_by_id(registry: dict[str, Any], finding_id: str) -> dict[str, Any] | None:
+    for item in registry.get("findings", []):
+        if isinstance(item, dict) and item.get("id") == finding_id:
+            return item
+    return None
 
 
 def _findings_for_component(registry: dict[str, Any], component: str) -> list[dict[str, Any]]:
@@ -55,6 +65,7 @@ def _step(
     apply_commands: list[list[str]],
     rollback: list[str],
     verifies: list[list[str]],
+    auto_apply_allowed: bool = False,
 ) -> dict[str, Any]:
     return {
         "id": step_id,
@@ -66,6 +77,7 @@ def _step(
         "apply_commands": apply_commands,
         "rollback": rollback,
         "verification_commands": verifies,
+        "auto_apply_allowed": auto_apply_allowed,
     }
 
 
@@ -138,6 +150,50 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
                 ["/Users/sereja/Projects/tools/telegram/bin/telegram-plugin-drift", "--json"],
             ],
+        )
+    )
+
+    materialize_warn = _finding_by_id(registry, "plugin_cache_needs_materialization")
+    materialize_cmd = (
+        materialize_warn.get("materialize_command")
+        if isinstance(materialize_warn, dict)
+        else None
+    )
+    if not isinstance(materialize_cmd, list) or not materialize_cmd:
+        materialize_cmd = [
+            str(MCP_REPO / "bin/materialize-plugin-cache"),
+            "--source-dir",
+            str(PLUGIN_SOURCE),
+            "--cache-root",
+            str(PLUGIN_CACHE_ROOT),
+            "--json",
+        ]
+    steps.append(
+        _step(
+            step_id="plugin-cache-materialize",
+            title="Materialize Codex Telegram plugin cache from canonical source",
+            status="ready_to_apply" if materialize_warn else "already_clean",
+            reason=(
+                "Plugin source is ahead of installed cache; copy the versioned cache tree locally."
+                if materialize_warn
+                else "Plugin cache matches source for the active version."
+            ),
+            touched_paths=[
+                str(PLUGIN_SOURCE),
+                str(PLUGIN_CACHE_ROOT),
+            ],
+            dry_run_commands=[
+                [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
+            ],
+            apply_commands=[materialize_cmd] if materialize_warn else [],
+            rollback=[
+                "Older versioned cache directories remain intact; re-run materialize after reverting source.",
+            ],
+            verifies=[
+                [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-doctor"), "--json"],
+            ],
+            auto_apply_allowed=True,
         )
     )
 
@@ -319,6 +375,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
     recommended_order = [
         "managed-systems-inventory",
         "plugin-cache-parity",
+        "plugin-cache-materialize",
         "mcp-surface-allowlist",
         "launchd-inventory-and-cold-mode",
         "session-registry",
@@ -335,6 +392,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         "safety": {
             "default_mode": "dry_run_only",
             "stateful_apply_requires_explicit_step": True,
+            "auto_apply_allowed_steps": sorted(AUTO_APPLY_STEP_IDS),
             "do_not_do_first": [
                 "move repos",
                 "delete Telegram-related paths without managed-systems inventory",
@@ -345,4 +403,92 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 "copy sessions",
             ],
         },
+    }
+
+
+def _run_command(command: list[str], *, timeout: int = 120) -> dict[str, Any]:
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
+    )
+    return {
+        "command": command,
+        "exit_code": completed.returncode,
+        "stdout": (completed.stdout or "").strip(),
+        "stderr": (completed.stderr or "").strip(),
+    }
+
+
+def apply_repair_plan(
+    registry: dict[str, Any] | None = None,
+    *,
+    step_ids: Iterable[str] | None = None,
+    verify: bool = True,
+) -> dict[str, Any]:
+    plan = build_repair_plan(registry)
+    allowed = frozenset(step_ids) if step_ids is not None else AUTO_APPLY_STEP_IDS
+    by_id = {step["id"]: step for step in plan["steps"]}
+    applied: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    failures: list[dict[str, Any]] = []
+
+    for step_id in plan["recommended_order"]:
+        if step_id not in allowed:
+            continue
+        step = by_id.get(step_id)
+        if step is None:
+            continue
+        if not step.get("auto_apply_allowed"):
+            skipped.append({"id": step_id, "reason": "not_auto_apply_allowed"})
+            continue
+        if step.get("status") != "ready_to_apply":
+            skipped.append({"id": step_id, "reason": f"status={step.get('status')}"})
+            continue
+        commands = step.get("apply_commands")
+        if not isinstance(commands, list) or not commands:
+            skipped.append({"id": step_id, "reason": "no_apply_commands"})
+            continue
+
+        step_runs: list[dict[str, Any]] = []
+        step_failed = False
+        for command in commands:
+            if not isinstance(command, list) or not command:
+                continue
+            run = _run_command([str(part) for part in command])
+            step_runs.append(run)
+            if run["exit_code"] != 0:
+                step_failed = True
+                failures.append({"step_id": step_id, **run})
+                break
+
+        applied.append({"id": step_id, "runs": step_runs, "status": "fail" if step_failed else "ok"})
+        if step_failed:
+            break
+
+        if verify:
+            verify_runs: list[dict[str, Any]] = []
+            for command in step.get("verification_commands", []):
+                if not isinstance(command, list) or not command:
+                    continue
+                run = _run_command([str(part) for part in command], timeout=180)
+                verify_runs.append(run)
+                if run["exit_code"] != 0:
+                    failures.append({"step_id": step_id, "phase": "verify", **run})
+                    step_failed = True
+                    break
+            applied[-1]["verify_runs"] = verify_runs
+            if step_failed:
+                break
+
+    status = "fail" if failures else ("ok" if applied else "noop")
+    return {
+        "schema_version": 1,
+        "status": status,
+        "allowed_steps": sorted(allowed),
+        "applied": applied,
+        "skipped": skipped,
+        "failures": failures,
     }

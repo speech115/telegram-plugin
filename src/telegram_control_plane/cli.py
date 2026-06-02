@@ -23,7 +23,7 @@ from .audits import (
     write_registry,
 )
 from .paths import OBSERVED_REGISTRY
-from .planner import build_repair_plan
+from .planner import apply_repair_plan, build_repair_plan
 
 
 COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -41,6 +41,7 @@ COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "mirror-preflight": audit_mirror_preflight,
     "telecrawl-status": audit_telecrawl,
     "repair-plan": build_repair_plan,
+    "repair-plan-apply": apply_repair_plan,
 }
 
 

@@ -118,6 +118,7 @@ def audit_plugin_drift() -> dict[str, Any]:
                     "before treating cache as current."
                 ),
                 "installer_command": installer_flow.get("command"),
+                "materialize_command": installer_flow.get("materialize_command"),
             }
         )
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
@@ -295,6 +296,43 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                     "message": "telegram-fast-read-today --help did not return the expected CLI contract.",
                 }
             )
+        adapter_source = FAST_READ_ADAPTER.read_text(encoding="utf-8", errors="replace")
+        module_path = MCP_REPO / "src/telegram_mcp/fast_read_today.py"
+        module_source = (
+            module_path.read_text(encoding="utf-8", errors="replace")
+            if module_path.is_file()
+            else ""
+        )
+        if "telegram_mcp.fast_read_today" not in adapter_source:
+            findings.append(
+                {
+                    "id": "fast_read_adapter_wrapper_drift",
+                    "severity": "blocking",
+                    "message": "telegram-fast-read-today must delegate to telegram_mcp.fast_read_today.",
+                }
+            )
+        if '"telegram_read"' not in module_source:
+            findings.append(
+                {
+                    "id": "fast_read_adapter_stale_tool",
+                    "severity": "blocking",
+                    "message": (
+                        "telegram_mcp.fast_read_today must call the task-shaped "
+                        "telegram_read tool exposed on the default MCP surface."
+                    ),
+                }
+            )
+        if '"read_today_dialog"' in module_source:
+            findings.append(
+                {
+                    "id": "fast_read_adapter_legacy_tool",
+                    "severity": "blocking",
+                    "message": (
+                        "telegram_mcp.fast_read_today still references read_today_dialog, "
+                        "which is not on the default plugin allowlist."
+                    ),
+                }
+            )
 
     return {
         "status": status_from_findings(findings),
@@ -314,12 +352,53 @@ def audit_fast_read_adapter() -> dict[str, Any]:
     }
 
 
+def audit_agent_docs_sync() -> dict[str, Any]:
+    """Ensure MCP docs/agent matches plugin references manifest."""
+
+    command = [
+        str(MCP_REPO / "bin/sync-agent-docs"),
+        "--plugin-dir",
+        str(PLUGIN_PACKAGE),
+        "--check",
+        "--no-restart",
+        "--json",
+    ]
+    raw = run_json(command, timeout=30)
+    findings: list[dict[str, Any]] = []
+    if raw.get("status") == "drift":
+        for item in raw.get("drift", []):
+            findings.append(
+                {
+                    "id": "agent_docs_drift",
+                    "severity": "blocking",
+                    "message": str(item),
+                }
+            )
+    elif raw.get("status") not in {"ok", None}:
+        findings.append(
+            {
+                "id": "agent_docs_sync_failed",
+                "severity": "blocking",
+                "message": f"agent docs sync check status is {raw.get('status')!r}.",
+            }
+        )
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "topics": raw.get("topics"),
+        "drift": raw.get("drift"),
+    }
+
+
 def audit_release_gates() -> dict[str, Any]:
     """Packaging hygiene, fresh-install adapter smoke, and prompt-safety heuristics."""
 
     command = [
         str(MCP_REPO / "bin/check-release-gates"),
         "--package-dir",
+        str(PLUGIN_PACKAGE),
+        "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--json",
     ]
@@ -1461,6 +1540,7 @@ def _collect_components() -> dict[str, dict[str, Any]]:
         "docs": audit_docs(),
         "plugin_drift": audit_plugin_drift(),
         "fast_read_adapter": audit_fast_read_adapter(),
+        "agent_docs_sync": audit_agent_docs_sync(),
         "release_gates": audit_release_gates(),
         "install_adapters": audit_install_adapters(),
         "mcp_surface": audit_mcp_surface(),

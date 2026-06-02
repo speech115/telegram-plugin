@@ -1,4 +1,4 @@
-# Facade Routing
+# Facade routing
 
 ## Fast Defaults
 
@@ -9,18 +9,8 @@
   Only report live Telegram unavailable after both the exposed facade path and
   the bounded local MCP shortcut fail. Do not replace a current-state answer
   with mirror or archive evidence.
-- On the local Sereja host, the supported simple-read shortcut is
-  `telegram-fast-read-today`. Use it before `mcporter` only for simple read-only
-  today reads; fall back to the live facade for writes, media inspection,
-  subscriber export, fuzzy identity work, or complete-context paging.
-- Scoped one-on-one reads like "прочитай переписку с @user за сегодня с HH:MM"
-  should complete in one fast pass: read the requested local calendar day with
-  `include_voice_transcription=false`, `include_sender_name=false`, and a
-  bounded timeout. If the read payload returns a canonical `dialog_ref`, reuse it
-  for any follow-up call. If the start time is near local midnight, also read
-  the previous UTC calendar day before summarizing. Do not inspect media, page,
-  run repo/vault checks, or use `mcporter` unless the text evidence or a real
-  MCP failure requires it.
+- If the host ships a local read-only adapter for simple today reads, use it before `mcporter` discovery. Fall back to `telegram_read` when the adapter is absent or fails.
+- Scoped today reads: one pass with `telegram_read(day=..., mode="fast", limit≤30)`. Reuse `chat.dialog_ref`. Near local midnight, also check the previous UTC day when the user gives a start time.
 - Quick orientation: `collect_dialog_context(mode="fast", recent_limit=15-30, include_pinned=false)`.
 - Date-specific today reads: use `telegram_read(day=...)` instead of manually computing today's range.
 - One-on-one fast reads: pass `include_sender_name=false` unless speaker identity is unclear.
@@ -44,24 +34,21 @@
 - Within one long-lived MCP session, a repeated identical read may show
   `result_cache_hit=true` with a small `result_cache_age_seconds`.
 
-## App-Style Aliases
+## Tool choice
 
-When exposed by the current host, app-style aliases are thin wrappers over the dialog facade:
-
-- `find_dialog` -> `resolve_dialog`
-- `read_dialog` -> `telegram_read` when `day` is set, otherwise recent dialog read
-- `collect_context` -> `collect_dialog_context`
-- `draft_reply` -> `prepare_dialog_reply`
-- `reply_message` -> `reply_in_dialog`
-
-Prefer canonical facade names in agent routing unless the host exposes only the aliases.
-
-## Avoid Double Work
+| Intent | Tool |
+| --- | --- |
+| Today / recent skim | `telegram_read` `mode="fast"` |
+| Keyword in dialog | `telegram_search` |
+| Richer window | `collect_dialog_context` or `telegram_read` `mode="full"` |
+| Draft | `telegram_prepare_reply` |
+| Send | `telegram_confirmed_send` after preview token |
+| Visuals | `telegram_inspect_media` + downloads |
 
 - Do not call `resolve_dialog` after a facade read already returned `chat.dialog_ref`.
 - Do not follow `collect_dialog_context` with another broad read for the same window unless needed parameters were missing.
 - Do not follow `prepare_dialog_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
-- Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `search_dialog_messages` first.
+- Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `telegram_search` first.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.
 - Do not page just because `has_more_before=true`; page only when the user asked for completeness or current evidence is insufficient.
 
@@ -75,7 +62,7 @@ Prefer canonical facade names in agent routing unless the host exposes only the 
   directly referenced by the text or needed to answer.
 - If `collection_mode="fast"` gives enough evidence for a low-stakes status summary, stop there.
 
-## Paging Budget
+## Paging budget
 
 - For "fully today", "nothing missed", or exact quote requests, page until the requested date/window is complete or the facade reports no more matching messages.
 - For broad project/chat orientation, start with one fast window. Add at most one broader follow-up window before summarizing unless the user asked for exhaustive coverage.
@@ -86,16 +73,5 @@ Prefer canonical facade names in agent routing unless the host exposes only the 
   or tool errors. Report the last complete window and the reason paging stopped.
 - Always report remaining `has_more_before`, `truncated`, or equivalent flags when they could affect the conclusion.
 
-## Absolute Dates
-
-When manually passing date ranges for relative dates like `today`, `yesterday`, or `this week`, use absolute dates in the user's local timezone. Prefer `telegram_read(day=...)` when available.
-
-## Write Intent Examples
-
-- "что ответить", "подготовь ответ", "draft" -> draft only.
-- "покажи перед отправкой", "preview" -> non-sending preview only.
-- "отправь: <exact text> <target>" -> resolve target, verify hard stops, then send.
-- "send it" -> send only after an unchanged same-turn preview with the same
-  target, reply id when relevant, and exact text.
-- "ответь ему", "send him ok", fuzzy names, changed drafts, or old previews ->
-  ask for a stable target/text or prepare a new preview.
+- If the default MCP HTTP endpoint times out or refuses connections, retry the configured failover port (usually `8800`) once via `telegram-fast-read-today` or live MCP before declaring Telegram unavailable.
+- Repeat identical `telegram_read` calls for the same `dialog_ref` and `day` may hit server cache; avoid duplicate reads in the same turn.

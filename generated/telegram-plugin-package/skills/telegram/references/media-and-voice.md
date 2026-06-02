@@ -5,7 +5,7 @@
 Use this when the user asks things like "что на картинке", "посмотри фото",
 "опиши стикеры", or "какие картинки он присылал".
 
-1. Read the relevant dialog window with `collect_dialog_context`, `read_today_dialog`, or `search_dialog_messages`.
+1. Read the relevant dialog window with `telegram_read`, `collect_dialog_context`, or `telegram_search`.
 2. Collect message ids where `has_media=true` and `media_type` matches the request.
 3. If `prepare_media_inspection_manifest` is available, use it to select explicit ids without unnecessary downloads.
 4. Download selected messages with `download_media_batch` or `download_dialog_media`; use `download_media` for a single item when batch helpers are unavailable.

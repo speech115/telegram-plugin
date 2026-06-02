@@ -20,6 +20,7 @@ desired policy.
 ./bin/telegram-mirror-preflight --json
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
+./bin/telegram-repair-plan-apply --json
 ./bin/telegram-docs-audit --json
 ./bin/telegram-release-gates --json
 ./bin/telegram-install-adapters --json
@@ -46,6 +47,16 @@ directory, use:
   --source-dir /path/to/telegram-plugin-staging \
   --output-dir /path/to/empty/telegram-plugin-package \
   --json
+```
+
+`build-plugin-package` regenerates `telegram-mcp/docs/agent/` from
+`skills/telegram/agent-docs/manifest.json` and skill `references/` before copying
+files. To check or refresh docs without packaging:
+
+```bash
+/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/bin/sync-agent-docs \
+  --plugin-dir /Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package \
+  --check --json
 ```
 
 The builder fails closed if the package would contain private paths, `.env`,
@@ -75,6 +86,9 @@ contains live PIDs, timestamps, and host inventory state.
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
 applying changes.
+
+`telegram-repair-plan-apply --json` runs only allowlisted safe apply steps (today:
+`plugin-cache-materialize` when drift reports installer-ready cache lag).
 
 ## Surface Contract
 

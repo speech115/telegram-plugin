@@ -7,6 +7,20 @@ after the needed read path fails.
 Use these gates for install, materialization, cache refresh, release packaging,
 source repair, or after a real live-tool failure.
 
+## Agent Doc Sync
+
+MCP resources under `telegram://docs/{topic}` are generated from this plugin's
+`skills/telegram/agent-docs/manifest.json` and `references/`. After changing
+routing, source, or media references, regenerate before release:
+
+```bash
+<telegram-mcp>/bin/sync-agent-docs --plugin-dir <plugin-package-root> --json
+<telegram-mcp>/bin/sync-agent-docs --plugin-dir <plugin-package-root> --check --json
+```
+
+`build-plugin-package` runs the same sync automatically unless `--skip-agent-doc-sync`
+is passed.
+
 ## Runtime Smoke Gates
 
 For post-failure/default-read surface checks, verify only the live surface
