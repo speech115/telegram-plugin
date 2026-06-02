@@ -36,10 +36,6 @@ APPROVED_FACADE_TOOLS = {
     "get_me",
     "resolve_dialog",
     "find_dialog",
-    "read_dialog_by_date",
-    "read_today_dialog",
-    "read_recent_dialog",
-    "read_dialog",
     "collect_dialog_context",
     "collect_context",
     "prepare_dialog_reply",
@@ -52,10 +48,10 @@ APPROVED_FACADE_TOOLS = {
     "download_dialog_media",
     "telegram_inspect_media",
     "telegram_confirmed_send",
+    "telegram_export_members",
     "telegram_prepare_reply",
     "telegram_read",
     "telegram_search",
-    "transcribe_voice",
     "search_dialog_messages",
 }
 

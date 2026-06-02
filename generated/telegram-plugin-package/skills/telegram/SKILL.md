@@ -61,23 +61,22 @@ preflight.
 
 ## Live Facade
 
-Prefer the task-shaped and dialog facade tools exposed by Telegram MCP:
+Prefer the task-shaped facade tools exposed by Telegram MCP:
 
-- `telegram_read`
+- `telegram_read` — default first read path (fast, no pinned/voice unless requested)
 - `telegram_search`
 - `telegram_prepare_reply`
-- `telegram_inspect_media`
-- `resolve_dialog`
-- `read_today_dialog`
-- `collect_dialog_context`
-- `prepare_dialog_reply`
-- `prepare_send_message`
-- `prepare_reply_message`
-- `search_dialog_messages`
-- `download_media`
-- `download_media_batch`
 - `telegram_confirmed_send`
-- `transcribe_voice`
+- `telegram_inspect_media`
+- `telegram_export_members` — only with `pii_acknowledged=true`
+- `resolve_dialog` / `find_dialog`
+- `collect_context` / `collect_dialog_context`
+- `prepare_send_message` / `prepare_reply_message` / `prepare_dialog_reply`
+- `prepare_media_inspection_manifest`
+- `download_media` / `download_media_batch` / `download_dialog_media`
+
+Avoid default use of low-level read aliases (`read_today_dialog`, `read_recent_dialog`,
+`read_dialog`, `read_dialog_by_date`) and `transcribe_voice` unless the host only exposes those names.
 
 Use `telegram_confirmed_send` only with a fresh `confirmation_token` returned
 by the matching preview. Raw `send_dialog_message` / `reply_in_dialog` are

@@ -8,29 +8,25 @@
       "allowedTools": [
         "doctor_check",
         "get_me",
+        "resolve_dialog",
+        "find_dialog",
         "collect_context",
         "collect_dialog_context",
         "draft_reply",
-        "find_dialog",
+        "prepare_dialog_reply",
+        "prepare_send_message",
+        "prepare_reply_message",
+        "prepare_media_inspection_manifest",
         "telegram_read",
         "telegram_search",
         "telegram_prepare_reply",
         "telegram_confirmed_send",
+        "telegram_export_members",
         "telegram_inspect_media",
-        "prepare_dialog_reply",
-        "prepare_reply_message",
-        "prepare_send_message",
-        "prepare_media_inspection_manifest",
         "download_media",
         "download_media_batch",
         "download_dialog_media",
-        "read_dialog",
-        "read_dialog_by_date",
-        "read_recent_dialog",
-        "read_today_dialog",
-        "resolve_dialog",
-        "search_dialog_messages",
-        "transcribe_voice"
+        "search_dialog_messages"
       ]
     }
   }
