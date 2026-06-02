@@ -2,7 +2,7 @@
 
 - Date: `2026-04-17`
 - Status: `implemented`
-- Repo: `${TELEGRAM_MCP_REPO:-./mcp}`
+- Repo: `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp`
 
 ## Summary
 
@@ -52,7 +52,7 @@ This causes three concrete problems:
 The first product-grade Telegram experience should make these requests work through a
 single obvious route:
 
-- "прочитай переписку с `@example_user` за сегодня"
+- "прочитай переписку с `@targetdaddy` за сегодня"
 - "покажи последние 30 сообщений с `X`"
 - "найди у него сообщение про `Y`"
 - "ответь ему `Z`"

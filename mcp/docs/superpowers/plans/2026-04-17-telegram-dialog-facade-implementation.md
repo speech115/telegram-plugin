@@ -68,12 +68,12 @@ def test_resolve_dialog_returns_stable_dialog_ref(self):
     with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
         wrapper = TelegramWrapper(settings)
 
-    result = _run(wrapper.resolve_dialog("@example_user"))
+    result = _run(wrapper.resolve_dialog("@targetdaddy"))
 
     self.assertEqual(result.id, 1)
-    self.assertEqual(result.username, "example_user")
+    self.assertEqual(result.username, "targetdaddy")
     self.assertEqual(result.dialog_ref, "tg://dialog/unknown/1")
-    self.assertEqual(result.resolved_from, "@example_user")
+    self.assertEqual(result.resolved_from, "@targetdaddy")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -81,7 +81,7 @@ def test_resolve_dialog_returns_stable_dialog_ref(self):
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client.ClientTests.test_resolve_dialog_returns_stable_dialog_ref
 ```
 
@@ -134,7 +134,7 @@ def _coerce_dialog_query(self, chat: str | int) -> str | int:
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client.ClientTests.test_resolve_dialog_returns_stable_dialog_ref
 ```
 
@@ -168,7 +168,7 @@ def test_read_dialog_by_date_returns_stable_envelope(self):
 
     result = _run(
         wrapper.read_dialog_by_date(
-            chat="@example_user",
+            chat="@targetdaddy",
             date_from="2026-04-16",
             date_to="2026-04-16",
             total_limit=20,
@@ -187,7 +187,7 @@ Also add a `dialog_ref` reuse test:
 ```python
 def test_read_dialog_by_date_accepts_dialog_ref(self):
     ...
-    handle = _run(wrapper.resolve_dialog("@example_user"))
+    handle = _run(wrapper.resolve_dialog("@targetdaddy"))
     result = _run(
         wrapper.read_dialog_by_date(
             chat=handle.dialog_ref,
@@ -203,7 +203,7 @@ def test_read_dialog_by_date_accepts_dialog_ref(self):
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest \
   tests.test_client.ClientTests.test_read_dialog_by_date_returns_stable_envelope \
   tests.test_client.ClientTests.test_read_dialog_by_date_accepts_dialog_ref
@@ -275,7 +275,7 @@ async def read_dialog_by_date(...):
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client -v
 ```
 
@@ -305,15 +305,15 @@ Add tests for the remaining client-level facade behaviors:
 ```python
 def test_read_recent_dialog_uses_live_envelope(self):
     ...
-    result = _run(wrapper.read_recent_dialog(chat="@example_user", limit=2))
+    result = _run(wrapper.read_recent_dialog(chat="@targetdaddy", limit=2))
     self.assertEqual(result.message_count, 2)
     self.assertEqual(result.data_source, "live_telegram")
 
 
 def test_search_dialog_messages_scopes_to_one_dialog(self):
     ...
-    result = _run(wrapper.search_dialog_messages(chat="@example_user", query="hello", limit=5))
-    self.assertEqual(result.chat.username, "example_user")
+    result = _run(wrapper.search_dialog_messages(chat="@targetdaddy", query="hello", limit=5))
+    self.assertEqual(result.chat.username, "targetdaddy")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -321,7 +321,7 @@ def test_search_dialog_messages_scopes_to_one_dialog(self):
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client.ClientTests.test_read_recent_dialog_uses_live_envelope tests.test_client.ClientTests.test_search_dialog_messages_scopes_to_one_dialog
 ```
 
@@ -372,7 +372,7 @@ async def reply_in_dialog(...):
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client -v
 ```
 
@@ -416,13 +416,13 @@ class DialogFacadeToolTests(unittest.TestCase):
             id=1,
             name="Andrei",
             type="user",
-            username="example_user",
-            resolved_from="@example_user",
+            username="targetdaddy",
+            resolved_from="@targetdaddy",
             match_confidence=1.0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.resolve_dialog("@example_user"))
+            result = _run(server.resolve_dialog("@targetdaddy"))
 
         self.assertEqual(result.dialog_ref, "tg://dialog/user/1")
 ```
@@ -441,7 +441,7 @@ Update `tests/test_registration.py` so the expected tool list includes:
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_dialog_facade_tools tests.test_registration -v
 ```
 
@@ -503,7 +503,7 @@ Wire it through:
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_dialog_facade_tools tests.test_registration -v
 ```
 
@@ -557,7 +557,7 @@ Also update any tool inventory text to distinguish:
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_client tests.test_dialog_facade_tools tests.test_registration
 PYTHONPATH=src .venv/bin/python -m compileall src tests
 ```
@@ -592,7 +592,7 @@ to:
 Run:
 
 ```bash
-cd ${TELEGRAM_MCP_REPO:-./mcp}
+cd /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 PYTHONPATH=src .venv/bin/python -m compileall src tests
 ```

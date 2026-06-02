@@ -19,14 +19,14 @@ class ResourceTests(unittest.TestCase):
         wrapper.get_me.return_value = UserInfo(
             id=1,
             first_name="Sereja",
-            username="example",
+            username="sereja",
         )
 
         with patch("telegram_mcp.resources.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(me_resource())
 
         self.assertIsInstance(result, dict)
-        self.assertEqual(result["username"], "example")
+        self.assertEqual(result["username"], "sereja")
 
     def test_me_resource_uses_application_json_mime_type(self):
         resource = next(

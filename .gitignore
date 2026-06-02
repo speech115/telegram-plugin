@@ -28,3 +28,8 @@ build/
 
 .ai/
 **/.ai/
+mcp/.codex/
+mcp/.planning/
+control-plane/generated/
+control-plane/backups/
+control-plane/outputs/

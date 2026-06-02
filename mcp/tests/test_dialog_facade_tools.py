@@ -29,16 +29,16 @@ class DialogFacadeToolTests(unittest.TestCase):
             id=1,
             name="Andrei",
             type="user",
-            username="example_user",
-            resolved_from="@example_user",
+            username="targetdaddy",
+            resolved_from="@targetdaddy",
             match_confidence=1.0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.resolve_dialog("@example_user"))
+            result = _run(server.resolve_dialog("@targetdaddy"))
 
         self.assertEqual(result.dialog_ref, "tg://dialog/user/1")
-        wrapper.resolve_dialog.assert_awaited_once_with("@example_user")
+        wrapper.resolve_dialog.assert_awaited_once_with("@targetdaddy")
 
     def test_find_dialog_aliases_resolve_dialog(self):
         wrapper = AsyncMock()
@@ -47,15 +47,15 @@ class DialogFacadeToolTests(unittest.TestCase):
             id=1,
             name="Andrei",
             type="user",
-            username="example_user",
-            resolved_from="@example_user",
+            username="targetdaddy",
+            resolved_from="@targetdaddy",
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.find_dialog("@example_user"))
+            result = _run(server.find_dialog("@targetdaddy"))
 
         self.assertEqual(result.dialog_ref, "tg://dialog/user/1")
-        wrapper.resolve_dialog.assert_awaited_once_with("@example_user")
+        wrapper.resolve_dialog.assert_awaited_once_with("@targetdaddy")
 
     def test_read_dialog_by_date_returns_dialog_read_result(self):
         wrapper = AsyncMock()
@@ -65,8 +65,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -76,7 +76,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.read_dialog_by_date(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     date_from="2026-04-17",
                     date_to="2026-04-17",
                     page_size=25,
@@ -85,14 +85,14 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertEqual(result.range.date_from, "2026-04-17")
         wrapper.read_dialog_by_date.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             date_from="2026-04-17",
             date_to="2026-04-17",
             total_limit=25,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_dialog_by_date_passes_offset_id(self):
@@ -103,8 +103,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -113,7 +113,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             _run(
                 server.read_dialog_by_date(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     date_from="2026-04-17",
                     date_to="2026-04-17",
                     page_size=25,
@@ -122,14 +122,14 @@ class DialogFacadeToolTests(unittest.TestCase):
             )
 
         wrapper.read_dialog_by_date.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             date_from="2026-04-17",
             date_to="2026-04-17",
             total_limit=25,
             offset_id=111,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_dialog_by_date_passes_voice_transcription_budget(self):
@@ -140,8 +140,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -150,7 +150,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             _run(
                 server.read_dialog_by_date(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     date_from="2026-04-17",
                     date_to="2026-04-17",
                     max_voice_transcriptions=3,
@@ -158,14 +158,14 @@ class DialogFacadeToolTests(unittest.TestCase):
             )
 
         wrapper.read_dialog_by_date.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             date_from="2026-04-17",
             date_to="2026-04-17",
-            total_limit=50,
+            total_limit=20,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=3,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_today_dialog_uses_facade_method(self):
@@ -176,8 +176,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -186,21 +186,21 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.read_today_dialog(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     day="2026-05-09",
                     limit=25,
                 )
             )
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.read_today_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             day="2026-05-09",
             limit=25,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_recent_dialog_returns_dialog_read_result(self):
@@ -211,24 +211,24 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.read_recent_dialog(chat="@example_user", limit=10))
+            result = _run(server.read_recent_dialog(chat="@targetdaddy", limit=10))
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.read_recent_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             limit=10,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_dialog_alias_uses_today_when_day_is_provided(self):
@@ -239,8 +239,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -249,21 +249,21 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.read_dialog(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     day="2026-05-09",
                     limit=10,
                 )
             )
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.read_today_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             day="2026-05-09",
             limit=10,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_dialog_alias_uses_recent_without_day(self):
@@ -274,24 +274,24 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.read_dialog(chat="@example_user", limit=10))
+            result = _run(server.read_dialog(chat="@targetdaddy", limit=10))
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.read_recent_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             limit=10,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_recent_dialog_passes_offset_id(self):
@@ -302,23 +302,23 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            _run(server.read_recent_dialog(chat="@example_user", limit=10, offset_id=222))
+            _run(server.read_recent_dialog(chat="@targetdaddy", limit=10, offset_id=222))
 
         wrapper.read_recent_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             limit=10,
             offset_id=222,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_recent_dialog_can_disable_voice_transcription(self):
@@ -329,8 +329,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -339,19 +339,19 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             _run(
                 server.read_recent_dialog(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     limit=10,
                     include_voice_transcription=False,
                 )
             )
 
         wrapper.read_recent_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             limit=10,
             offset_id=0,
             include_voice_transcription=False,
             max_voice_transcriptions=None,
-            include_sender_name=True,
+            include_sender_name=False,
         )
 
     def test_read_recent_dialog_can_disable_sender_names(self):
@@ -362,8 +362,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -372,19 +372,28 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             _run(
                 server.read_recent_dialog(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     include_sender_name=False,
                 )
             )
 
         wrapper.read_recent_dialog.assert_awaited_once_with(
-            chat="@example_user",
-            limit=50,
+            chat="@targetdaddy",
+            limit=20,
             offset_id=0,
-            include_voice_transcription=True,
+            include_voice_transcription=False,
             max_voice_transcriptions=None,
             include_sender_name=False,
         )
+
+    def test_telegram_export_members_requires_pii_acknowledgement(self) -> None:
+        wrapper = AsyncMock()
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            with self.assertRaises(Exception):
+                _run(server.telegram_export_members(chat="@targetdaddy"))
+
+        wrapper.get_participants.assert_not_awaited()
 
     def test_search_dialog_messages_returns_dialog_read_result(self):
         wrapper = AsyncMock()
@@ -394,8 +403,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -404,18 +413,111 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.search_dialog_messages(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     query="hello",
                     limit=5,
                 )
             )
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.search_dialog_messages.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             query="hello",
             limit=5,
-            include_sender_name=True,
+            include_sender_name=False,
+        )
+
+    def test_telegram_read_uses_fast_context_by_default(self):
+        wrapper = AsyncMock()
+        wrapper.collect_dialog_context.return_value = DialogContextResult(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/user/1",
+                id=1,
+                name="Andrei",
+                type="user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
+            ),
+            messages=[],
+            message_count=0,
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(server.telegram_read(chat="@targetdaddy"))
+
+        self.assertEqual(result.chat.username, "targetdaddy")
+        wrapper.collect_dialog_context.assert_awaited_once_with(
+            chat="@targetdaddy",
+            mode="fast",
+            recent_limit=20,
+            include_pinned=False,
+            include_voice_transcription=False,
+        )
+
+    def test_telegram_search_uses_fast_sender_defaults(self):
+        wrapper = AsyncMock()
+        wrapper.search_dialog_messages.return_value = DialogReadResult(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/user/1",
+                id=1,
+                name="Andrei",
+                type="user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
+            ),
+            messages=[],
+            message_count=0,
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            _run(server.telegram_search(chat="@targetdaddy", query="hello", limit=5))
+
+        wrapper.search_dialog_messages.assert_awaited_once_with(
+            chat="@targetdaddy",
+            query="hello",
+            limit=5,
+            include_sender_name=False,
+        )
+
+    def test_telegram_prepare_reply_is_preview_only(self):
+        wrapper = AsyncMock()
+        wrapper.prepare_dialog_reply.return_value = DialogReplyPreparation(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/user/1",
+                id=1,
+                name="Andrei",
+                type="user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
+            ),
+            goal="reply",
+            context=DialogContextResult(
+                chat=DialogHandle(
+                    dialog_ref="tg://dialog/user/1",
+                    id=1,
+                    name="Andrei",
+                    type="user",
+                    username="targetdaddy",
+                    resolved_from="@targetdaddy",
+                ),
+                messages=[],
+                message_count=0,
+            ),
+            send_tool="send_dialog_message",
+            send_args_preview={"chat": "tg://dialog/user/1", "text": ""},
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(server.telegram_prepare_reply(chat="@targetdaddy", goal="reply"))
+
+        self.assertTrue(result.preview_only)
+        wrapper.prepare_dialog_reply.assert_awaited_once_with(
+            chat="@targetdaddy",
+            goal="reply",
+            reply_to_message_id=None,
+            context_limit=20,
+            mode="fast",
+            draft_text=None,
         )
 
     def test_collect_dialog_context_uses_facade_method(self):
@@ -426,8 +528,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -436,7 +538,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.collect_dialog_context(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     mode="fast",
                     recent_limit=10,
                     include_pinned=False,
@@ -445,7 +547,7 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertEqual(result.collection_mode, "fast")
         wrapper.collect_dialog_context.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             mode="fast",
             recent_limit=10,
             date_from=None,
@@ -465,25 +567,25 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.collect_context(chat="@example_user", recent_limit=10))
+            result = _run(server.collect_context(chat="@targetdaddy", recent_limit=10))
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         wrapper.collect_dialog_context.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             mode="fast",
             recent_limit=10,
             date_from=None,
             date_to=None,
             offset_id=0,
-            include_pinned=True,
+            include_pinned=False,
             pinned_limit=5,
             include_voice_transcription=None,
             max_voice_transcriptions=None,
@@ -497,8 +599,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -514,7 +616,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.prepare_dialog_reply(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     goal="reply",
                     draft_text="hello",
                 )
@@ -522,7 +624,7 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertTrue(result.preview_only)
         wrapper.prepare_dialog_reply.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             goal="reply",
             reply_to_message_id=None,
             context_limit=20,
@@ -538,8 +640,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             messages=[],
             message_count=0,
@@ -553,11 +655,11 @@ class DialogFacadeToolTests(unittest.TestCase):
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.draft_reply(chat="@example_user", goal="reply"))
+            result = _run(server.draft_reply(chat="@targetdaddy", goal="reply"))
 
         self.assertTrue(result.preview_only)
         wrapper.prepare_dialog_reply.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             goal="reply",
             reply_to_message_id=None,
             context_limit=20,
@@ -573,8 +675,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             text="hello",
             send_tool="send_dialog_message",
@@ -583,12 +685,12 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
-                server.prepare_send_message(chat="@example_user", text="hello")
+                server.prepare_send_message(chat="@targetdaddy", text="hello")
             )
 
         self.assertTrue(result.preview_only)
         wrapper.prepare_send_message.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             text="hello",
             parse_mode="md",
         )
@@ -601,8 +703,8 @@ class DialogFacadeToolTests(unittest.TestCase):
                 id=1,
                 name="Andrei",
                 type="user",
-                username="example_user",
-                resolved_from="@example_user",
+                username="targetdaddy",
+                resolved_from="@targetdaddy",
             ),
             text="pong",
             reply_target_message_id=3,
@@ -617,7 +719,7 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.prepare_reply_message(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     message_id=3,
                     text="pong",
                 )
@@ -625,7 +727,7 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertTrue(result.preview_only)
         wrapper.prepare_reply_message.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             message_id=3,
             text="pong",
             parse_mode="md",
@@ -684,13 +786,69 @@ class DialogFacadeToolTests(unittest.TestCase):
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(server.send_dialog_message(chat="@example_user", text="hello"))
+            result = _run(
+                server.send_dialog_message(
+                    chat="@targetdaddy",
+                    text="hello",
+                    confirmation_token="token",
+                )
+            )
 
         self.assertEqual(result.text, "hello")
         wrapper.send_dialog_message.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             text="hello",
             parse_mode="md",
+            confirmation_token="token",
+        )
+
+    def test_telegram_confirmed_send_routes_to_send_or_reply(self):
+        wrapper = AsyncMock()
+        wrapper.send_dialog_message.return_value = MessageInfo(
+            id=7,
+            chat_id=1,
+            date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+            text="hello",
+            is_outgoing=True,
+        )
+        wrapper.reply_in_dialog.return_value = MessageInfo(
+            id=8,
+            chat_id=1,
+            date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+            text="pong",
+            reply_to_msg_id=3,
+            is_outgoing=True,
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            _run(
+                server.telegram_confirmed_send(
+                    chat="tg://dialog/user/1",
+                    text="hello",
+                    confirmation_token="send-token",
+                )
+            )
+            _run(
+                server.telegram_confirmed_send(
+                    chat="tg://dialog/user/1",
+                    message_id=3,
+                    text="pong",
+                    confirmation_token="reply-token",
+                )
+            )
+
+        wrapper.send_dialog_message.assert_awaited_once_with(
+            chat="tg://dialog/user/1",
+            text="hello",
+            parse_mode="md",
+            confirmation_token="send-token",
+        )
+        wrapper.reply_in_dialog.assert_awaited_once_with(
+            chat="tg://dialog/user/1",
+            message_id=3,
+            text="pong",
+            parse_mode="md",
+            confirmation_token="reply-token",
         )
 
     def test_reply_in_dialog_uses_facade_method(self):
@@ -707,18 +865,20 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.reply_in_dialog(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     message_id=3,
                     text="pong",
+                    confirmation_token="token",
                 )
             )
 
         self.assertEqual(result.reply_to_msg_id, 3)
         wrapper.reply_in_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             message_id=3,
             text="pong",
             parse_mode="md",
+            confirmation_token="token",
         )
 
     def test_reply_message_aliases_reply_in_dialog(self):
@@ -735,16 +895,18 @@ class DialogFacadeToolTests(unittest.TestCase):
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(
                 server.reply_message(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     message_id=3,
                     text="pong",
+                    confirmation_token="token",
                 )
             )
 
         self.assertEqual(result.reply_to_msg_id, 3)
         wrapper.reply_in_dialog.assert_awaited_once_with(
-            chat="@example_user",
+            chat="@targetdaddy",
             message_id=3,
             text="pong",
             parse_mode="md",
+            confirmation_token="token",
         )

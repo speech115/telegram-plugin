@@ -22,7 +22,6 @@ from .dialog_facade_tools import (
     collect_dialog_context,
     draft_reply,
     find_dialog,
-    prepare_send_file,
     prepare_reply_message,
     prepare_send_message,
     prepare_dialog_reply,
@@ -36,6 +35,11 @@ from .dialog_facade_tools import (
     resolve_dialog,
     search_dialog_messages,
     send_dialog_message,
+    telegram_confirmed_send,
+    telegram_export_members,
+    telegram_prepare_reply,
+    telegram_read,
+    telegram_search,
 )
 from .group_tools import (
     create_channel,
@@ -60,6 +64,7 @@ from .media_tools import (
     register as register_media_tools,
     register_facade as register_media_facade_tools,
     send_file,
+    telegram_inspect_media,
 )
 from .message_tools import (
     create_poll,
@@ -88,10 +93,8 @@ from .privacy_tools import (
 )
 from .profile_tools import (
     delete_profile_photo,
-    download_profile_photo,
     get_user_photos,
     get_user_status,
-    register_facade as register_profile_facade_tools,
     register as register_profile_tools,
     update_profile,
 )
@@ -121,20 +124,19 @@ FACADE_TOOL_NAMES = {
     "download_dialog_media",
     "download_media",
     "download_media_batch",
-    "download_profile_photo",
     "find_dialog",
     "prepare_dialog_reply",
     "prepare_media_inspection_manifest",
     "prepare_reply_message",
-    "prepare_send_file",
     "prepare_send_message",
-    "read_dialog",
-    "read_dialog_by_date",
-    "read_recent_dialog",
-    "read_today_dialog",
     "resolve_dialog",
     "search_dialog_messages",
-    "transcribe_voice",
+    "telegram_confirmed_send",
+    "telegram_export_members",
+    "telegram_inspect_media",
+    "telegram_prepare_reply",
+    "telegram_read",
+    "telegram_search",
 }
 
 FULL_TOOL_PROFILES = {"all", "full", "admin", "legacy"}
@@ -156,15 +158,14 @@ def register_all_tools(mcp, *, profile: str | None = None) -> None:
         register_user_tools(mcp)
         register_dialog_facade_tools(mcp)
         register_media_facade_tools(mcp)
-        register_profile_facade_tools(mcp)
-        register_message_tools(mcp, facade_only=True)
         return
 
     register_user_tools(mcp)
     register_chat_tools(mcp)
     register_group_tools(mcp)
     register_message_tools(mcp)
-    register_dialog_facade_tools(mcp, include_writes=True)
+    register_dialog_facade_tools(mcp, include_writes=True, include_legacy_reads=True)
+    register_message_tools(mcp, facade_only=True)
     register_contact_tools(mcp)
     register_media_tools(mcp)
     register_story_tools(mcp)

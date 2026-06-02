@@ -84,87 +84,30 @@ try:
 except json.JSONDecodeError:
     sys.exit(2)
 dialog_ref = payload.get("dialog_ref") or payload.get("id")
+if payload.get("isError"):
+    sys.exit(3)
 if dialog_ref is None:
     sys.exit(4)
 print(dialog_ref)'
 }
 
 run_daemon_facade_smoke_check() {
-  ensure_python_runtime
-  printf 'Running telegram-mcp daemon facade smoke via direct MCP client...\n'
-  TELEGRAM_MCP_HOST="${HOST}" \
-  TELEGRAM_MCP_PORT="${PORT}" \
-  TELEGRAM_MCP_HTTP_PATH="${HTTP_PATH}" \
-  PYTHONPATH="${PYTHONPATH_VALUE}" \
-  "${PYTHON_BIN}" <<'PY'
-import asyncio
-import json
-import os
-from datetime import timedelta
-
-import httpx
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamable_http_client
-
-
-def _tool_payload(result):
-    structured = getattr(result, "structuredContent", None)
-    if isinstance(structured, dict):
-        return structured
-    for item in getattr(result, "content", []) or []:
-        text = getattr(item, "text", None)
-        if not text:
-            continue
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(payload, dict):
-            return payload
-    return {}
-
-
-async def main():
-    token = os.environ.get("TELEGRAM_MCP_AUTH_TOKEN", "").strip()
-    if not token:
-        raise SystemExit("TELEGRAM_MCP_AUTH_TOKEN is required for daemon facade smoke")
-    host = os.environ.get("TELEGRAM_MCP_HOST", "127.0.0.1")
-    port = os.environ.get("TELEGRAM_MCP_PORT", "8799")
-    path = os.environ.get("TELEGRAM_MCP_HTTP_PATH", "/mcp")
-    endpoint = f"http://{host}:{port}{path}"
-    read_timeout = timedelta(seconds=30)
-
-    async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http_client:
-        async with streamable_http_client(endpoint, http_client=http_client) as (read_stream, write_stream, _):
-            async with ClientSession(read_stream, write_stream, read_timeout_seconds=read_timeout) as session:
-                await session.initialize()
-                resolved = await session.call_tool(
-                    "resolve_dialog",
-                    {"query": "me"},
-                    read_timeout_seconds=read_timeout,
-                )
-                if resolved.isError:
-                    raise SystemExit("resolve_dialog returned isError=true")
-                dialog_ref = _tool_payload(resolved).get("dialog_ref") or _tool_payload(resolved).get("id")
-                if dialog_ref is None:
-                    raise SystemExit("resolve_dialog did not return dialog_ref")
-                collected = await session.call_tool(
-                    "collect_dialog_context",
-                    {
-                        "chat": str(dialog_ref),
-                        "mode": "fast",
-                        "recent_limit": 1,
-                        "include_pinned": False,
-                    },
-                    read_timeout_seconds=read_timeout,
-                )
-                if collected.isError:
-                    raise SystemExit("collect_dialog_context returned isError=true")
-                print("Facade smoke direct MCP client passed.")
-
-
-asyncio.run(main())
-PY
+  printf 'Running telegram-mcp daemon facade smoke via mcporter...\n'
+  local resolved
+  if ! resolved="$("${MCPORTER_BIN}" call telegram.resolve_dialog query=me --timeout 30000 --output json)"; then
+    printf 'Facade smoke check failed: mcporter call telegram.resolve_dialog returned non-zero.\n' >&2
+    exit 1
+  fi
+  local dialog_ref
+  if ! dialog_ref="$(printf '%s\n' "${resolved}" | extract_dialog_ref)"; then
+    printf 'Facade smoke check failed: telegram.resolve_dialog did not return dialog_ref.\n' >&2
+    exit 1
+  fi
+  printf 'Facade smoke dialog ref: %s\n' "${dialog_ref}"
+  if ! "${MCPORTER_BIN}" call telegram.collect_dialog_context "chat=${dialog_ref}" mode=fast recent_limit=1 include_pinned=false --timeout 30000 --output json >/dev/null; then
+    printf 'Facade smoke check failed: mcporter call telegram.collect_dialog_context returned non-zero.\n' >&2
+    exit 1
+  fi
 }
 
 if [ "${TRANSPORT}" != "stdio" ]; then

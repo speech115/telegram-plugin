@@ -145,8 +145,8 @@ class CacheTests(unittest.TestCase):
         w = self._make_wrapper()
 
         self.assertEqual(
-            w._make_result_cache_key("dialog_read", " @Example_User ", 5),
-            w._make_result_cache_key("dialog_read", "@example_user", 5),
+            w._make_result_cache_key("dialog_read", " @TargetDaddy ", 5),
+            w._make_result_cache_key("dialog_read", "@targetdaddy", 5),
         )
         self.assertNotEqual(
             w._make_result_cache_key("dialog_read", " Project Chat ", 5),

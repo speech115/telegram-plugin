@@ -1,6 +1,6 @@
 #!/bin/bash
 # Rotate telegram-mcp logs. Keep last 3 rotations, max 1MB each.
-LOG="${TELEGRAM_MCP_LOG:-$HOME/Library/Logs/telegram-mcp/http-launchd.log}"
+LOG="/Users/sereja/Library/Logs/telegram-mcp/http-launchd.log"
 MAX_SIZE=1048576  # 1MB
 
 [ ! -f "$LOG" ] && exit 0

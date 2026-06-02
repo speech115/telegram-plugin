@@ -6,8 +6,12 @@ import sys
 from typing import Any, Callable
 
 from .audits import (
+    audit_docs,
     audit_launchd,
+    audit_fast_read_adapter,
+    audit_install_adapters,
     audit_managed_systems,
+    audit_release_gates,
     audit_mcp_profiles,
     audit_mcp_surface,
     audit_mirror,
@@ -25,6 +29,10 @@ from .planner import build_repair_plan
 COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "managed-systems": audit_managed_systems,
     "plugin-drift": audit_plugin_drift,
+    "docs-audit": audit_docs,
+    "fast-read-adapter": audit_fast_read_adapter,
+    "release-gates": audit_release_gates,
+    "install-adapters": audit_install_adapters,
     "mcp-surface": audit_mcp_surface,
     "mcp-profiles": audit_mcp_profiles,
     "launchd-audit": audit_launchd,

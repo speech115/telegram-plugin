@@ -1,8 +1,8 @@
 {
   "launchctl_only_labels": [
     {
-      "label": "com.example.telecrawl.retry-gaps",
-      "program": "/bin/bash ${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}/retry-gaps.sh",
+      "label": "com.sereja.telecrawl.retry-gaps",
+      "program": "/bin/bash /Users/sereja/Projects/.artifacts/telecrawl/retry-gaps.sh",
       "role": "telecrawl_gap_retry",
       "known": true
     }

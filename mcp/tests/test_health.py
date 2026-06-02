@@ -40,7 +40,7 @@ class HealthTests(unittest.TestCase):
                 return type(
                     "UserStub",
                     (),
-                    {"first_name": "Sereja", "last_name": "", "username": "example"},
+                    {"first_name": "Sereja", "last_name": "", "username": "sereja"},
                 )()
 
             async def disconnect(self):

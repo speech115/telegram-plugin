@@ -3,29 +3,36 @@ from __future__ import annotations
 import ast
 import copy
 import json
-import os
 import plistlib
 import re
+import sqlite3
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .paths import (
+    CONTROL_ROOT,
+    FAST_READ_ADAPTER,
     HOME,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
     MIRROR_LEGACY_ALIAS,
     MIRROR_ROOT,
+    MIRROR_RUNTIME_ROOT,
     POLICY_DIR,
     PLUGIN_CACHE,
     PLUGIN_CACHE_ROOT,
+    PLUGIN_PACKAGE,
     PLUGIN_SOURCE,
+    PROJECTS_ROOT,
     TELECRAWL_ARCHIVE,
+    TELECRAWL_ARTIFACT_ROOT,
+    TELECRAWL_DEFAULT_DB,
+    plugin_source_version,
 )
-from .util import file_sha256, load_json, run_json, status_from_findings
-from .util import is_group_or_world_writable
+from .util import load_json, run_json, status_from_findings
 
 
 APPROVED_FACADE_TOOLS = {
@@ -33,34 +40,33 @@ APPROVED_FACADE_TOOLS = {
     "get_me",
     "resolve_dialog",
     "find_dialog",
-    "telegram_read",
-    "telegram_search",
-    "telegram_prepare_reply",
-    "telegram_inspect_media",
-    "read_dialog_by_date",
-    "read_today_dialog",
-    "read_recent_dialog",
-    "read_dialog",
     "collect_dialog_context",
     "collect_context",
     "prepare_dialog_reply",
     "draft_reply",
     "prepare_send_message",
     "prepare_reply_message",
-    "prepare_send_file",
     "prepare_media_inspection_manifest",
     "download_media",
     "download_media_batch",
     "download_dialog_media",
-    "download_profile_photo",
-    "transcribe_voice",
+    "telegram_inspect_media",
+    "telegram_confirmed_send",
+    "telegram_export_members",
+    "telegram_prepare_reply",
+    "telegram_read",
+    "telegram_search",
     "search_dialog_messages",
 }
 
 WRITE_OR_DESTRUCTIVE_RE = re.compile(
     r"^(create|delete|demote|edit|forward|import|invite|leave|mark|promote|reply|send|set|update)_"
 )
-PATH_LIKE_RE = re.compile(r"^(~|\$?\{?[A-Z0-9_]+|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin|/[A-Za-z0-9_.-]+)")
+_PATH_HOME = re.escape(str(HOME))
+_PATH_PROJECTS = re.escape(str(PROJECTS_ROOT))
+PATH_LIKE_RE = re.compile(
+    rf"^({_PATH_PROJECTS}|{_PATH_HOME}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
+)
 
 SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
 PRIVATE_KEYS = {
@@ -75,42 +81,23 @@ PRIVATE_KEYS = {
 PRIVATE_PATH_SUBSTRINGS = (
     ".session",
     "telegram_user_id",
-    "~/.telegram-mcp",
-    "~/.telegram-mcp-secondary",
-    "~/Library/Application Support/Telegram Desktop/tdata",
-    "TELECRAWL_ARTIFACT_ROOT",
+    str(HOME / ".telegram-mcp"),
+    str(HOME / ".telegram-mcp-pl"),
+    str(HOME / "Library/Application Support/Telegram Desktop/tdata"),
+    str(TELECRAWL_ARTIFACT_ROOT),
 )
-PRIVATE_KEY_FRAGMENTS = ("api_hash", "session_string", "dotenv", "tdata", "telecrawl")
-PRIVATE_VALUE_SUBSTRINGS = (
-    ".env",
-    ".session",
-    "api_hash",
-    "session_string",
-    "tdata",
-    "telecrawl-fast.db",
-    "telecrawl-accounts.db",
-    ".db.manifest",
-    "/users/",
+
+DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS = frozenset(
+    {
+        "ChannelPrivateError",
+        "ChatAdminRequiredError",
+        "UserBannedInChannelError",
+        "UserNotParticipantError",
+        "ChannelInvalidError",
+        "InviteHashExpiredError",
+        "InviteHashInvalidError",
+    }
 )
-EXECUTABLE_MARKERS: dict[str, tuple[str, ...]] = {
-    "telecrawl-archive-wrapper": ("telecrawl", "archive"),
-    "telecrawl-fast-binary": ("telecrawl", "fast"),
-}
-SHELL_DEFAULT_PATH_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]+)\}(.*)$")
-
-
-def _resolve_policy_path(raw_path: str, *, base: Path | None = None) -> Path:
-    """Resolve policy paths without invoking a shell."""
-
-    match = SHELL_DEFAULT_PATH_RE.match(raw_path)
-    if match:
-        env_name, default, suffix = match.groups()
-        selected = os.environ.get(env_name) or default
-        raw_path = f"{selected}{suffix}"
-    expanded = Path(os.path.expandvars(raw_path)).expanduser()
-    if not expanded.is_absolute() and base is not None:
-        expanded = base / expanded
-    return expanded
 
 
 def audit_plugin_drift() -> dict[str, Any]:
@@ -118,7 +105,9 @@ def audit_plugin_drift() -> dict[str, Any]:
     raw = run_json(command, timeout=30)
     findings: list[dict[str, Any]] = []
     status = raw.get("status")
-    if status != "ok":
+    installer_flow = raw.get("installer_flow") if isinstance(raw.get("installer_flow"), dict) else {}
+    installer_ready = status == "installer_ready_drift" and installer_flow.get("safe_to_apply") is True
+    if status != "ok" and not installer_ready:
         findings.append(
             {
                 "id": "plugin_drift",
@@ -126,23 +115,16 @@ def audit_plugin_drift() -> dict[str, Any]:
                 "message": f"Plugin drift checker status is {status!r}.",
             }
         )
-    live_sha = raw.get("live_skill", {}).get("sha256") if isinstance(raw.get("live_skill"), dict) else None
-    source_sha = (
-        raw.get("plugin_source_skill", {}).get("sha256")
-        if isinstance(raw.get("plugin_source_skill"), dict)
-        else None
-    )
-    cache_sha = (
-        raw.get("plugin_cache_skill", {}).get("sha256")
-        if isinstance(raw.get("plugin_cache_skill"), dict)
-        else None
-    )
-    if live_sha and source_sha and cache_sha and len({live_sha, source_sha, cache_sha}) > 1:
+    elif installer_ready:
         findings.append(
             {
-                "id": "plugin_skill_sha_mismatch",
-                "severity": "blocking",
-                "message": "Live/source/cache Telegram skill SHA values do not all match.",
+                "id": "plugin_cache_needs_materialization",
+                "severity": "warn",
+                "message": (
+                    "Plugin source is ahead of installed cache; run the Codex installer flow "
+                    "before treating cache as current."
+                ),
+                "installer_command": installer_flow.get("command"),
             }
         )
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
@@ -161,11 +143,275 @@ def audit_plugin_drift() -> dict[str, Any]:
             "plugin_cache_skill": str(PLUGIN_CACHE / "skills/telegram/SKILL.md"),
         },
         "sha256": {
-            "live_skill": live_sha or file_sha256(LIVE_SKILL / "SKILL.md"),
-            "plugin_source_skill": source_sha or file_sha256(PLUGIN_SOURCE / "skills/telegram/SKILL.md"),
-            "plugin_cache_skill": cache_sha or file_sha256(PLUGIN_CACHE / "skills/telegram/SKILL.md"),
+            "live_skill": _raw_sha(raw, "live_skill"),
+            "plugin_source_skill": _raw_sha(raw, "plugin_source_skill"),
+            "plugin_cache_skill": _raw_sha(raw, "plugin_cache_skill"),
         },
+        "tree_sha256": {
+            "live_skill_tree": _raw_tree_sha(raw, "live_skill_tree"),
+            "plugin_source_skill_tree": _raw_tree_sha(raw, "plugin_source_skill_tree"),
+            "plugin_cache_skill_tree": _raw_tree_sha(raw, "plugin_cache_skill_tree"),
+            "plugin_source_package": _raw_tree_sha(raw, "plugin_source_package_tree"),
+            "plugin_cache_package": _raw_tree_sha(raw, "plugin_cache_package_tree"),
+        },
+        "tree_file_counts": {
+            "live_skill_tree": _raw_tree_file_count(raw, "live_skill_tree"),
+            "plugin_source_skill_tree": _raw_tree_file_count(raw, "plugin_source_skill_tree"),
+            "plugin_cache_skill_tree": _raw_tree_file_count(raw, "plugin_cache_skill_tree"),
+            "plugin_source_package": _raw_tree_file_count(raw, "plugin_source_package_tree"),
+            "plugin_cache_package": _raw_tree_file_count(raw, "plugin_cache_package_tree"),
+        },
+        "tree_diff": raw.get("tree_diff") if isinstance(raw.get("tree_diff"), dict) else {},
         "raw": raw,
+    }
+
+
+DOC_AUDIT_PATHS = (
+    CONTROL_ROOT / "README.md",
+    CONTROL_ROOT / "PLAN.md",
+)
+DOC_PLUGIN_VERSION_RE = re.compile(r"plugin version `(\d+\.\d+\.\d+)`")
+DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS = frozenset({"list_chats"})
+
+
+def audit_docs() -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    plugin_version = plugin_source_version()
+    checked: list[str] = []
+
+    for path in DOC_AUDIT_PATHS:
+        if not path.exists():
+            findings.append(
+                {
+                    "id": "docs_missing",
+                    "severity": "blocking",
+                    "message": f"Expected control-plane doc is missing: {path.name}",
+                    "path": str(path),
+                }
+            )
+            continue
+        checked.append(str(path))
+        text = path.read_text(encoding="utf-8")
+        for match in DOC_PLUGIN_VERSION_RE.finditer(text):
+            mentioned = match.group(1)
+            if plugin_version and mentioned != plugin_version:
+                findings.append(
+                    {
+                        "id": "stale_plugin_version_in_docs",
+                        "severity": "blocking",
+                        "message": (
+                            f"{path.name} mentions plugin version {mentioned!r}; "
+                            f"canonical package version is {plugin_version!r}."
+                        ),
+                        "path": str(path),
+                        "mentioned_version": mentioned,
+                        "expected_version": plugin_version,
+                    }
+                )
+        for tool in sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS):
+            if tool in text:
+                findings.append(
+                    {
+                        "id": "deprecated_default_surface_tool_in_docs",
+                        "severity": "blocking",
+                        "message": (
+                            f"{path.name} documents deprecated default-surface tool {tool!r}; "
+                            "update examples to facade tools."
+                        ),
+                        "path": str(path),
+                        "tool": tool,
+                    }
+                )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "checked_paths": checked,
+        "plugin_version": plugin_version,
+        "deprecated_default_surface_tools": sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS),
+    }
+
+
+def _raw_sha(raw: dict[str, Any], key: str) -> str | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("sha256")
+    return value if isinstance(value, str) else None
+
+
+def _raw_tree_sha(raw: dict[str, Any], key: str) -> str | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("sha256")
+    return value if isinstance(value, str) else None
+
+
+def _raw_tree_file_count(raw: dict[str, Any], key: str) -> int | None:
+    item = raw.get(key)
+    if not isinstance(item, dict):
+        return None
+    value = item.get("file_count")
+    return value if isinstance(value, int) else None
+
+
+def audit_fast_read_adapter() -> dict[str, Any]:
+    """Verify the local read-only fast path used before mcporter for simple reads."""
+
+    exists = FAST_READ_ADAPTER.is_file()
+    executable = exists and FAST_READ_ADAPTER.stat().st_mode & 0o111 != 0
+    command = [str(FAST_READ_ADAPTER), "--help"]
+    help_probe: dict[str, Any] = {"ran": False}
+    findings: list[dict[str, Any]] = []
+
+    if not exists:
+        findings.append(
+            {
+                "id": "fast_read_adapter_missing",
+                "severity": "blocking",
+                "message": "telegram-fast-read-today adapter is missing.",
+            }
+        )
+    elif not executable:
+        findings.append(
+            {
+                "id": "fast_read_adapter_not_executable",
+                "severity": "blocking",
+                "message": "telegram-fast-read-today adapter exists but is not executable.",
+            }
+        )
+    else:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        help_probe = {
+            "ran": True,
+            "exit_code": completed.returncode,
+            "stdout_contains_usage": "telegram-fast-read-today" in completed.stdout,
+        }
+        if completed.returncode != 0 or "telegram-fast-read-today" not in completed.stdout:
+            findings.append(
+                {
+                    "id": "fast_read_adapter_help_failed",
+                    "severity": "blocking",
+                    "message": "telegram-fast-read-today --help did not return the expected CLI contract.",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "adapter": {
+            "path": str(FAST_READ_ADAPTER),
+            "exists": exists,
+            "executable": bool(executable),
+            "command": command,
+            "help_probe": help_probe,
+        },
+        "routing": {
+            "first_path_for": ["simple_today_read"],
+            "fallback": "live_mcp_facade",
+            "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
+        },
+    }
+
+
+def audit_release_gates() -> dict[str, Any]:
+    """Packaging hygiene, fresh-install adapter smoke, and prompt-safety heuristics."""
+
+    command = [
+        str(MCP_REPO / "bin/check-release-gates"),
+        "--package-dir",
+        str(PLUGIN_PACKAGE),
+        "--json",
+    ]
+    raw = run_json(command, timeout=60)
+    findings: list[dict[str, Any]] = []
+    if raw.get("exit_code") not in {0, None} and raw.get("status") is None:
+        findings.append(
+            {
+                "id": "release_gates_command_failed",
+                "severity": "blocking",
+                "message": "telegram-mcp release gate command failed.",
+                "command": command,
+                "stderr": raw.get("stderr"),
+            }
+        )
+        return {
+            "status": status_from_findings(findings),
+            "findings": findings,
+            "command": command,
+        }
+
+    if raw.get("status") != "ok":
+        for gate in raw.get("gates", []):
+            if not isinstance(gate, dict) or gate.get("status") == "ok":
+                continue
+            for issue in gate.get("findings", []):
+                findings.append(
+                    {
+                        "id": f"release_gate_{gate.get('name', 'unknown')}",
+                        "severity": "blocking",
+                        "message": str(issue),
+                    }
+                )
+        if not findings:
+            findings.append(
+                {
+                    "id": "release_gates_failed",
+                    "severity": "blocking",
+                    "message": "Release gates reported failure without details.",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "gates": raw.get("gates", []),
+        "failed": raw.get("failed", []),
+    }
+
+
+def audit_install_adapters() -> dict[str, Any]:
+    """Dry-run host adapter generation must stay portable."""
+
+    command = [str(MCP_REPO / "bin/install-adapters"), "--host", "all", "--json"]
+    raw = run_json(command, timeout=30)
+    findings: list[dict[str, Any]] = []
+    if raw.get("status") != "ok":
+        findings.append(
+            {
+                "id": "install_adapters_plan_failed",
+                "severity": "blocking",
+                "message": "Adapter installer returned non-ok status.",
+            }
+        )
+    planned = raw.get("planned_files", [])
+    for item in planned:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", "")
+        if isinstance(content, str) and str(HOME) in content:
+            findings.append(
+                {
+                    "id": "install_adapters_private_path",
+                    "severity": "blocking",
+                    "message": f"Adapter plan contains a hardcoded private path: {item.get('path')}",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "hosts": raw.get("hosts", []),
+        "planned_files": len(planned) if isinstance(planned, list) else 0,
     }
 
 
@@ -212,7 +458,8 @@ def audit_managed_systems() -> dict[str, Any]:
         expected_kind = str(item.get("expected_kind") or "path")
         deletion_protection = str(item.get("deletion_protection") or "blocking")
         required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
-        path = _resolve_policy_path(raw_path, base=POLICY_DIR.parent.parent) if raw_path else Path()
+        expected_resolved = item.get("expected_resolved") if isinstance(item.get("expected_resolved"), str) else None
+        path = Path(raw_path) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
         missing_markers = sorted(
@@ -234,6 +481,8 @@ def audit_managed_systems() -> dict[str, Any]:
             "deletion_protection": deletion_protection,
             "safe_delete": item.get("safe_delete"),
         }
+        if expected_resolved:
+            row["expected_resolved"] = expected_resolved
         rows.append(row)
         if not system_id:
             findings.append(
@@ -305,15 +554,17 @@ def audit_managed_systems() -> dict[str, Any]:
                     "message": "Registered Telegram managed system exists but required marker files are missing.",
                 }
             )
-        if _is_env_override(raw_path):
-            findings.extend(
-                _trust_findings_for_env_override(
-                    system_id=system_id,
-                    path=path,
-                    exists=exists,
-                    expected_kind=expected_kind,
-                    deletion_protection=deletion_protection,
-                )
+        elif expected_resolved and resolved != expected_resolved:
+            findings.append(
+                {
+                    "id": "managed_system_resolved_target_mismatch",
+                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
+                    "system": system_id,
+                    "path": raw_path,
+                    "resolved": resolved,
+                    "expected_resolved": expected_resolved,
+                    "message": "Registered Telegram managed system resolves to an unexpected target.",
+                }
             )
 
     deletion_policy = policy.get("deletion_policy") if isinstance(policy.get("deletion_policy"), dict) else {}
@@ -333,80 +584,6 @@ def audit_managed_systems() -> dict[str, Any]:
     }
 
 
-def _is_env_override(raw_path: str) -> bool:
-    match = SHELL_DEFAULT_PATH_RE.match(raw_path)
-    if not match:
-        return False
-    env_name = match.group(1)
-    return bool(os.environ.get(env_name))
-
-
-def _first_existing_ancestor(path: Path) -> Path | None:
-    current = path
-    while True:
-        if current.exists():
-            return current
-        if current.parent == current:
-            return None
-        current = current.parent
-
-
-def _trust_findings_for_env_override(
-    *,
-    system_id: str,
-    path: Path,
-    exists: bool,
-    expected_kind: str,
-    deletion_protection: str,
-) -> list[dict[str, Any]]:
-    findings: list[dict[str, Any]] = []
-    severity = "blocking" if deletion_protection == "blocking" else "warn"
-    if exists and path.is_symlink():
-        resolved = path.resolve(strict=False)
-        parent = path.parent.resolve(strict=False)
-        if resolved != parent and parent not in resolved.parents:
-            findings.append(
-                {
-                    "id": "managed_system_env_untrusted_symlink_escape",
-                    "severity": severity,
-                    "system": system_id,
-                    "path": str(path),
-                    "resolved": str(resolved),
-                    "message": "Environment override resolves through a symlink escape outside the configured root.",
-                }
-            )
-    trust_root = path.parent if expected_kind == "file" else path
-    ancestor = _first_existing_ancestor(trust_root)
-    if ancestor is not None and is_group_or_world_writable(ancestor):
-        findings.append(
-            {
-                "id": "managed_system_env_untrusted_world_writable_root",
-                "severity": severity,
-                "system": system_id,
-                "path": str(path),
-                "root": str(ancestor),
-                "message": "Environment override path is rooted in a group/world-writable location.",
-            }
-        )
-    markers = EXECUTABLE_MARKERS.get(system_id)
-    if markers and exists and path.is_file() and os.access(path, os.X_OK):
-        try:
-            sample = path.read_bytes()[:8192].decode("utf-8", errors="ignore").lower()
-        except OSError:
-            sample = ""
-        if not all(marker in sample for marker in markers):
-            findings.append(
-                {
-                    "id": "managed_system_env_untrusted_executable_marker",
-                    "severity": severity,
-                    "system": system_id,
-                    "path": str(path),
-                    "message": "Environment override executable is missing expected trust markers.",
-                }
-            )
-    return findings
-
-
 def _imported_tool_names(init_py: Path) -> list[str]:
     tree = ast.parse(init_py.read_text(encoding="utf-8"))
     names: list[str] = []
@@ -421,10 +598,31 @@ def _imported_tool_names(init_py: Path) -> list[str]:
     return sorted(set(names))
 
 
+def _confirmed_write_facade_tools() -> set[str]:
+    policy = load_json(POLICY_DIR / "write-policy.json") or {}
+    default_profile = policy.get("default_mcp_profile")
+    if not isinstance(default_profile, dict):
+        return set()
+    tools = default_profile.get("confirmed_write_facade_tools")
+    if not isinstance(tools, list):
+        return set()
+    return {str(item) for item in tools if isinstance(item, str)}
+
+
+def _is_unexpected_default_surface_tool(name: str, dialog_annotations: dict[str, str]) -> bool:
+    if name in _confirmed_write_facade_tools():
+        return False
+    if WRITE_OR_DESTRUCTIVE_RE.search(name):
+        return True
+    return dialog_annotations.get(name) not in {None, "readonly"}
+
+
 def _dialog_annotation_map(dialog_tools_py: Path) -> dict[str, str]:
     text = dialog_tools_py.read_text(encoding="utf-8")
     mapping: dict[str, str] = {}
-    pattern = re.compile(r"mcp\.tool\(annotations=(READONLY|ADDITIVE)\)\(tool_error_handler\((\w+)\)\)")
+    pattern = re.compile(
+        r"mcp\.tool\(annotations=(READONLY|ADDITIVE|CONFIRMED_WRITE)\)\(tool_error_handler\((\w+)\)\)"
+    )
     for annotation, tool_name in pattern.findall(text):
         mapping[tool_name] = annotation.lower()
     return mapping
@@ -453,7 +651,7 @@ def audit_mcp_surface() -> dict[str, Any]:
     unexpected_write = [
         name
         for name in effective_default_tools
-        if WRITE_OR_DESTRUCTIVE_RE.search(name) or dialog_annotations.get(name) not in {None, "readonly"}
+        if _is_unexpected_default_surface_tool(name, dialog_annotations)
     ]
     non_facade = [name for name in effective_default_tools if name not in APPROVED_FACADE_TOOLS]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
@@ -485,8 +683,7 @@ def audit_mcp_surface() -> dict[str, Any]:
             tool
             for tool in allowlist
             if tool not in APPROVED_FACADE_TOOLS
-            or WRITE_OR_DESTRUCTIVE_RE.search(tool)
-            or dialog_annotations.get(tool) not in {None, "readonly"}
+            or _is_unexpected_default_surface_tool(tool, dialog_annotations)
         )
         if unsafe_tools:
             findings.append(
@@ -563,12 +760,12 @@ def _launchctl_labels() -> dict[str, dict[str, Any]]:
 def _allowed_roots() -> tuple[list[Path], list[Path]]:
     policy = load_json(POLICY_DIR / "allowed-roots.json") or {}
     allowed = [
-        _resolve_policy_path(str(item.get("path"))).resolve(strict=False)
+        Path(str(item.get("path"))).resolve(strict=False)
         for item in policy.get("allowed_roots", [])
         if isinstance(item, dict) and item.get("path")
     ]
     aliases = [
-        _resolve_policy_path(str(item.get("path"))).resolve(strict=False)
+        Path(str(item.get("path"))).resolve(strict=False)
         for item in policy.get("temporary_compatibility_aliases", [])
         if isinstance(item, dict) and item.get("path")
     ]
@@ -679,7 +876,7 @@ def audit_launchd() -> dict[str, Any]:
                     "message": "LaunchAgent references the old telegram-mirror compatibility alias.",
                 }
             )
-        if label.startswith("com.example.telegram-mirror") and (data.get("RunAtLoad") or data.get("KeepAlive")):
+        if label.startswith("com.sereja.telegram-mirror") and (data.get("RunAtLoad") or data.get("KeepAlive")):
             findings.append(
                 {
                     "id": "mirror_launchagent_autostart_configured",
@@ -734,13 +931,13 @@ def audit_mcp_profiles() -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     for row in launchd["jobs"]:
         label = row.get("label")
-        if label not in {"com.example.telegram-mcp-http", "com.example.telegram-mcp-http-pl"}:
+        if label not in {"com.sereja.telegram-mcp-http", "com.sereja.telegram-mcp-http-pl"}:
             continue
         profiles.append(
             {
                 "label": label,
                 "port": row.get("telegram_mcp_port"),
-                "session_dir": row.get("telegram_session_dir") or "~/.telegram-mcp/session",
+                "session_dir": row.get("telegram_session_dir") or str(HOME / ".telegram-mcp/session"),
                 "working_directory": row.get("working_directory"),
                 "loaded": row.get("loaded"),
                 "write_policy": "unrestricted_server_surface_until_allowlisted",
@@ -766,7 +963,7 @@ def audit_sessions() -> dict[str, Any]:
     }
     candidates = [
         HOME / ".telegram-mcp/session.session",
-        HOME / ".telegram-mcp-secondary/session.session",
+        HOME / ".telegram-mcp-pl/session.session",
     ]
     candidates.extend(sorted(MIRROR_ROOT.glob("data/*.session")))
     sessions: list[dict[str, Any]] = []
@@ -822,9 +1019,11 @@ def audit_mirror() -> dict[str, Any]:
         "RECOVERY.md": MIRROR_ROOT / "RECOVERY.md",
         "PROVENANCE.md": MIRROR_ROOT / "PROVENANCE.md",
     }
-    sessions = sorted(str(path) for path in MIRROR_ROOT.glob("data/*.session*"))
-    ledgers = sorted(str(path) for path in (MIRROR_ROOT / "data/telegram_sync").glob("*.json"))
-    runtime_exports = MIRROR_ROOT / "runtime/ingest/telegram/exports"
+    recovery_sessions = sorted(str(path) for path in MIRROR_ROOT.glob("data/*.session*"))
+    runtime_sessions = sorted(str(path) for path in MIRROR_RUNTIME_ROOT.glob("data/*.session*"))
+    ledgers = sorted(str(path) for path in (MIRROR_RUNTIME_ROOT / "data/telegram_sync").glob("*.json"))
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
+    export_coverage = _mirror_export_coverage(runtime_exports)
     legacy_alias_exists = MIRROR_LEGACY_ALIAS.exists()
     findings: list[dict[str, Any]] = []
     if not (MIRROR_ROOT / ".git").exists():
@@ -835,13 +1034,21 @@ def audit_mirror() -> dict[str, Any]:
                 "message": "telegram-mirror is not a clean git source repo.",
             }
         )
-    if sessions:
+    if recovery_sessions:
         findings.append(
             {
                 "id": "mirror_runtime_sessions_in_tree",
                 "severity": "warn" if recovery_mode else "blocking",
                 "message": "Session files exist inside telegram-mirror recovery tree.",
-                "count": len(sessions),
+                "count": len(recovery_sessions),
+            }
+        )
+    if not MIRROR_RUNTIME_ROOT.exists():
+        findings.append(
+            {
+                "id": "mirror_runtime_root_missing",
+                "severity": "warn" if recovery_mode else "blocking",
+                "message": "External telegram-mirror runtime root is missing.",
             }
         )
     if not runtime_exports.exists():
@@ -850,6 +1057,18 @@ def audit_mirror() -> dict[str, Any]:
                 "id": "mirror_runtime_exports_missing",
                 "severity": "warn" if recovery_mode else "blocking",
                 "message": "Canonical mirror runtime export root is missing.",
+                "expected_exports": export_coverage.get("expected_count"),
+            }
+        )
+    elif export_coverage.get("missing_count"):
+        findings.append(
+            {
+                "id": "mirror_runtime_exports_incomplete",
+                "severity": "warn" if recovery_mode else "blocking",
+                "message": "Canonical mirror runtime export root is missing expected channel exports.",
+                "expected_exports": export_coverage.get("expected_count"),
+                "ready_exports": export_coverage.get("ready_count"),
+                "missing_exports": export_coverage.get("missing_count"),
             }
         )
     return {
@@ -858,6 +1077,7 @@ def audit_mirror() -> dict[str, Any]:
         "findings": findings,
         "policy": mirror_policy,
         "root": str(MIRROR_ROOT),
+        "runtime_root": str(MIRROR_RUNTIME_ROOT),
         "legacy_alias": {
             "path": str(MIRROR_LEGACY_ALIAS),
             "exists": legacy_alias_exists,
@@ -865,10 +1085,38 @@ def audit_mirror() -> dict[str, Any]:
         },
         "recovery_docs": {name: {"path": str(path), "exists": path.exists()} for name, path in recovery_docs.items()},
         "runtime_state": {
-            "sessions": sessions,
+            "recovery_sessions": recovery_sessions,
+            "sessions": runtime_sessions,
             "ledgers": ledgers,
+            "runtime_root_exists": MIRROR_RUNTIME_ROOT.exists(),
             "runtime_exports_exists": runtime_exports.exists(),
+            "export_coverage": export_coverage,
         },
+    }
+
+
+def _mirror_export_coverage(export_root: Path) -> dict[str, Any]:
+    allowlist_report = run_json(
+        ["python3", str(MIRROR_ROOT / "scripts/telegram_mirror_allowlist_report.py"), "--json"],
+        timeout=30,
+    )
+    channels = allowlist_report.get("channels") if isinstance(allowlist_report.get("channels"), list) else []
+    expected = []
+    for channel in channels:
+        if not isinstance(channel, dict) or not channel.get("retained"):
+            continue
+        folder = str(channel.get("export_folder") or "").strip()
+        if folder:
+            expected.append({"name": channel.get("name"), "export_folder": folder})
+    ready = [item for item in expected if (export_root / item["export_folder"] / "messages_raw.jsonl").exists()]
+    missing = [item for item in expected if item not in ready]
+    return {
+        "source": "allowlist_report",
+        "export_root": str(export_root),
+        "expected_count": len(expected),
+        "ready_count": len(ready),
+        "missing_count": len(missing),
+        "missing": missing,
     }
 
 
@@ -882,16 +1130,16 @@ def audit_mirror_preflight() -> dict[str, Any]:
     )
     launchd = audit_launchd()
     session_report = audit_sessions()
-    runtime_exports = MIRROR_ROOT / "runtime/ingest/telegram/exports"
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
     venv_python = MIRROR_ROOT / ".venv/bin/python"
     ledgers = mirror.get("runtime_state", {}).get("ledgers")
-    sessions = mirror.get("runtime_state", {}).get("sessions")
+    recovery_sessions = mirror.get("runtime_state", {}).get("recovery_sessions")
     loaded_jobs = launchd.get("loaded_jobs") if isinstance(launchd.get("loaded_jobs"), dict) else {}
     loaded_mirror_jobs = sorted(
         label
         for label, state in loaded_jobs.items()
         if isinstance(label, str)
-        and label.startswith("com.example.telegram")
+        and label.startswith("com.sereja.telegram")
         and "mcp" not in label
         and isinstance(state, dict)
         and state.get("loaded")
@@ -931,9 +1179,11 @@ def audit_mirror_preflight() -> dict[str, Any]:
         },
         {
             "id": "session_externalization",
-            "status": "ok" if not sessions else "fail",
+            "status": "ok" if not recovery_sessions else "fail",
             "message": "Runtime sessions must be owned outside the recovery source tree before promotion.",
-            "evidence": {"session_count_in_tree": len(sessions) if isinstance(sessions, list) else None},
+            "evidence": {
+                "session_count_in_tree": len(recovery_sessions) if isinstance(recovery_sessions, list) else None
+            },
         },
         {
             "id": "runtime_exports",
@@ -993,20 +1243,163 @@ def _safe_read_telecrawl_json(args: list[str], *, timeout: int = 90) -> dict[str
     return run_json([str(TELECRAWL_ARCHIVE), *args], timeout=timeout)
 
 
+def _telecrawl_manifest_path(db_path: Path | None = None) -> Path:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    return db_path.with_name(f"{db_path.name}.manifest.json")
+
+
+def _telecrawl_non_retryable_error_types(policy: dict[str, Any] | None = None) -> set[str]:
+    configured = policy.get("non_retryable_error_types") if isinstance(policy, dict) else None
+    if not isinstance(configured, list):
+        return set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
+    return {item for item in configured if isinstance(item, str) and item}
+
+
+def _telecrawl_import_gaps(
+    db_path: Path | None = None,
+    *,
+    non_retryable_error_types: set[str] | None = None,
+) -> dict[str, Any]:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    non_retryable_error_types = non_retryable_error_types or set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
+    if not db_path.exists():
+        return {
+            "has_known_gaps": False,
+            "has_retryable_gaps": False,
+            "has_terminal_gaps": False,
+            "errors": 0,
+            "retryable_errors": 0,
+            "terminal_errors": 0,
+            "error_chats": 0,
+            "error_summary": [],
+            "retryable_error_summary": [],
+            "terminal_error_summary": [],
+            "non_retryable_error_types": sorted(non_retryable_error_types),
+        }
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            tables = {
+                row[0]
+                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            }
+            if "import_errors" not in tables:
+                return {
+                    "has_known_gaps": False,
+                    "has_retryable_gaps": False,
+                    "has_terminal_gaps": False,
+                    "errors": 0,
+                    "retryable_errors": 0,
+                    "terminal_errors": 0,
+                    "error_chats": 0,
+                    "error_summary": [],
+                    "retryable_error_summary": [],
+                    "terminal_error_summary": [],
+                    "non_retryable_error_types": sorted(non_retryable_error_types),
+                }
+            summary = [
+                {"error_type": row[0], "chats": int(row[1] or 0), "attempts": int(row[2] or 0)}
+                for row in conn.execute(
+                    "SELECT error_type, COUNT(DISTINCT chat_jid) AS chats, COUNT(*) AS attempts "
+                    "FROM import_errors GROUP BY error_type ORDER BY attempts DESC"
+                ).fetchall()
+            ]
+            retryable_summary = [row for row in summary if row["error_type"] not in non_retryable_error_types]
+            terminal_summary = [row for row in summary if row["error_type"] in non_retryable_error_types]
+            row = conn.execute(
+                "SELECT COUNT(*) AS errors, COUNT(DISTINCT chat_jid) AS error_chats FROM import_errors"
+            ).fetchone()
+    except sqlite3.Error as exc:
+        return {
+            "has_known_gaps": True,
+            "has_retryable_gaps": True,
+            "has_terminal_gaps": False,
+            "errors": None,
+            "retryable_errors": None,
+            "terminal_errors": None,
+            "error_chats": None,
+            "error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
+            "retryable_error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
+            "terminal_error_summary": [],
+            "non_retryable_error_types": sorted(non_retryable_error_types),
+            "read_error": str(exc),
+        }
+    total_errors = int(row[0] or 0) if row else 0
+    terminal_errors = sum(int(item["attempts"] or 0) for item in terminal_summary)
+    retryable_errors = total_errors - terminal_errors
+    return {
+        "has_known_gaps": bool(total_errors),
+        "has_retryable_gaps": retryable_errors > 0,
+        "has_terminal_gaps": terminal_errors > 0,
+        "errors": total_errors,
+        "retryable_errors": retryable_errors,
+        "terminal_errors": terminal_errors,
+        "error_chats": int(row[1] or 0) if row else 0,
+        "error_summary": summary,
+        "retryable_error_summary": retryable_summary,
+        "terminal_error_summary": terminal_summary,
+        "non_retryable_error_types": sorted(non_retryable_error_types),
+        "retry_policy": {
+            "retry_only_when_has_retryable_gaps": True,
+            "do_not_retry_terminal_gaps": True,
+        },
+    }
+
+
+def _telecrawl_default_archive_status(
+    db_path: Path | None = None,
+    *,
+    non_retryable_error_types: set[str] | None = None,
+) -> dict[str, Any]:
+    db_path = db_path or TELECRAWL_DEFAULT_DB
+    manifest = load_json(_telecrawl_manifest_path(db_path)) or {}
+    import_state = manifest.get("import") if isinstance(manifest.get("import"), dict) else {}
+    counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
+    gaps = _telecrawl_import_gaps(db_path, non_retryable_error_types=non_retryable_error_types)
+    manifest_status = manifest.get("manifest_status")
+    coverage_claim = manifest.get("coverage_claim", "unknown_archive_snapshot")
+    if gaps.get("has_known_gaps"):
+        coverage_claim = "partial_archive_snapshot_with_known_gaps"
+    return {
+        "ok": True,
+        "source": "telecrawl",
+        "source_kind": manifest.get("source_kind", "archive_snapshot"),
+        "read_strategy": "manifest_plus_import_errors",
+        "coverage_claim": coverage_claim,
+        "manifest_coverage_claim": manifest.get("coverage_claim"),
+        "manifest_status": manifest_status,
+        "archive_ready": db_path.exists() and manifest_status == "complete",
+        "import_gaps": gaps,
+        "last_complete_import_at": import_state.get("last_complete_import_at"),
+        "status": {
+            "chats": counts.get("chats"),
+            "messages": counts.get("messages"),
+            "media_messages": counts.get("media_messages"),
+            "oldest_message": counts.get("oldest_message"),
+            "newest_message": counts.get("newest_message"),
+        },
+        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+
+
 def audit_telecrawl() -> dict[str, Any]:
     telecrawl_policy = load_json(POLICY_DIR / "telecrawl.json") or {}
+    non_retryable_error_types = _telecrawl_non_retryable_error_types(telecrawl_policy)
     accounts = _safe_read_telecrawl_json(["accounts"], timeout=30)
-    status = _safe_read_telecrawl_json(["status"], timeout=90)
+    status = _telecrawl_default_archive_status(non_retryable_error_types=non_retryable_error_types)
     findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
-    inactive = [row for row in account_rows if not row.get("active")]
-    if inactive:
+    active_incomplete = [
+        row
+        for row in account_rows
+        if row.get("active") and (not row.get("db_exists") or row.get("manifest_stale_or_missing"))
+    ]
+    if active_incomplete:
         findings.append(
             {
-                "id": "telecrawl_inactive_accounts",
+                "id": "telecrawl_active_archives_incomplete",
                 "severity": "warn",
-                "message": "Telecrawl account catalog contains inactive or missing archive accounts.",
-                "count": len(inactive),
+                "message": "Telecrawl account catalog contains active accounts with missing or stale archives.",
+                "count": len(active_incomplete),
             }
         )
     import_gaps = status.get("import_gaps") if isinstance(status.get("import_gaps"), dict) else {}
@@ -1016,12 +1409,32 @@ def audit_telecrawl() -> dict[str, Any]:
             if telecrawl_policy.get("known_gaps_are_blocking_for_archive_search") is False
             else "blocking"
         )
+        retryable = import_gaps.get("retryable_error_summary")
+        terminal = import_gaps.get("terminal_error_summary")
+        retryable_count = len(retryable) if isinstance(retryable, list) else 0
+        terminal_count = len(terminal) if isinstance(terminal, list) else 0
+        expected_ids = telecrawl_policy.get("expected_doctor_warning_ids")
+        expected_gap_warning = (
+            isinstance(expected_ids, list)
+            and "telecrawl_known_gaps" in expected_ids
+            and severity == "warn"
+        )
         findings.append(
             {
                 "id": "telecrawl_known_gaps",
                 "severity": severity,
-                "message": "Telecrawl default archive has known import gaps.",
+                "message": (
+                    "Telecrawl default archive has known import gaps "
+                    f"({retryable_count} retryable, {terminal_count} terminal); "
+                    "not a control-plane release blocker."
+                    if expected_gap_warning
+                    else "Telecrawl default archive has known import gaps."
+                ),
                 "summary": import_gaps.get("error_summary"),
+                "retryable_summary": retryable,
+                "terminal_summary": terminal,
+                "retry_policy": import_gaps.get("retry_policy"),
+                "expected_operational_warning": expected_gap_warning,
             }
         )
     if status.get("source_kind") != "archive_snapshot":
@@ -1052,7 +1465,11 @@ def audit_telecrawl() -> dict[str, Any]:
 def _collect_components() -> dict[str, dict[str, Any]]:
     return {
         "managed_systems": audit_managed_systems(),
+        "docs": audit_docs(),
         "plugin_drift": audit_plugin_drift(),
+        "fast_read_adapter": audit_fast_read_adapter(),
+        "release_gates": audit_release_gates(),
+        "install_adapters": audit_install_adapters(),
         "mcp_surface": audit_mcp_surface(),
         "mcp_profiles": audit_mcp_profiles(),
         "launchd": audit_launchd(),
@@ -1140,13 +1557,24 @@ def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str,
     if name == "telegram_mirror":
         runtime_state = report.get("runtime_state") if isinstance(report.get("runtime_state"), dict) else {}
         sessions = runtime_state.get("sessions") if isinstance(runtime_state.get("sessions"), list) else []
+        recovery_sessions = (
+            runtime_state.get("recovery_sessions") if isinstance(runtime_state.get("recovery_sessions"), list) else []
+        )
         ledgers = runtime_state.get("ledgers") if isinstance(runtime_state.get("ledgers"), list) else []
+        export_coverage = (
+            runtime_state.get("export_coverage") if isinstance(runtime_state.get("export_coverage"), dict) else {}
+        )
         return {
             **report,
             "runtime_state_summary": {
                 "session_count": len(sessions),
+                "recovery_session_count": len(recovery_sessions),
                 "ledger_count": len(ledgers),
+                "runtime_root_exists": bool(runtime_state.get("runtime_root_exists")),
                 "runtime_exports_exists": bool(runtime_state.get("runtime_exports_exists")),
+                "export_expected_count": export_coverage.get("expected_count"),
+                "export_ready_count": export_coverage.get("ready_count"),
+                "export_missing_count": export_coverage.get("missing_count"),
             },
         }
     if name == "telecrawl":
@@ -1189,10 +1617,6 @@ def _redact_private_runtime_details(value: Any) -> Any:
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         for key, item in value.items():
-            lower_key = key.lower()
-            if any(fragment in lower_key for fragment in PRIVATE_KEY_FRAGMENTS):
-                result[key] = _redacted_private_value(key, item)
-                continue
             if key in PRIVATE_KEYS:
                 if key == "path" and isinstance(item, str) and not any(
                     marker in item for marker in PRIVATE_PATH_SUBSTRINGS
@@ -1205,10 +1629,6 @@ def _redact_private_runtime_details(value: Any) -> Any:
     if isinstance(value, list):
         return [_redact_private_runtime_details(item) for item in value]
     if isinstance(value, str) and any(marker in value for marker in PRIVATE_PATH_SUBSTRINGS):
-        return "<redacted>"
-    if isinstance(value, str) and any(marker in value.lower() for marker in PRIVATE_VALUE_SUBSTRINGS):
-        return "<redacted>"
-    if isinstance(value, str) and value.startswith(str(HOME)):
         return "<redacted>"
     if isinstance(value, str) and (value.startswith("tg:") or value.startswith("Telegram @")):
         return "<redacted>"

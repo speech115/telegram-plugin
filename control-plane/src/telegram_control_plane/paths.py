@@ -12,28 +12,40 @@ def _path_from_env(name: str, default: str | Path) -> Path:
 HOME = Path.home()
 PROJECTS_ROOT = _path_from_env("TELEGRAM_PROJECTS_ROOT", HOME / "Projects")
 CONTROL_ROOT = _path_from_env("TELEGRAM_CONTROL_PLANE_ROOT", Path(__file__).resolve().parents[2])
-REPO_ROOT = CONTROL_ROOT.parent
-MCP_REPO = _path_from_env("TELEGRAM_MCP_REPO", REPO_ROOT / "mcp")
-PLUGIN_SOURCE = _path_from_env("TELEGRAM_PLUGIN_SOURCE", REPO_ROOT / "plugin")
-PLUGIN_CACHE_ROOT = _path_from_env("TELEGRAM_PLUGIN_CACHE_ROOT", HOME / ".codex/plugins/cache/sereja-local/telegram")
+MONOREPO_ROOT = CONTROL_ROOT.parent
+MCP_REPO = _path_from_env("TELEGRAM_MCP_REPO", MONOREPO_ROOT / "mcp")
+PLUGIN_SOURCE = _path_from_env("TELEGRAM_PLUGIN_SOURCE", MONOREPO_ROOT / "plugin")
+PLUGIN_PACKAGE = _path_from_env("TELEGRAM_PLUGIN_PACKAGE", PLUGIN_SOURCE)
+PLUGIN_CACHE_ROOT = _path_from_env("TELEGRAM_PLUGIN_CACHE_ROOT", HOME / ".codex/plugins/cache/local/telegram")
 LIVE_SKILL = _path_from_env("TELEGRAM_LIVE_SKILL", HOME / ".agents/skills/telegram")
-MIRROR_ROOT = _path_from_env("TELEGRAM_MIRROR_ROOT", PROJECTS_ROOT / "tools/telegram-mirror")
-MIRROR_LEGACY_ALIAS = _path_from_env("TELEGRAM_MIRROR_LEGACY_ALIAS", PROJECTS_ROOT / "tools/telegram-mirror")
-TELECRAWL_ARCHIVE = _path_from_env("TELECRAWL_ARCHIVE_BIN", "telecrawl-archive")
-LAUNCHAGENTS_DIR = HOME / "Library/LaunchAgents"
+MIRROR_ROOT = _path_from_env("TELEGRAM_MIRROR_ROOT", PROJECTS_ROOT / "tools" / "telegram-mirror")
+MIRROR_RUNTIME_ROOT = _path_from_env(
+    "TELEGRAM_MIRROR_RUNTIME_ROOT",
+    PROJECTS_ROOT / "runtime" / "telegram-mirror",
+)
+MIRROR_LEGACY_ALIAS = _path_from_env("TELEGRAM_MIRROR_LEGACY_ALIAS", MIRROR_ROOT)
+TELECRAWL_ARCHIVE = Path(os.environ.get("TELECRAWL_ARCHIVE_BIN", "telecrawl-archive"))
+TELECRAWL_ARTIFACT_ROOT = _path_from_env("TELECRAWL_ARTIFACT_ROOT", PROJECTS_ROOT / ".artifacts" / "telecrawl")
+TELECRAWL_DEFAULT_DB = _path_from_env("TELECRAWL_DEFAULT_DB", TELECRAWL_ARTIFACT_ROOT / "telecrawl-fast.db")
+LAUNCHAGENTS_DIR = HOME / "Library" / "LaunchAgents"
 GENERATED_DIR = CONTROL_ROOT / "generated"
 OBSERVED_REGISTRY = GENERATED_DIR / "observed-registry.json"
 POLICY_DIR = CONTROL_ROOT / "policy"
+FAST_READ_ADAPTER = CONTROL_ROOT / "bin" / "telegram-fast-read-today"
 
 
-def _plugin_source_version() -> str | None:
+def plugin_source_version() -> str | None:
     manifest = PLUGIN_SOURCE / ".codex-plugin/plugin.json"
     try:
-        data = json.loads(manifest.read_text())
+        data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     version = data.get("version")
     return version if isinstance(version, str) and version else None
+
+
+def _plugin_source_version() -> str | None:
+    return plugin_source_version()
 
 
 def _latest_plugin_cache() -> Path:

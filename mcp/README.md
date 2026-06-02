@@ -41,10 +41,16 @@ mcporter list telegram --json
 ./bin/stress-readonly --iterations 24 --concurrency 4 --json
 ./bin/stress-readonly --mode cache-pair --iterations 12 --json
 ./bin/check-plugin-drift --json
+./bin/install-adapters --host all --json
 ./scripts/check.sh
 PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 PYTHONPATH=src .venv/bin/python -m compileall src tests
 ```
+
+`./bin/install-adapters` is safe by default: it prints a dry-run plan for Codex,
+Claude Code, OpenCode, and standalone skill adapter snippets. Use `--apply` only
+with an explicit `--output-dir`; it writes snippets there and does not mutate live
+host config files.
 
 ## Dialog facade
 
@@ -80,9 +86,9 @@ returned, but the read path skips extra `get_sender()` calls.
 Examples:
 
 ```bash
-mcporter call telegram.read_dialog_by_date --args '{"chat":"@example_user","date_from":"2026-04-17","date_to":"2026-04-17","page_size":50}'
-mcporter call telegram.reply_in_dialog --args '{"chat":"@example_user","message_id":123,"text":"Принял, посмотрю"}'
-mcporter call telegram.download_media_batch --args '{"chat":"@example_user","message_ids":[123,124],"concurrency":2}'
+mcporter call telegram.read_dialog_by_date --args '{"chat":"@targetdaddy","date_from":"2026-04-17","date_to":"2026-04-17","page_size":50}'
+mcporter call telegram.reply_in_dialog --args '{"chat":"@targetdaddy","message_id":123,"text":"Принял, посмотрю"}'
+mcporter call telegram.download_media_batch --args '{"chat":"@targetdaddy","message_ids":[123,124],"concurrency":2}'
 ```
 
 ## Task facade v2
@@ -189,7 +195,7 @@ selecting explicit message ids; it delegates to `download_media_batch`.
   `doctor.runtime_stats` hit counters instead of relying on process-level
   latency
 - `bin/stress-readonly` runs bounded daemon pressure checks through `mcporter`
-  using only safe read-only calls (`get_me`, `list_chats`,
+  using only safe read-only calls (`get_me`, `resolve_dialog`,
   `collect_dialog_context`, `read_today_dialog`, `search_dialog_messages`);
   `--mode cache-pair` repeats identical facade reads in pairs so cache-hit
   effects are visible in latency diagnostics
@@ -203,14 +209,14 @@ selecting explicit message ids; it delegates to `download_media_batch`.
   the current agent-routing layer and prove the installer flow before touching
   managed cache files.
 - The Codex plugin apply path for the local Telegram plugin is
-  source-first: update `${TELEGRAM_PLUGIN_SOURCE:-./plugin}`, bump its plugin
+  source-first: update `/Users/sereja/plugins/telegram`, bump its plugin
   manifest version, re-add the local marketplace if Codex still points at a stale
   staged root, and materialize only the new versioned cache from that canonical
   source. Leave older cache versions intact. Do not run any apply path while
   `bin/check-plugin-drift --json` reports `installer_flow.safe_to_apply=false`;
   that would just package the wrong source into installed layers.
 - in daemon mode `scripts/smoke-check.sh` also does one facade-level probe
-  through `mcporter` (`list_chats -> collect_dialog_context`) so the external
+  through `mcporter` (`resolve_dialog -> collect_dialog_context`) so the external
   client path catches stale or missing facade wiring
 - in `streamable-http` mode the ops scripts probe the daemon through `mcporter`,
   which matches the normal external-client path instead of opening a second direct

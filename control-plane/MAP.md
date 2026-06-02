@@ -4,14 +4,14 @@ Start here when working on local Telegram tooling.
 
 ## Main Entry
 
-- `${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}`
+- `/Users/sereja/Projects/tools/telegram`
   - role: control-plane, protection layer, generated observer registry
   - use for: status, doctor, managed inventory, repair planning
   - do not store: sessions, secrets, raw media, archive DBs, subscriber exports
 
 ## Live Telegram
 
-- `${TELEGRAM_MCP_REPO:-./mcp}`
+- `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp`
   - role: live MCP backend
   - use for: current Telegram reads, dialog facade, live MCP daemon code
   - protected by: `telegram-plugin-drift`, `telegram-mcp-surface`,
@@ -19,49 +19,55 @@ Start here when working on local Telegram tooling.
 
 ## User-Facing Plugin And Skills
 
-- `${TELEGRAM_PLUGIN_SOURCE:-./plugin}`
-  - role: local Telegram plugin source
-  - use for: plugin package metadata, MCP allowlist, assets, user-facing skill
+- `/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package`
+  - role: canonical portable Telegram plugin package
+  - use for: release/package source, plugin metadata, MCP allowlist, assets,
+    user-facing skill
 
-- `${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}`
+- `/Users/sereja/plugins/telegram`
+  - role: local marketplace compatibility symlink
+  - use for: Codex marketplace discovery through `/Users/sereja`
+
+- `/Users/sereja/.codex/plugins/cache/sereja-local/telegram`
   - role: installed plugin cache
   - use for: installed/cached plugin parity checks
 
-- `${TELEGRAM_LIVE_SKILL:-~/.agents/skills/telegram}`
+- `/Users/sereja/.agents/skills/telegram`
   - role: live Telegram skill facade
+  - note: symlink to `generated/telegram-plugin-package/skills/telegram`
   - use for: normal live dialog work, media/voice inspection, draft/send flows
 
-- `${TELEGRAM_LOCAL_MIRROR_SKILL:-~/Projects/.codex/skills/telegram-local-mirror}`
+- `/Users/sereja/Projects/.codex/skills/telegram-local-mirror`
   - role: archive/mirror routing skill
   - use for: allowlisted mirror reads and telecrawl archive search guidance
 
 ## Mirror
 
-- `${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror`
+- `/Users/sereja/Projects/tools/telegram-mirror`
   - role: mirror recovery candidate
   - current classification: `mirror-recovery`
   - use for: mirror source inspection, recovery work, preflight only
   - do not do from this control-plane: start watchers, backfills, sync jobs, or
     promote to runtime without `telegram-mirror-preflight --json`
 
-- `${TELEGRAM_MIRROR_LEGACY_ALIAS:-~/Projects/tools/telegram-mirror}`
+- `/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror`
   - role: legacy compatibility symlink
   - use for: discovery and old references only
 
 ## Telecrawl
 
-- `${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}`
+- `/Users/sereja/Projects/.artifacts/telecrawl`
   - role: account-scoped archive DBs, manifests, logs
   - use for: historical archive evidence and gap accounting
   - not live/current truth
 
-- `${TELECRAWL_HOME:-~/.telecrawl}`
+- `/Users/sereja/.telecrawl`
   - role: local telecrawl runtime/user state
 
-- `${TELECRAWL_ARCHIVE_BIN:-telecrawl-archive}`
+- `/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-archive`
   - role: archive CLI wrapper
 
-- `${TELECRAWL_FAST_BIN:-telecrawl-fast}`
+- `/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-fast`
   - role: patched import binary
 
 ## Cleanup Rule

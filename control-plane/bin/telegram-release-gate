@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+ci_mode=0
+for arg in "$@"; do
+  case "${arg}" in
+    --ci)
+      ci_mode=1
+      ;;
+  esac
+done
+
+failures=0
+
+run_gate() {
+  local name="$1"
+  shift
+  if "$@"; then
+    printf 'release-gate: %s ok\n' "${name}"
+  else
+    printf 'release-gate: %s failed\n' "${name}" >&2
+    failures=$((failures + 1))
+  fi
+}
+
+if [[ "${ci_mode}" -eq 1 ]]; then
+  run_gate docs-audit ./bin/telegram-docs-audit --json
+  run_gate pytest python3 -m pytest -q
+else
+  run_gate managed-systems ./bin/telegram-managed-systems --json
+  run_gate mcp-surface ./bin/telegram-mcp-surface --json
+  run_gate plugin-drift ./bin/telegram-plugin-drift --json
+  run_gate release-gates ./bin/telegram-release-gates --json
+  run_gate install-adapters ./bin/telegram-install-adapters --json
+  run_gate docs-audit ./bin/telegram-docs-audit --json
+  run_gate pytest python3 -m pytest -q
+fi
+
+if [[ "${failures}" -gt 0 ]]; then
+  printf 'release-gate: %s check(s) failed\n' "${failures}" >&2
+  exit 1
+fi
+
+printf 'release-gate: all checks passed\n'

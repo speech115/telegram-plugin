@@ -146,6 +146,8 @@ class DialogReplyPreparation(BaseModel):
     preview_only: bool = True
     send_tool: str
     send_args_preview: dict[str, object]
+    confirmation_token: str | None = None
+    confirmation_expires_at: datetime | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -157,6 +159,8 @@ class DialogSendPreparation(BaseModel):
     preview_only: bool = True
     send_tool: str
     send_args_preview: dict[str, object]
+    confirmation_token: str | None = None
+    confirmation_expires_at: datetime | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -354,6 +358,7 @@ class Participant(BaseModel):
 class ParticipantsResult(BaseModel):
     participants: list[Participant]
     total: int | None = None
+    export_path: str | None = None
 
 
 class InviteLinkInfo(BaseModel):

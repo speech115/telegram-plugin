@@ -64,6 +64,24 @@ async def prepare_media_inspection_manifest(
     )
 
 
+async def telegram_inspect_media(
+    chat: str | int,
+    limit: int = 30,
+    offset_id: int = 0,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> MediaInspectionManifest:
+    """Task-shaped media inspection manifest. This does not download files."""
+    tg = await runtime.get_tg()
+    return await tg.prepare_media_inspection_manifest(
+        chat=chat,
+        limit=limit,
+        offset_id=offset_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 async def download_story_media(peer: str | int, story_id: int) -> MediaInfo:
     """Download media from a Telegram story to local filesystem."""
     tg = await runtime.get_tg()
@@ -97,3 +115,4 @@ def register_facade(mcp) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(download_media_batch))
     mcp.tool(annotations=READONLY)(tool_error_handler(download_dialog_media))
     mcp.tool(annotations=READONLY)(tool_error_handler(prepare_media_inspection_manifest))
+    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_inspect_media))

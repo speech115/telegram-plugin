@@ -24,14 +24,14 @@ class DownloadRegistryTests(unittest.TestCase):
 
             entry = registry.upsert_download(
                 chat_id=11,
-                chat_ref="@example_user",
+                chat_ref="@targetdaddy",
                 message_id=7,
                 local_path=media_path,
                 downloaded_at=datetime(2026, 5, 9, 12, 0, tzinfo=UTC),
             )
 
             self.assertEqual(entry.chat_id, "11")
-            self.assertEqual(entry.chat_ref, "@example_user")
+            self.assertEqual(entry.chat_ref, "@targetdaddy")
             self.assertEqual(entry.message_id, 7)
             self.assertEqual(entry.local_path, str(media_path))
             self.assertEqual(entry.size, 5)
@@ -85,7 +85,7 @@ class DownloadRegistryTests(unittest.TestCase):
             media_path.write_bytes(b"voice")
             original = registry.upsert_download(
                 chat_id=11,
-                chat_ref="@example_user",
+                chat_ref="@targetdaddy",
                 message_id=7,
                 local_path=media_path,
                 downloaded_at=datetime(2026, 5, 9, 12, 0, tzinfo=UTC),
@@ -94,7 +94,7 @@ class DownloadRegistryTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 registry.upsert_download(
                     chat_id=11,
-                    chat_ref="@example_user",
+                    chat_ref="@targetdaddy",
                     message_id=7,
                     local_path=root / "missing.oga",
                     downloaded_at=datetime(2026, 5, 9, 12, 1, tzinfo=UTC),
@@ -122,7 +122,7 @@ class DownloadRegistryTests(unittest.TestCase):
             )
             operations._record_downloaded_message_media(
                 chat_id=1,
-                chat_ref="@example_user",
+                chat_ref="@targetdaddy",
                 message_id=7,
                 path=result.local_path,
             )
@@ -131,7 +131,7 @@ class DownloadRegistryTests(unittest.TestCase):
                 settings.media_download_registry_path,
             ).get(chat_id=1, message_id=7)
             self.assertIsNotNone(entry)
-            self.assertEqual(entry.chat_ref, "@example_user")
+            self.assertEqual(entry.chat_ref, "@targetdaddy")
             self.assertEqual(entry.local_path, str(media_path))
             self.assertEqual(entry.size, 3)
             self.assertEqual(result.local_path, str(media_path))

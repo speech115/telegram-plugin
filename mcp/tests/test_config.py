@@ -9,10 +9,11 @@ from telegram_mcp.config import Settings
 
 
 class ConfigTests(unittest.TestCase):
-    def test_download_retention_is_disabled_by_default(self):
+    def test_download_retention_uses_private_cache_defaults(self):
         settings = Settings(api_id=1, api_hash="hash")
 
-        self.assertEqual(settings.download_retention_days, 0)
+        self.assertEqual(settings.download_retention_days, 7)
+        self.assertIn(".cache", str(settings.download_dir))
 
     def test_scheduler_and_timeout_defaults_are_safe_for_shared_daemon(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -71,6 +72,36 @@ class ConfigTests(unittest.TestCase):
 
             self.assertFalse(settings.session_dir.exists())
             self.assertTrue(settings.download_dir.exists())
+
+    def test_runtime_dirs_are_owner_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            settings = Settings(
+                api_id=1,
+                api_hash="hash",
+                session_dir=tmp_path / "sessions",
+                download_dir=tmp_path / "downloads",
+            )
+
+            settings.ensure_dirs()
+
+            self.assertEqual(settings.session_dir.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(settings.download_dir.stat().st_mode & 0o777, 0o700)
+
+    def test_custom_download_registry_dir_is_owner_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            settings = Settings(
+                api_id=1,
+                api_hash="hash",
+                session_dir=tmp_path / "sessions",
+                download_dir=tmp_path / "downloads",
+                download_registry_path=tmp_path / "registry" / "media.sqlite3",
+            )
+
+            settings.ensure_dirs()
+
+            self.assertEqual(settings.media_download_registry_path.parent.stat().st_mode & 0o777, 0o700)
 
     def test_download_registry_defaults_to_download_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

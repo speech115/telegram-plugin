@@ -141,28 +141,28 @@ class OpsScriptsTests(unittest.TestCase):
                 case "$1" in
                   bootout)
                     if [ "${LAUNCHCTL_SIMULATE_STALE_SERVICE:-0}" = "1" ]; then
-                      if [ "$2" = "gui/$(id -u)/com.example.telegram-mcp-http" ]; then
+                      if [ "$2" = "gui/$(id -u)/com.sereja.telegram-mcp-http" ]; then
                         echo "Could not find service \"$2\" in domain for user gui: $(id -u)" >&2
                         exit 113
                       fi
-                      if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.example.telegram-mcp-http.plist" ]; then
+                      if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.sereja.telegram-mcp-http.plist" ]; then
                         rm -f "$state_file"
                         exit 0
                       fi
                     fi
 
-                    if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.example.telegram-mcp-http.plist" ]; then
+                    if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.sereja.telegram-mcp-http.plist" ]; then
                       rm -f "$state_file"
                       exit 0
                     fi
-                    if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.example.telegram-mcp-http-logrotate.plist" ]; then
+                    if [ "$2" = "gui/$(id -u)" ] && [ "${3:-}" = "${HOME}/Library/LaunchAgents/com.sereja.telegram-mcp-http-logrotate.plist" ]; then
                       rm -f "$rotate_state_file"
                       exit 0
                     fi
                     exit 0
                     ;;
                   bootstrap)
-                    if [ "$2" = "gui/$(id -u)" ] && [ "$3" = "${HOME}/Library/LaunchAgents/com.example.telegram-mcp-http.plist" ]; then
+                    if [ "$2" = "gui/$(id -u)" ] && [ "$3" = "${HOME}/Library/LaunchAgents/com.sereja.telegram-mcp-http.plist" ]; then
                       if [ -f "$state_file" ]; then
                         echo "Bootstrap failed: 5: Input/output error" >&2
                         exit 5
@@ -170,7 +170,7 @@ class OpsScriptsTests(unittest.TestCase):
                       : > "$state_file"
                       exit 0
                     fi
-                    if [ "$2" = "gui/$(id -u)" ] && [ "$3" = "${HOME}/Library/LaunchAgents/com.example.telegram-mcp-http-logrotate.plist" ]; then
+                    if [ "$2" = "gui/$(id -u)" ] && [ "$3" = "${HOME}/Library/LaunchAgents/com.sereja.telegram-mcp-http-logrotate.plist" ]; then
                       : > "$rotate_state_file"
                       exit 0
                     fi
@@ -216,6 +216,7 @@ class OpsScriptsTests(unittest.TestCase):
             {
                 "HOME": str(root),
                 "PATH": f"{root / 'fake-bin'}:{env.get('PATH', '')}",
+                "TELEGRAM_MCP_AUTH_TOKEN": "test-token",
             }
         )
         env.update(env_overrides)
@@ -432,7 +433,7 @@ class OpsScriptsTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0)
-        plist_path = root / "Library" / "LaunchAgents" / "com.example.telegram-mcp-http.plist"
+        plist_path = root / "Library" / "LaunchAgents" / "com.sereja.telegram-mcp-http.plist"
         plist = plist_path.read_text(encoding="utf-8")
         self.assertIn("<key>TELEGRAM_MCP_INCLUDE_DIAGNOSTICS</key>", plist)
         self.assertIn("<string>true</string>", plist)

@@ -19,15 +19,22 @@ class MessageDialogReadMixin:
         offset_id: int = 0,
         date_from: str | None = None,
         date_to: str | None = None,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         self._validate_non_negative("limit", limit)
         self._validate_non_negative("offset_id", offset_id)
         resolved_chat = self._coerce_dialog_query(chat)
-        handle = await self.resolve_dialog(chat)
-        slice_result = await self.read_dialog_slice(
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        peer = await self._resolve_input_entity(handle.dialog_ref)
+        self._cache_remember(
+            self._input_entity_cache,
+            keys=self._entity_cache_keys(resolved_chat, entity),
+            value=peer,
+        )
+        self._remember_dialog_ref_input_entity(handle.dialog_ref, peer)
+        slice_result = await self._read_dialog_slice_uncached(
             chat=resolved_chat,
             limit=limit,
             offset_id=offset_id,
@@ -36,6 +43,8 @@ class MessageDialogReadMixin:
             include_voice_transcription=include_voice_transcription,
             max_voice_transcriptions=max_voice_transcriptions,
             include_sender_name=include_sender_name,
+            entity=entity,
+            peer=peer,
         )
         return DialogReadResult(
             chat=handle,
@@ -58,11 +67,11 @@ class MessageDialogReadMixin:
         chat: str | int,
         date_from: str,
         date_to: str,
-        total_limit: int = 50,
+        total_limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         cache_key = self._make_result_cache_key(
             "dialog_read",
@@ -112,11 +121,11 @@ class MessageDialogReadMixin:
         chat: str | int,
         date_from: str,
         date_to: str,
-        total_limit: int = 50,
+        total_limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         result = await self._read_dialog_by_date_uncached(
             chat=chat,
@@ -137,11 +146,11 @@ class MessageDialogReadMixin:
         chat: str | int,
         date_from: str,
         date_to: str,
-        total_limit: int = 50,
+        total_limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         started_at = time.perf_counter()
         result = await self._read_dialog_core(
@@ -170,11 +179,11 @@ class MessageDialogReadMixin:
         self,
         chat: str | int,
         day: str | None = None,
-        limit: int = 50,
+        limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         target_day = day or date.today().isoformat()
         return await self.read_dialog_by_date(
@@ -191,11 +200,11 @@ class MessageDialogReadMixin:
     async def read_recent_dialog(
         self,
         chat: str | int,
-        limit: int = 50,
+        limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         cache_key = self._make_result_cache_key(
             "dialog_read",
@@ -237,11 +246,11 @@ class MessageDialogReadMixin:
         *,
         cache_key: str,
         chat: str | int,
-        limit: int = 50,
+        limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         result = await self._read_recent_dialog_uncached(
             chat=chat,
@@ -258,11 +267,11 @@ class MessageDialogReadMixin:
     async def _read_recent_dialog_uncached(
         self,
         chat: str | int,
-        limit: int = 50,
+        limit: int = 20,
         offset_id: int = 0,
-        include_voice_transcription: bool = True,
+        include_voice_transcription: bool = False,
         max_voice_transcriptions: int | None = None,
-        include_sender_name: bool = True,
+        include_sender_name: bool = False,
     ) -> DialogReadResult:
         started_at = time.perf_counter()
         result = await self._read_dialog_core(

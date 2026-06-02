@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-LABEL="com.example.telegram-mcp-http"
+LABEL="com.sereja.telegram-mcp-http"
 LOG_PATH="${HOME}/Library/Logs/telegram-mcp/http-launchd.log"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PROJECT_ROOT}/.venv/bin/python"

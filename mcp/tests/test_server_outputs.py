@@ -29,14 +29,14 @@ class ServerOutputTests(unittest.TestCase):
         wrapper.get_me.return_value = UserInfo(
             id=1,
             first_name="Sereja",
-            username="example",
+            username="sereja",
         )
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             result = _run(server.get_me())
 
         self.assertIsInstance(result, UserInfo)
-        self.assertEqual(result.username, "example")
+        self.assertEqual(result.username, "sereja")
 
     def test_list_messages_returns_messages_result(self):
         wrapper = AsyncMock()

@@ -3,11 +3,34 @@ from __future__ import annotations
 from typing import Any
 
 from .audits import build_registry
-from .paths import CONTROL_ROOT, HOME, MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
+from .paths import CONTROL_ROOT, MCP_REPO, PLUGIN_CACHE, PLUGIN_SOURCE
 
 
 def _finding_ids(registry: dict[str, Any]) -> set[str]:
     return {str(item.get("id")) for item in registry.get("findings", []) if isinstance(item, dict)}
+
+
+def _findings_for_component(registry: dict[str, Any], component: str) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in registry.get("findings", [])
+        if isinstance(item, dict) and item.get("component") == component
+    ]
+
+
+def _mcp_surface_repair_reason(registry: dict[str, Any]) -> str:
+    findings = _findings_for_component(registry, "mcp_surface")
+    if not findings:
+        return "Default MCP surface gate is clean."
+    parts: list[str] = []
+    for item in findings:
+        finding_id = item.get("id")
+        tools = item.get("tools")
+        if isinstance(tools, list) and tools:
+            parts.append(f"{finding_id}: {', '.join(str(tool) for tool in tools)}")
+        else:
+            parts.append(str(item.get("message") or finding_id))
+    return "; ".join(parts)
 
 
 def _component_status(registry: dict[str, Any], component: str) -> str | None:
@@ -96,16 +119,16 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             touched_paths=[
                 str(PLUGIN_SOURCE),
                 str(PLUGIN_CACHE),
-                str(HOME / ".codex/config.toml"),
-                str(HOME / ".agents/plugins/marketplace.json"),
+                "/Users/sereja/.codex/config.toml",
+                "/Users/sereja/.agents/plugins/marketplace.json",
             ],
             dry_run_commands=[
                 [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
                 ["diff", "-ru", str(PLUGIN_SOURCE / "skills/telegram"), str(PLUGIN_CACHE / "skills/telegram")],
             ],
             apply_commands=[
-                ["codex", "plugin", "marketplace", "remove", "local"],
-                ["codex", "plugin", "marketplace", "add", str(PLUGIN_SOURCE.parent)],
+                ["codex", "plugin", "remove", "telegram@sereja-local"],
+                ["codex", "plugin", "add", "telegram@sereja-local"],
             ],
             rollback=[
                 "Leave older versioned cache directories intact.",
@@ -113,46 +136,48 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             ],
             verifies=[
                 [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-plugin-drift", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-plugin-drift", "--json"],
             ],
         )
     )
 
     mcp_surface_blocked = _component_status(registry, "mcp_surface") == "fail"
+    unexpected_write = next(
+        (
+            item.get("tools")
+            for item in _findings_for_component(registry, "mcp_surface")
+            if item.get("id") == "unexpected_write_tools"
+        ),
+        None,
+    )
+    mcp_apply_commands: list[list[str]] = []
+    if mcp_surface_blocked and isinstance(unexpected_write, list) and "send_file" in unexpected_write:
+        mcp_apply_commands = [
+            ["python3", "-m", "pytest", "-q", "tests/test_registration.py"],
+        ]
     steps.append(
         _step(
             step_id="mcp-surface-allowlist",
-            title="Add hard allowlist/profile split for default Telegram MCP surface",
+            title="Restore read-only default Telegram MCP facade surface",
             status="blocked_by_current_surface" if mcp_surface_blocked else "already_clean",
-            reason=(
-                "Default Mode endpoint exposes low-level write/destructive tools and plugin metadata has no "
-                "hard allowlist."
-                if mcp_surface_blocked
-                else "Default MCP surface gate is clean."
-            ),
+            reason=_mcp_surface_repair_reason(registry),
             touched_paths=[
                 str(MCP_REPO / "src/telegram_mcp/tools/__init__.py"),
+                str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py"),
                 str(PLUGIN_SOURCE / ".mcp.json"),
             ],
             dry_run_commands=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-mcp-surface", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
             ],
-            apply_commands=[
-                [
-                    "python3",
-                    "-m",
-                    "pytest",
-                    "-q",
-                    "tests/test_tool_surface.py",
-                ]
-            ],
+            apply_commands=mcp_apply_commands,
             rollback=[
-                "Revert the MCP profile/allowlist patch.",
+                "Revert FACADE_TOOL_NAMES and media_tools.register_facade() in telegram-mcp.",
                 "Keep plugin .mcp.json on the prior endpoint until the server-side allowlist is verified.",
             ],
             verifies=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-mcp-surface", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
                 [str(MCP_REPO / "bin/contract-smoke"), "--json"],
+                ["python3", "-m", "pytest", "-q", str(CONTROL_ROOT)],
             ],
         )
     )
@@ -170,12 +195,12 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Launchd gate is clean."
             ),
             touched_paths=[
-                "~/Library/LaunchAgents/com.example.telegram-*.plist",
-                "~/Library/LaunchAgents/com.example.telecrawl*.plist",
-                "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/policy/allowed-roots.json",
+                "/Users/sereja/Library/LaunchAgents/com.sereja.telegram-*.plist",
+                "/Users/sereja/Library/LaunchAgents/com.sereja.telecrawl*.plist",
+                "/Users/sereja/Projects/tools/telegram/policy/allowed-roots.json",
             ],
             dry_run_commands=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-launchd-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-launchd-audit", "--json"],
                 ["launchctl", "list"],
             ],
             apply_commands=[],
@@ -184,7 +209,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 "Use launchctl bootout/bootstrap only from an explicit later migration step.",
             ],
             verifies=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-launchd-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-launchd-audit", "--json"],
             ],
         )
     )
@@ -201,10 +226,10 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Session gate is clean."
             ),
             touched_paths=[
-                "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/policy/sessions.json",
+                "/Users/sereja/Projects/tools/telegram/policy/sessions.json",
             ],
             dry_run_commands=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-session-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-session-audit", "--json"],
             ],
             apply_commands=[],
             rollback=[
@@ -212,35 +237,54 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 "Do not move or copy session files in this milestone.",
             ],
             verifies=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-session-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-session-audit", "--json"],
             ],
         )
     )
 
-    mirror_blocked = _component_status(registry, "telegram_mirror") == "fail"
+    mirror_status = _component_status(registry, "telegram_mirror")
+    mirror_blocked = mirror_status == "fail"
+    mirror_exports_missing = bool(ids & {"mirror_runtime_exports_missing", "mirror_runtime_exports_incomplete"})
+    mirror_component = registry.get("components", {}).get("telegram_mirror")
+    mirror_summary = (
+        mirror_component.get("runtime_state_summary")
+        if isinstance(mirror_component, dict) and isinstance(mirror_component.get("runtime_state_summary"), dict)
+        else {}
+    )
+    mirror_export_counts = (
+        f"{mirror_summary.get('export_ready_count')}/{mirror_summary.get('export_expected_count')} ready, "
+        f"{mirror_summary.get('export_missing_count')} missing"
+    )
     steps.append(
         _step(
             step_id="mirror-runtime-promotion-policy",
             title="Keep telegram-mirror recovery-scoped until runtime preflight exists",
-            status="blocked_by_recovery_state" if mirror_blocked else "already_clean",
+            status=(
+                "blocked_by_recovery_state"
+                if mirror_blocked
+                else "needs_runtime_exports" if mirror_exports_missing else "already_clean"
+            ),
             reason=(
                 "telegram-mirror has recovery/runtime ambiguity, sessions in-tree, or missing canonical runtime exports."
                 if mirror_blocked
+                else f"Mirror export coverage is incomplete: {mirror_export_counts}."
+                if mirror_exports_missing
                 else "Mirror gate is clean."
             ),
             touched_paths=[
-                "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/policy/source-routing.json",
-                "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror",
+                "/Users/sereja/Projects/tools/telegram/policy/source-routing.json",
+                "/Users/sereja/Projects/tools/telegram-mirror",
             ],
             dry_run_commands=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-mirror-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight", "--json"],
             ],
             apply_commands=[],
             rollback=[
                 "Keep recovery classification until an explicit runtime preflight passes.",
             ],
             verifies=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-mirror-audit", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-audit", "--json"],
             ],
         )
     )
@@ -257,17 +301,17 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
                 else "Telecrawl gate is clean."
             ),
             touched_paths=[
-                "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/policy/source-routing.json",
+                "/Users/sereja/Projects/tools/telegram/policy/source-routing.json",
             ],
             dry_run_commands=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-telecrawl-status", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-telecrawl-status", "--json"],
             ],
             apply_commands=[],
             rollback=[
                 "Policy-only archive routing can be reverted without touching archive DBs.",
             ],
             verifies=[
-                ["${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}/bin/telegram-telecrawl-status", "--json"],
+                ["/Users/sereja/Projects/tools/telegram/bin/telegram-telecrawl-status", "--json"],
             ],
         )
     )

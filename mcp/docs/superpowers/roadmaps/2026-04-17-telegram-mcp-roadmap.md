@@ -2,7 +2,7 @@
 
 - Date: `2026-04-17`
 - Status: `active`
-- Repo: `${TELEGRAM_MCP_REPO:-./mcp}`
+- Repo: `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp`
 
 ## Purpose
 
@@ -171,6 +171,6 @@ about:
 
 ## Current Source Of Truth
 
-- Repo overview: `${TELEGRAM_MCP_REPO:-./mcp}/README.md`
-- Facade design: `${TELEGRAM_MCP_REPO:-./mcp}/docs/superpowers/specs/2026-04-17-telegram-app-facade-design.md`
-- Facade implementation plan: `${TELEGRAM_MCP_REPO:-./mcp}/docs/superpowers/plans/2026-04-17-telegram-dialog-facade-implementation.md`
+- Repo overview: `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/README.md`
+- Facade design: `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/docs/superpowers/specs/2026-04-17-telegram-app-facade-design.md`
+- Facade implementation plan: `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/docs/superpowers/plans/2026-04-17-telegram-dialog-facade-implementation.md`

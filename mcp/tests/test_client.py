@@ -28,6 +28,16 @@ class DummyTelegramClient:
     async def is_user_authorized(self):
         return True
 
+    async def get_me(self):
+        return SimpleNamespace(
+            id=42,
+            first_name="Test",
+            last_name="",
+            username="me",
+            phone=None,
+            bot=False,
+        )
+
     def is_connected(self):
         return True
 
@@ -43,7 +53,7 @@ class DummyTelegramClient:
         if isinstance(chat, str):
             normalized = chat.strip().lstrip("@").lower()
             return SimpleNamespace(id=1, username=normalized, photo=None)
-        return SimpleNamespace(id=chat, username="example_user", photo=None)
+        return SimpleNamespace(id=chat, username="targetdaddy", photo=None)
 
     async def iter_messages(self, *_args, **_kwargs):
         yield DummyMessage()
@@ -69,6 +79,40 @@ class DummyTelegramClient:
     async def __call__(self, request):
         self.transcribe_calls.append(request)
         return SimpleNamespace(text="text", pending=False)
+
+
+class WriteToolsTelegramClient(DummyTelegramClient):
+    async def send_message(self, entity, text, reply_to=None, parse_mode=None, buttons=None):
+        self.send_message_calls.append(
+            {
+                "entity": entity,
+                "text": text,
+                "reply_to": reply_to,
+                "parse_mode": parse_mode,
+                "buttons": buttons,
+            }
+        )
+        return SimpleNamespace(
+            id=901,
+            chat_id=getattr(entity, "id", 1),
+            sender_id=777,
+            date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+            text=text,
+            edit_date=None,
+        )
+
+    async def forward_messages(self, to_entity, message_ids, from_entity):
+        return [
+            SimpleNamespace(
+                id=message_id,
+                chat_id=getattr(to_entity, "id", 1),
+                sender_id=777,
+                date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+                text=f"forwarded {message_id}",
+                edit_date=None,
+            )
+            for message_id in message_ids
+        ]
 
 
 class DownloadTelegramClient(DummyTelegramClient):
@@ -424,6 +468,43 @@ class SenderCacheTelegramClient(DummyTelegramClient):
             yield message
 
 
+class FullContextMessage(SenderCacheMessage):
+    media = object()
+    voice = True
+
+    def __init__(self, *, message_id: int, sender_id: int):
+        super().__init__(message_id=message_id, sender_id=sender_id)
+        self.chat_id = 11
+        self.date = datetime(2026, 4, 17, tzinfo=timezone.utc)
+        self.text = f"voice {message_id}"
+        self.reply_to = None
+        self.out = False
+        self.views = None
+        self.forwards = None
+        self.edit_date = None
+        self.video_note = False
+        self.document = None
+        self.photo = None
+        self.sticker = None
+        self.gif = None
+        self.video = False
+        self.audio = False
+
+
+class FullContextTelegramClient(DummyTelegramClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__(*_args, **_kwargs)
+        self._messages = [
+            FullContextMessage(message_id=1, sender_id=501),
+            FullContextMessage(message_id=2, sender_id=501),
+            FullContextMessage(message_id=3, sender_id=777),
+        ]
+
+    async def iter_messages(self, *_args, **_kwargs):
+        for message in self._messages:
+            yield message
+
+
 class OutputCapMessage(DummyMessage):
     def __init__(self, *, message_id: int, text: str, has_media: bool = False):
         self.id = message_id
@@ -486,9 +567,9 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        link = _run(wrapper.get_message_link(chat="@example_user", message_id=42))
+        link = _run(wrapper.get_message_link(chat="@targetdaddy", message_id=42))
 
-        self.assertEqual(link, "https://t.me/example_user/42")
+        self.assertEqual(link, "https://t.me/targetdaddy/42")
 
     def test_get_message_link_uses_private_c_link_without_username(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -759,12 +840,12 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.resolve_dialog("@example_user"))
+        result = _run(wrapper.resolve_dialog("@targetdaddy"))
 
         self.assertEqual(result.id, 1)
-        self.assertEqual(result.username, "example_user")
+        self.assertEqual(result.username, "targetdaddy")
         self.assertEqual(result.dialog_ref, "tg://dialog/unknown/1")
-        self.assertEqual(result.resolved_from, "@example_user")
+        self.assertEqual(result.resolved_from, "@targetdaddy")
         self.assertEqual(result.candidate_count, 1)
 
     def test_read_dialog_by_date_returns_stable_envelope(self):
@@ -775,10 +856,11 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_by_date(
-                chat="@example_user",
+                chat="@targetdaddy",
                 date_from="2026-04-16",
                 date_to="2026-04-16",
                 total_limit=20,
+                include_voice_transcription=True,
             )
         )
 
@@ -801,7 +883,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_by_date(
-                chat="@example_user",
+                chat="@targetdaddy",
                 date_from="2026-04-16",
                 date_to="2026-04-16",
                 total_limit=20,
@@ -823,7 +905,7 @@ class ClientTests(unittest.TestCase):
 
         first = _run(
             wrapper.read_dialog_by_date(
-                chat=" @Example_User ",
+                chat=" @TargetDaddy ",
                 date_from="2026-04-16",
                 date_to="2026-04-16",
                 include_voice_transcription=False,
@@ -831,7 +913,7 @@ class ClientTests(unittest.TestCase):
         )
         second = _run(
             wrapper.read_dialog_by_date(
-                chat="@example_user",
+                chat="@targetdaddy",
                 date_from="2026-04-16",
                 date_to="2026-04-16",
                 include_voice_transcription=False,
@@ -848,7 +930,7 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DateRangeTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        handle = _run(wrapper.resolve_dialog("@example_user"))
+        handle = _run(wrapper.resolve_dialog("@targetdaddy"))
         result = _run(
             wrapper.read_dialog_by_date(
                 chat=handle.dialog_ref,
@@ -859,6 +941,27 @@ class ClientTests(unittest.TestCase):
 
         self.assertEqual(result.message_count, 1)
 
+    def test_dialog_read_registers_dialog_ref_and_reuses_input_peer(self):
+        settings = Settings(api_id=1, api_hash="hash", dialog_read_cache_ttl_seconds=0)
+
+        with patch("telegram_mcp.client.TelegramClient", NonUserDialogTelegramClient):
+            with patch(
+                "telegram_mcp.client_chats.get_entity_type",
+                lambda entity: getattr(entity, "_forced_type", "unknown"),
+            ):
+                with patch(
+                    "telegram_mcp.client_chats.get_display_name",
+                    lambda entity: getattr(entity, "_forced_name", str(entity.id)),
+                ):
+                    wrapper = TelegramWrapper(settings)
+                    first = _run(wrapper.read_recent_dialog(chat="@channelslug", limit=1))
+                    second = _run(wrapper.read_recent_dialog(chat=first.chat.dialog_ref, limit=1))
+
+        self.assertEqual(first.chat.dialog_ref, "tg://dialog/channel/777")
+        self.assertEqual(second.chat.dialog_ref, first.chat.dialog_ref)
+        self.assertEqual(wrapper.client.get_entity_calls, ["@channelslug"])
+        self.assertEqual(len(wrapper.client.get_input_entity_calls), 1)
+
     def test_read_today_dialog_uses_single_day_window(self):
         settings = Settings(api_id=1, api_hash="hash")
 
@@ -867,7 +970,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_today_dialog(
-                chat="@example_user",
+                chat="@targetdaddy",
                 day="2026-04-16",
                 limit=20,
             )
@@ -885,7 +988,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.collect_dialog_context(
-                chat="@example_user",
+                chat="@targetdaddy",
                 mode="fast",
                 recent_limit=3,
                 include_pinned=True,
@@ -905,6 +1008,34 @@ class ClientTests(unittest.TestCase):
             [0, 0, 0],
         )
 
+    def test_collect_dialog_context_full_mode_uses_sender_and_voice_budgets(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", FullContextTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(
+            wrapper.collect_dialog_context(
+                chat="@targetdaddy",
+                mode="full",
+                recent_limit=3,
+                include_pinned=False,
+                max_voice_transcriptions=2,
+            )
+        )
+
+        self.assertEqual(result.collection_mode, "full")
+        self.assertTrue(result.include_voice_transcription)
+        self.assertEqual(result.sender_resolution_count, 2)
+        self.assertEqual(result.voice_transcription_count, 2)
+        self.assertEqual(result.omitted_voice_count, 1)
+        self.assertEqual(result.voice_transcription_status, "partial")
+        self.assertEqual(len(wrapper.client.transcribe_calls), 2)
+        self.assertEqual(
+            [message.get_sender_calls for message in wrapper.client._messages],
+            [1, 0, 1],
+        )
+
     def test_collect_dialog_context_propagates_truncation_state(self):
         settings = Settings(api_id=1, api_hash="hash", read_max_messages=1)
 
@@ -913,7 +1044,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.collect_dialog_context(
-                chat="@example_user",
+                chat="@targetdaddy",
                 recent_limit=10,
                 include_pinned=False,
             )
@@ -932,7 +1063,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.prepare_dialog_reply(
-                chat="@example_user",
+                chat="@targetdaddy",
                 goal="ask for the file",
                 reply_to_message_id=7,
                 draft_text="Can you send the file?",
@@ -940,10 +1071,15 @@ class ClientTests(unittest.TestCase):
         )
 
         self.assertTrue(result.preview_only)
-        self.assertEqual(result.send_tool, "reply_in_dialog")
+        self.assertEqual(result.send_tool, "telegram_confirmed_send")
         self.assertEqual(result.send_args_preview["chat"], result.chat.dialog_ref)
         self.assertEqual(result.send_args_preview["message_id"], 7)
         self.assertEqual(result.send_args_preview["text"], "Can you send the file?")
+        self.assertTrue(result.confirmation_token)
+        self.assertEqual(
+            result.send_args_preview["confirmation_token"],
+            result.confirmation_token,
+        )
         self.assertEqual(result.evidence_message_ids, [7])
         self.assertEqual(wrapper.client.send_message_calls, [])
 
@@ -953,7 +1089,13 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", CursorTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_recent_dialog(chat="@example_user", limit=2))
+        result = _run(
+            wrapper.read_recent_dialog(
+                chat="@targetdaddy",
+                limit=2,
+                include_voice_transcription=True,
+            )
+        )
 
         self.assertEqual(result.message_count, 2)
         self.assertEqual(result.data_source, "live_telegram")
@@ -968,8 +1110,9 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_recent_dialog(
-                chat="@example_user",
+                chat="@targetdaddy",
                 limit=3,
+                include_voice_transcription=True,
                 max_voice_transcriptions=1,
             )
         )
@@ -990,7 +1133,13 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", PendingVoiceTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_recent_dialog(chat="@example_user", limit=1))
+        result = _run(
+            wrapper.read_recent_dialog(
+                chat="@targetdaddy",
+                limit=1,
+                include_voice_transcription=True,
+            )
+        )
 
         self.assertEqual(result.voice_transcription_status, "partial")
         self.assertEqual(result.messages[0].voice_transcription_status, "pending")
@@ -1002,7 +1151,13 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", FailingTranscriptionTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_recent_dialog(chat="@example_user", limit=1))
+        result = _run(
+            wrapper.read_recent_dialog(
+                chat="@targetdaddy",
+                limit=1,
+                include_voice_transcription=True,
+            )
+        )
 
         self.assertEqual(result.voice_transcription_status, "partial")
         self.assertEqual(result.messages[0].voice_transcription_status, "failed")
@@ -1017,7 +1172,13 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", TimeoutTranscriptionTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_recent_dialog(chat="@example_user", limit=1))
+        result = _run(
+            wrapper.read_recent_dialog(
+                chat="@targetdaddy",
+                limit=1,
+                include_voice_transcription=True,
+            )
+        )
 
         self.assertEqual(result.message_count, 1)
         self.assertEqual(result.voice_transcription_status, "partial")
@@ -1032,7 +1193,7 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", SenderCacheTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_dialog_slice(chat="@example_user", limit=3))
+        result = _run(wrapper.read_dialog_slice(chat="@targetdaddy", limit=3))
 
         self.assertEqual(result.sender_resolution_count, 2)
         self.assertEqual(
@@ -1057,7 +1218,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_slice(
-                chat="@example_user",
+                chat="@targetdaddy",
                 limit=3,
                 include_sender_name=False,
             )
@@ -1078,7 +1239,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_slice(
-                chat="@example_user",
+                chat="@targetdaddy",
                 limit=10,
                 include_sender_name=False,
             )
@@ -1108,7 +1269,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_slice(
-                chat="@example_user",
+                chat="@targetdaddy",
                 limit=2,
                 include_sender_name=False,
             )
@@ -1133,7 +1294,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.read_dialog_slice(
-                chat="@example_user",
+                chat="@targetdaddy",
                 limit=3,
                 include_sender_name=False,
             )
@@ -1171,13 +1332,13 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.search_dialog_messages(
-                chat="@example_user",
+                chat="@targetdaddy",
                 query="hello",
                 limit=5,
             )
         )
 
-        self.assertEqual(result.chat.username, "example_user")
+        self.assertEqual(result.chat.username, "targetdaddy")
         self.assertEqual(result.message_count, 1)
 
     def test_search_dialog_messages_reuses_short_dialog_cache(self):
@@ -1188,7 +1349,7 @@ class ClientTests(unittest.TestCase):
 
         first = _run(
             wrapper.search_dialog_messages(
-                chat="@Example_User",
+                chat="@TargetDaddy",
                 query="hello",
                 limit=5,
                 include_sender_name=False,
@@ -1196,7 +1357,7 @@ class ClientTests(unittest.TestCase):
         )
         second = _run(
             wrapper.search_dialog_messages(
-                chat="@example_user",
+                chat="@targetdaddy",
                 query="hello",
                 limit=5,
                 include_sender_name=False,
@@ -1204,7 +1365,7 @@ class ClientTests(unittest.TestCase):
         )
 
         self.assertIs(first, second)
-        self.assertEqual(wrapper.client.get_entity_calls, ["@Example_User"])
+        self.assertEqual(wrapper.client.get_entity_calls, ["@TargetDaddy"])
 
     def test_search_dialog_messages_reports_hard_cap_truncation(self):
         settings = Settings(api_id=1, api_hash="hash", read_max_messages=1)
@@ -1214,7 +1375,7 @@ class ClientTests(unittest.TestCase):
 
         result = _run(
             wrapper.search_dialog_messages(
-                chat="@example_user",
+                chat="@targetdaddy",
                 query="hello",
                 limit=10,
                 include_sender_name=False,
@@ -1236,7 +1397,7 @@ class ClientTests(unittest.TestCase):
         with self.assertRaises(ToolContractError) as ctx:
             _run(
                 wrapper.read_dialog_by_date(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     date_from="2026-04-17",
                     date_to="2026-04-16",
                 )
@@ -1261,12 +1422,9 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(
-            wrapper.send_dialog_message(
-                chat="@example_user",
-                text="hello",
-            )
-        )
+        preview = _run(wrapper.prepare_send_message(chat="@targetdaddy", text="hello"))
+
+        result = _run(wrapper.send_dialog_message(**preview.send_args_preview))
 
         self.assertEqual(result.text, "hello")
         self.assertEqual(wrapper.client.send_message_calls[0]["parse_mode"], "md")
@@ -1277,16 +1435,54 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(
-            wrapper.reply_in_dialog(
-                chat="@example_user",
-                message_id=77,
-                text="pong",
-            )
-        )
+        preview = _run(wrapper.prepare_reply_message(chat="@targetdaddy", message_id=77, text="pong"))
+
+        result = _run(wrapper.reply_in_dialog(**preview.send_args_preview))
 
         self.assertEqual(result.reply_to_msg_id, 77)
         self.assertEqual(wrapper.client.send_message_calls[0]["reply_to"], 77)
+
+    def test_send_dialog_message_requires_confirmation_token(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        with self.assertRaises(ToolContractError) as ctx:
+            _run(wrapper.send_dialog_message(chat="@targetdaddy", text="hello"))
+
+        self.assertEqual(ctx.exception.code, "missing_confirmation_token")
+        self.assertEqual(wrapper.client.send_message_calls, [])
+
+    def test_send_dialog_message_rejects_changed_preview_payload(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        preview = _run(wrapper.prepare_send_message(chat="@targetdaddy", text="hello"))
+        args = dict(preview.send_args_preview)
+        args["text"] = "changed"
+
+        with self.assertRaises(ToolContractError) as ctx:
+            _run(wrapper.send_dialog_message(**args))
+
+        self.assertEqual(ctx.exception.code, "confirmation_payload_mismatch")
+        self.assertEqual(wrapper.client.send_message_calls, [])
+
+    def test_send_confirmation_token_is_single_use(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        preview = _run(wrapper.prepare_send_message(chat="@targetdaddy", text="hello"))
+        _run(wrapper.send_dialog_message(**preview.send_args_preview))
+
+        with self.assertRaises(ToolContractError) as ctx:
+            _run(wrapper.send_dialog_message(**preview.send_args_preview))
+
+        self.assertEqual(ctx.exception.code, "invalid_confirmation_token")
 
     def test_read_dialog_slice_returns_chat_info_and_messages(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -1294,13 +1490,13 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        result = _run(wrapper.read_dialog_slice(chat="@example_user"))
+        result = _run(wrapper.read_dialog_slice(chat="@targetdaddy"))
 
         self.assertEqual(result.chat.id, 1)
         self.assertEqual(result.chat.name, "1")
         self.assertEqual(result.chat.type, "unknown")
         self.assertEqual(len(result.messages), 1)
-        self.assertEqual(wrapper.client.get_entity_calls, ["@example_user"])
+        self.assertEqual(wrapper.client.get_entity_calls, ["@targetdaddy"])
         self.assertEqual(len(wrapper.client.get_input_entity_calls), 1)
 
     def test_list_messages_rejects_negative_offset_id(self):
@@ -1372,12 +1568,12 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        chat = _run(wrapper.resolve_username("example_user"))
+        chat = _run(wrapper.resolve_username("targetdaddy"))
         messages = _run(wrapper.list_messages(chat=chat.id))
 
         self.assertEqual(chat.id, 1)
         self.assertEqual(len(messages), 1)
-        self.assertEqual(wrapper.client.get_entity_calls, ["@example_user"])
+        self.assertEqual(wrapper.client.get_entity_calls, ["@targetdaddy"])
 
     def test_list_messages_reuses_cached_input_peer(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -1463,7 +1659,7 @@ class ClientTests(unittest.TestCase):
 
         self.assertEqual(doctor.transport, "sse")
         self.assertEqual(doctor.checks["transport"], "sse")
-        self.assertEqual(doctor.checks["download_cleanup"], "disabled")
+        self.assertEqual(doctor.checks["download_cleanup"], "enabled")
         self.assertIsNotNone(doctor.download_cleanup)
         self.assertIsNotNone(doctor.runtime_stats)
         self.assertIn("dialog_read_cache_hit", doctor.runtime_stats)
@@ -1569,12 +1765,45 @@ class ClientTests(unittest.TestCase):
             wrapper = TelegramWrapper(settings)
 
         with patch.object(wrapper, "invalidate_cache") as invalidate_cache:
-            _run(wrapper.reply_to_message(chat="@example_user", message_id=77, text="pong"))
+            _run(wrapper.reply_to_message(chat="@targetdaddy", message_id=77, text="pong"))
 
         self.assertEqual(
             [call.args[0] for call in invalidate_cache.call_args_list],
             ["dialog_read:", "dialog_search:", "list_chats"],
         )
+
+    def test_direct_message_writes_invalidate_dialog_and_list_caches(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", WriteToolsTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        operations = (
+            lambda: wrapper.send_message(chat="@targetdaddy", text="hello"),
+            lambda: wrapper.forward_messages(
+                from_chat="@targetdaddy",
+                to_chat="@targetdaddy",
+                message_ids=[7],
+            ),
+            lambda: wrapper.create_poll(
+                chat="@targetdaddy",
+                question="Pick one",
+                options=["A", "B"],
+            ),
+            lambda: wrapper.send_message_with_buttons(
+                chat="@targetdaddy",
+                text="open",
+                buttons=[[{"text": "Open", "url": "https://example.com"}]],
+            ),
+        )
+
+        for operation in operations:
+            with patch.object(wrapper, "invalidate_cache") as invalidate_cache:
+                _run(operation())
+            self.assertEqual(
+                [call.args[0] for call in invalidate_cache.call_args_list],
+                ["dialog_read:", "dialog_search:", "list_chats"],
+            )
 
     def test_write_audit_logs_metadata_without_message_text(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1588,7 +1817,7 @@ class ClientTests(unittest.TestCase):
             with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
                 wrapper = TelegramWrapper(settings)
 
-            _run(wrapper.send_message(chat="@example_user", text="secret payload"))
+            _run(wrapper.send_message(chat="@targetdaddy", text="secret payload"))
 
             raw_audit = audit_path.read_text(encoding="utf-8")
             events = [
@@ -1632,12 +1861,12 @@ class ClientTests(unittest.TestCase):
 
             _run(
                 wrapper.send_file(
-                    chat="@example_user",
+                    chat="@targetdaddy",
                     file_path="/tmp/secret-file.txt",
                     caption="secret caption",
                 )
             )
-            _run(wrapper.send_voice(chat="@example_user", file_path="/tmp/secret.oga"))
+            _run(wrapper.send_voice(chat="@targetdaddy", file_path="/tmp/secret.oga"))
 
             raw_audit = audit_path.read_text(encoding="utf-8")
             events = [
@@ -1676,7 +1905,7 @@ class ClientTests(unittest.TestCase):
             )
 
             with self.assertRaises(RuntimeError):
-                _run(wrapper.send_file(chat="@example_user", file_path="/tmp/secret-file.txt"))
+                _run(wrapper.send_file(chat="@targetdaddy", file_path="/tmp/secret-file.txt"))
 
             raw_audit = audit_path.read_text(encoding="utf-8")
             events = [
@@ -1714,7 +1943,7 @@ class ClientTests(unittest.TestCase):
         )
 
         with patch.object(wrapper, "invalidate_cache") as invalidate_cache:
-            _run(wrapper.send_file(chat="@example_user", file_path="/tmp/demo.txt"))
+            _run(wrapper.send_file(chat="@targetdaddy", file_path="/tmp/demo.txt"))
 
         self.assertEqual(
             [call.args[0] for call in invalidate_cache.call_args_list],
@@ -1751,12 +1980,12 @@ class ClientTests(unittest.TestCase):
 
         for operation in (
             lambda: wrapper.edit_message(
-                chat="@example_user",
+                chat="@targetdaddy",
                 message_id=5,
                 text="edited",
             ),
-            lambda: wrapper.delete_messages(chat="@example_user", message_ids=[5]),
-            lambda: wrapper.send_voice(chat="@example_user", file_path="/tmp/demo.oga"),
+            lambda: wrapper.delete_messages(chat="@targetdaddy", message_ids=[5]),
+            lambda: wrapper.send_voice(chat="@targetdaddy", file_path="/tmp/demo.oga"),
         ):
             with patch.object(wrapper, "invalidate_cache") as invalidate_cache:
                 _run(operation())
@@ -1846,10 +2075,10 @@ class ClientTests(unittest.TestCase):
         wrapper.client.pin_message = AsyncMock(return_value=True)
         wrapper.client.unpin_message = AsyncMock(return_value=True)
         for operation in (
-            lambda: wrapper.pin_message(chat="@example_user", message_id=5),
-            lambda: wrapper.unpin_message(chat="@example_user", message_id=5),
+            lambda: wrapper.pin_message(chat="@targetdaddy", message_id=5),
+            lambda: wrapper.unpin_message(chat="@targetdaddy", message_id=5),
             lambda: wrapper.send_reaction(
-                chat="@example_user",
+                chat="@targetdaddy",
                 message_id=5,
                 emoji="👍",
             ),
@@ -1883,13 +2112,14 @@ class ClientTests(unittest.TestCase):
                 api_id=1,
                 api_hash="hash",
                 download_dir=download_dir,
+                download_retention_days=0,
                 download_cleanup_interval_seconds=0,
             )
 
             with patch("telegram_mcp.client.TelegramClient", DownloadTelegramClient):
                 wrapper = TelegramWrapper(settings)
                 with patch("telegram_mcp.client.time.time", return_value=now):
-                    result = _run(wrapper.download_media(chat="@example_user", message_id=7))
+                    result = _run(wrapper.download_media(chat="@targetdaddy", message_id=7))
 
             self.assertEqual(result.file_name, "new.oga")
             self.assertTrue(old_file.exists())
@@ -1916,7 +2146,7 @@ class ClientTests(unittest.TestCase):
             with patch("telegram_mcp.client.TelegramClient", DownloadTelegramClient):
                 wrapper = TelegramWrapper(settings)
                 with patch("telegram_mcp.client.time.time", return_value=now):
-                    result = _run(wrapper.download_media(chat="@example_user", message_id=7))
+                    result = _run(wrapper.download_media(chat="@targetdaddy", message_id=7))
 
             self.assertEqual(result.file_name, "new.oga")
             self.assertFalse(old_file.exists())
@@ -1939,7 +2169,7 @@ class ClientTests(unittest.TestCase):
                     "telegram_mcp.client.cleanup_download_dir",
                     side_effect=PermissionError("nope"),
                 ):
-                    result = _run(wrapper.download_media(chat="@example_user", message_id=7))
+                    result = _run(wrapper.download_media(chat="@targetdaddy", message_id=7))
 
             self.assertEqual(result.file_name, "new.oga")
             self.assertTrue((download_dir / "new.oga").exists())
@@ -1963,13 +2193,13 @@ class ClientTests(unittest.TestCase):
                 ) as cleanup:
                     result = _run(
                         wrapper.download_media_batch(
-                            chat="@example_user",
+                            chat="@targetdaddy",
                             message_ids=[7, 7, 8, 404],
                             concurrency=2,
                         )
                     )
 
-            self.assertEqual(wrapper.client.get_entity_calls, ["@example_user"])
+            self.assertEqual(wrapper.client.get_entity_calls, ["@targetdaddy"])
             self.assertEqual(wrapper.client.get_messages_calls, [[7, 8, 404]])
             cleanup.assert_called_once()
             self.assertEqual(wrapper.client.download_media_calls, [7, 8])
@@ -2001,7 +2231,7 @@ class ClientTests(unittest.TestCase):
                 wrapper = TelegramWrapper(settings)
                 result = _run(
                     wrapper.download_media_batch(
-                        chat="@example_user",
+                        chat="@targetdaddy",
                         message_ids=[7, 10, 11],
                         concurrency=3,
                     )
@@ -2010,6 +2240,53 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(result.success_count, 3)
             self.assertEqual(wrapper.client.download_media_calls, [7, 10, 11])
             self.assertEqual(wrapper.client.max_active_downloads, 1)
+
+    def test_download_media_batch_rejects_too_many_unique_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                api_id=1,
+                api_hash="hash",
+                download_dir=Path(tmp),
+                read_max_media_items=2,
+            )
+
+            with patch("telegram_mcp.client.TelegramClient", BatchDownloadTelegramClient):
+                wrapper = TelegramWrapper(settings)
+                with self.assertRaises(ToolContractError) as ctx:
+                    _run(
+                        wrapper.download_media_batch(
+                            chat="@targetdaddy",
+                            message_ids=[7, 10, 11],
+                            concurrency=1,
+                        )
+                    )
+
+            self.assertEqual(ctx.exception.code, "media_batch_too_large")
+            self.assertEqual(wrapper.client.get_entity_calls, [])
+            self.assertEqual(wrapper.client.get_messages_calls, [])
+
+    def test_download_media_batch_rejects_duplicate_amplification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(
+                api_id=1,
+                api_hash="hash",
+                download_dir=Path(tmp),
+                read_max_media_items=2,
+            )
+
+            with patch("telegram_mcp.client.TelegramClient", BatchDownloadTelegramClient):
+                wrapper = TelegramWrapper(settings)
+                with self.assertRaises(ToolContractError) as ctx:
+                    _run(
+                        wrapper.download_media_batch(
+                            chat="@targetdaddy",
+                            message_ids=[7, 7, 7],
+                            concurrency=1,
+                        )
+                    )
+
+            self.assertEqual(ctx.exception.code, "media_batch_too_large")
+            self.assertEqual(wrapper.client.get_entity_calls, [])
 
     def test_prepare_media_inspection_manifest_does_not_download(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2027,13 +2304,13 @@ class ClientTests(unittest.TestCase):
                 wrapper = TelegramWrapper(settings)
                 wrapper._record_downloaded_message_media(
                     chat_id=1,
-                    chat_ref="@example_user",
+                    chat_ref="@targetdaddy",
                     message_id=7,
                     path=str(known_media),
                 )
                 result = _run(
                     wrapper.prepare_media_inspection_manifest(
-                        chat="@example_user",
+                        chat="@targetdaddy",
                         limit=10,
                     )
                 )
@@ -2056,24 +2333,27 @@ class ClientTests(unittest.TestCase):
 
         send_preview = _run(
             wrapper.prepare_send_message(
-                chat="@example_user",
+                chat="@targetdaddy",
                 text="hello",
             )
         )
         reply_preview = _run(
             wrapper.prepare_reply_message(
-                chat="@example_user",
+                chat="@targetdaddy",
                 message_id=7,
                 text="reply",
             )
         )
 
         self.assertTrue(send_preview.preview_only)
-        self.assertEqual(send_preview.send_tool, "send_dialog_message")
+        self.assertEqual(send_preview.send_tool, "telegram_confirmed_send")
         self.assertEqual(send_preview.send_args_preview["text"], "hello")
+        self.assertTrue(send_preview.confirmation_token)
+        self.assertEqual(send_preview.send_args_preview["confirmation_token"], send_preview.confirmation_token)
         self.assertTrue(reply_preview.preview_only)
-        self.assertEqual(reply_preview.send_tool, "reply_in_dialog")
+        self.assertEqual(reply_preview.send_tool, "telegram_confirmed_send")
         self.assertEqual(reply_preview.reply_target_message_id, 7)
+        self.assertTrue(reply_preview.confirmation_token)
         wrapper.client.send_message.assert_not_awaited()
 
     def test_prepare_send_file_is_preview_only_and_never_sends(self):

@@ -84,9 +84,14 @@ class RegistrationTests(unittest.TestCase):
                 "prepare_reply_message",
                 "prepare_send_file",
                 "search_dialog_messages",
+                "telegram_read",
+                "telegram_search",
+                "telegram_prepare_reply",
                 "send_dialog_message",
                 "reply_in_dialog",
                 "reply_message",
+                "telegram_confirmed_send",
+                "telegram_export_members",
                 # Contacts
                 "list_contacts",
                 "search_contacts",
@@ -100,6 +105,7 @@ class RegistrationTests(unittest.TestCase):
                 "download_media_batch",
                 "download_dialog_media",
                 "prepare_media_inspection_manifest",
+                "telegram_inspect_media",
                 "download_story_media",
                 "send_file",
                 # Stories

@@ -162,22 +162,29 @@ class ChatOperationsMixin:
         entity = await self._resolve_entity(username)
         return self._chat_info_from_entity(entity)
 
-    async def resolve_dialog(self, query: str | int) -> DialogHandle:
+    async def _resolve_dialog_with_entity(self, query: str | int) -> tuple[DialogHandle, Any]:
         resolved_query = self._coerce_dialog_query(query)
         entity = await self._resolve_entity(resolved_query)
         chat = self._chat_info_from_entity(entity)
         dialog_ref = f"tg://dialog/{chat.type}/{chat.id}"
         self._remember_dialog_ref_entity(dialog_ref, entity)
-        return DialogHandle(
-            dialog_ref=dialog_ref,
-            id=chat.id,
-            name=chat.name,
-            type=chat.type,
-            username=chat.username,
-            resolved_from=str(query),
-            match_confidence=1.0,
-            candidate_count=1,
+        return (
+            DialogHandle(
+                dialog_ref=dialog_ref,
+                id=chat.id,
+                name=chat.name,
+                type=chat.type,
+                username=chat.username,
+                resolved_from=str(query),
+                match_confidence=1.0,
+                candidate_count=1,
+            ),
+            entity,
         )
+
+    async def resolve_dialog(self, query: str | int) -> DialogHandle:
+        handle, _ = await self._resolve_dialog_with_entity(query)
+        return handle
 
     # ── Search public ──
 

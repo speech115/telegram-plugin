@@ -15,7 +15,7 @@ from typing import Any
 
 READONLY_CALLS = {
     "telegram.get_me",
-    "telegram.list_chats",
+    "telegram.resolve_dialog",
     "telegram.collect_dialog_context",
     "telegram.read_today_dialog",
     "telegram.search_dialog_messages",
@@ -60,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--chat",
-        help="Optional dialog id/ref for facade read calls. Defaults to first list_chats result.",
+        help="Optional dialog id/ref for facade read calls. Defaults to Saved Messages via resolve_dialog.",
     )
     parser.add_argument(
         "--search-query",
@@ -140,22 +140,21 @@ async def _discover_chat(
     result = await _run_mcporter_call(
         mcporter_bin,
         _CallSpec(
-            "telegram.list_chats",
-            (f"limit=1", "--timeout", str(timeout), "--output", "json"),
+            "telegram.resolve_dialog",
+            ("query=me", "--timeout", str(timeout), "--output", "json"),
         ),
     )
     if not result["ok"]:
-        return None, "telegram.list_chats discovery failed"
+        return None, "telegram.resolve_dialog discovery failed"
     try:
         payload = json.loads(result["stdout"] or "{}")
     except json.JSONDecodeError:
-        return None, "telegram.list_chats discovery returned non-JSON"
-    dialogs = payload.get("dialogs") or []
-    if not dialogs:
-        return None, "telegram.list_chats discovery returned no dialogs"
-    dialog_id = dialogs[0].get("dialog_ref") or dialogs[0].get("id")
+        return None, "telegram.resolve_dialog discovery returned non-JSON"
+    if payload.get("isError"):
+        return None, "telegram.resolve_dialog discovery returned tool error"
+    dialog_id = payload.get("dialog_ref") or payload.get("id")
     if dialog_id is None:
-        return None, "telegram.list_chats discovery returned dialog without id"
+        return None, "telegram.resolve_dialog discovery returned no dialog_ref"
     return str(dialog_id), None
 
 
@@ -169,8 +168,8 @@ def _build_call_plan(
     base_plan = [
         _CallSpec("telegram.get_me", ("--timeout", str(timeout), "--output", "json")),
         _CallSpec(
-            "telegram.list_chats",
-            ("limit=1", "--timeout", str(timeout), "--output", "json"),
+            "telegram.resolve_dialog",
+            ("query=me", "--timeout", str(timeout), "--output", "json"),
         ),
     ]
     if chat:

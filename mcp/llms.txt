@@ -1,6 +1,6 @@
 # llms.txt
 
-root: ${TELEGRAM_MCP_REPO:-./mcp}
+root: /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp
 generated_at: 2026-04-18T15:20:22Z
 
 ## Important Files

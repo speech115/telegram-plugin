@@ -6,7 +6,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
 
 if [[ ! -x "${PYTHON_BIN}" ]]; then
-  PYTHON_BIN="python3"
+  echo "Missing repo-local python at ${PYTHON_BIN}. Run 'uv pip install -e .'." >&2
+  exit 1
 fi
 
 PYTHONPATH="${REPO_ROOT}/src" \

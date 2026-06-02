@@ -272,6 +272,12 @@ class MediaOperationsMixin:
         for message_id in message_ids:
             self._validate_non_negative("message_id", message_id)
 
+        max_items = max(1, int(getattr(self.settings, "read_max_media_items", 25)))
+        if len(message_ids) > max_items:
+            raise ToolContractError(
+                "media_batch_too_large",
+                f"download_media_batch supports at most {max_items} message ids per call",
+            )
         entity = await self._resolve_entity(chat)
         unique_message_ids = list(dict.fromkeys(message_ids))
         self._increment_runtime_stat(

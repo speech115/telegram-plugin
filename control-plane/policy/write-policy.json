@@ -4,6 +4,9 @@
     "unexpected_write_or_destructive_tools_are_blocking": true,
     "additive_tools_allowed_in_default_profile": false,
     "explicit_write_profiles": ["full", "admin"],
+    "confirmed_write_facade_tools": [
+      "telegram_confirmed_send"
+    ],
     "approved_additive_facade_tools": [
       "send_dialog_message",
       "reply_in_dialog",

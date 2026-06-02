@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from typing import Any
+
 from .types import DialogSliceResult, MessageInfo, TranscriptionResult
 
 
@@ -155,6 +157,8 @@ class MessageReadMixin:
         include_sender_name: bool = True,
         date_from: str | None = None,
         date_to: str | None = None,
+        entity: Any | None = None,
+        peer: Any | None = None,
     ) -> DialogSliceResult:
         started_at = time.perf_counter()
         self._validate_message_window(
@@ -163,8 +167,10 @@ class MessageReadMixin:
             min_id=min_id,
             max_id=max_id,
         )
-        entity = await self._resolve_entity(chat)
-        peer = await self._resolve_input_entity(chat)
+        if entity is None:
+            entity = await self._resolve_entity(chat)
+        if peer is None:
+            peer = await self._resolve_input_entity(chat)
         lower_bound, upper_bound_exclusive = self._build_day_bounds(
             date_from=date_from,
             date_to=date_to,

@@ -24,32 +24,33 @@ facade surface.
 Expected default-read facade names, when the host exposes the Telegram MCP
 facade:
 
-- `resolve_dialog`
-- `read_today_dialog`
-- `collect_dialog_context`
-- `prepare_dialog_reply`
-- `search_dialog_messages`
-- `download_media`
-- `download_media_batch`
-- `transcribe_voice`
 - `telegram_read`
 - `telegram_search`
 - `telegram_prepare_reply`
 - `telegram_inspect_media`
-
-Optional helpers:
-
+- `telegram_export_members`
+- `resolve_dialog`
+- `find_dialog`
+- `collect_context`
+- `collect_dialog_context`
 - `prepare_send_message`
 - `prepare_reply_message`
+- `prepare_dialog_reply`
 - `prepare_media_inspection_manifest`
+- `download_media`
+- `download_media_batch`
 - `download_dialog_media`
+- `search_dialog_messages`
+- `telegram_confirmed_send`
 
-Power/write names are expected only when an explicit local Power/Write Mode is
-enabled:
+Legacy low-level read aliases (`read_today_dialog`, `read_recent_dialog`,
+`read_dialog`, `read_dialog_by_date`, `transcribe_voice`) are full-profile only.
+
+Power/write names beyond confirmed send are expected only when an explicit local
+Power/Write Mode is enabled:
 
 - `send_dialog_message`
 - `reply_in_dialog`
-- `telegram_confirmed_send`
 
 If a live/current task needs a missing facade, report the live-tool gap and do
 not substitute mirror/archive evidence. If only app-style aliases are exposed,
@@ -98,6 +99,19 @@ Verify standalone/plugin parity:
 diff -ru "$HOME/.agents/skills/telegram" skills/telegram
 ```
 
+## Release Gates
+
+Before publishing or materializing a new plugin cache version:
+
+```bash
+cd <telegram-mcp-repo>
+./bin/check-release-gates --package-dir <portable-plugin-package> --json
+<telegram-control-plane>/bin/telegram-release-gate
+```
+
+Packaging must not contain `.env`, `.session`, `__pycache__`, `*.pyc`, or
+hardcoded operator home paths or private artifact roots.
+
 ## Tool And Contract Gates
 
 When the local daemon/tooling is available, verify exposed tool names and app/media helpers:
@@ -106,6 +120,7 @@ When the local daemon/tooling is available, verify exposed tool names and app/me
 mcporter list telegram --json
 cd <telegram-mcp-repo>
 ./scripts/check.sh
+./bin/check-release-gates --json
 ./bin/contract-smoke --json
 ./bin/contract-smoke --profile app-media --json
 ./bin/contract-smoke --check-cache-stats --json

@@ -20,8 +20,8 @@ class StressReadonlyTests(unittest.TestCase):
                 """\
                 #!/bin/sh
                 printf '%s\\n' "$*" >> "${CALL_LOG}"
-                if [ "$1" = "call" ] && [ "$2" = "telegram.list_chats" ]; then
-                  echo '{"dialogs":[{"id":123,"dialog_ref":"tg://dialog/user/123","name":"Smoke Chat"}]}'
+                if [ "$1" = "call" ] && [ "$2" = "telegram.resolve_dialog" ]; then
+                  echo '{"id":123,"dialog_ref":"tg://dialog/user/123","name":"Smoke Chat","type":"user","resolved_from":"me","match_confidence":1.0}'
                   exit 0
                 fi
                 if [ "$1" = "call" ] && [ "$2" = "telegram.collect_dialog_context" ]; then
@@ -77,7 +77,7 @@ class StressReadonlyTests(unittest.TestCase):
             for line in lines:
                 self.assertRegex(
                     line,
-                    r"^call telegram\.(get_me|list_chats|collect_dialog_context|read_today_dialog|search_dialog_messages)\b",
+                    r"^call telegram\.(get_me|resolve_dialog|collect_dialog_context|read_today_dialog|search_dialog_messages)\b",
                 )
             self.assertTrue(
                 any(
@@ -148,7 +148,7 @@ class StressReadonlyTests(unittest.TestCase):
             lines = [
                 line
                 for line in call_log.read_text(encoding="utf-8").strip().splitlines()
-                if not line.startswith("call telegram.list_chats")
+                if not line.startswith("call telegram.resolve_dialog")
             ]
             self.assertEqual(len(lines), 6)
             for first, second in zip(lines[0::2], lines[1::2], strict=True):

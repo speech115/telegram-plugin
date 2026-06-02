@@ -2,32 +2,36 @@
   "allowed_roots": [
     {
       "role": "control_plane",
-      "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}"
+      "path": "/Users/sereja/Projects/tools/telegram"
     },
     {
       "role": "live_mcp",
-      "path": "${TELEGRAM_MCP_REPO:-./mcp}"
+      "path": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
     },
     {
-      "role": "plugin_source",
-      "path": "${TELEGRAM_PLUGIN_SOURCE:-./plugin}"
+      "role": "plugin_package",
+      "path": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package"
+    },
+    {
+      "role": "plugin_marketplace_alias",
+      "path": "/Users/sereja/plugins/telegram"
     },
     {
       "role": "plugin_cache",
-      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}"
+      "path": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram"
     },
     {
       "role": "mirror_recovery",
-      "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror"
+      "path": "/Users/sereja/Projects/tools/telegram-mirror"
     },
     {
       "role": "telecrawl_archive",
-      "path": "${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}"
+      "path": "/Users/sereja/Projects/.artifacts/telecrawl"
     }
   ],
   "temporary_compatibility_aliases": [
     {
-      "path": "${TELEGRAM_MIRROR_LEGACY_ALIAS:-~/Projects/tools/telegram-mirror}",
+      "path": "/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror",
       "allowed_for": "discovery_only",
       "runtime_start_allowed": false
     }

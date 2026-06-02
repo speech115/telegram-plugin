@@ -83,6 +83,14 @@ class InstallerFlowState:
 
 
 @dataclass(frozen=True)
+class TreeState:
+    path: str | None
+    exists: bool
+    file_count: int
+    sha256: str | None
+
+
+@dataclass(frozen=True)
 class DriftReport:
     status: str
     live_skill: SkillFileState
@@ -100,6 +108,13 @@ class DriftReport:
     sync_safe: bool
     source_candidates: list[str]
     recommendation: str
+    live_skill_tree: TreeState
+    plugin_source_skill_tree: TreeState
+    marketplace_skill_tree: TreeState
+    plugin_cache_skill_tree: TreeState
+    plugin_source_package_tree: TreeState
+    plugin_cache_package_tree: TreeState
+    tree_diff: dict[str, dict[str, list[str]]]
 
 
 def _expand_path(raw_path: str | Path) -> Path:
@@ -112,6 +127,41 @@ def _hash_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _hash_tree(root: Path | None, *, ignored_root_files: set[str] | None = None) -> tuple[TreeState, dict[str, str]]:
+    if root is None or not root.exists() or not root.is_dir():
+        return TreeState(path=str(root) if root is not None else None, exists=False, file_count=0, sha256=None), {}
+
+    resolved_root = root.resolve()
+    ignored_root_files = ignored_root_files or set()
+    files: dict[str, str] = {}
+    for path in sorted(resolved_root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(resolved_root).as_posix()
+        if "/" not in relative and relative in ignored_root_files:
+            continue
+        files[relative] = _hash_file(path)
+
+    digest = hashlib.sha256()
+    for relative, sha256 in files.items():
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256.encode("ascii"))
+        digest.update(b"\0")
+    return TreeState(path=str(root), exists=True, file_count=len(files), sha256=digest.hexdigest()), files
+
+
+def _tree_diff(left: dict[str, str], right: dict[str, str]) -> dict[str, list[str]]:
+    left_keys = set(left)
+    right_keys = set(right)
+    common = left_keys & right_keys
+    return {
+        "left_only": sorted(left_keys - right_keys)[:20],
+        "right_only": sorted(right_keys - left_keys)[:20],
+        "changed": sorted(key for key in common if left.get(key) != right.get(key))[:20],
+    }
 
 
 def _read_state(path: Path) -> SkillFileState:
@@ -203,7 +253,7 @@ def _read_plugin_manifest(path: Path) -> PluginManifestState:
 
 def _marketplace_name_from_plugin_key(plugin_key: str) -> str:
     if "@" not in plugin_key:
-        return "local"
+        return "sereja-local"
     return plugin_key.rsplit("@", 1)[1]
 
 
@@ -332,6 +382,47 @@ def _same_hash(left: SkillFileState, right: SkillFileState) -> bool:
     return left.exists and right.exists and left.sha256 == right.sha256
 
 
+def _same_tree(left: TreeState, right: TreeState) -> bool:
+    return left.exists and right.exists and left.sha256 == right.sha256
+
+
+def _same_skill_layer(
+    left_file: SkillFileState,
+    right_file: SkillFileState,
+    left_tree: TreeState,
+    right_tree: TreeState,
+) -> bool:
+    return _same_hash(left_file, right_file) and _same_tree(left_tree, right_tree)
+
+
+def _all_same_skill_layers(states: list[tuple[SkillFileState, TreeState]]) -> bool:
+    existing = [(file_state, tree_state) for file_state, tree_state in states if file_state.exists]
+    file_hashes = {file_state.sha256 for file_state, _ in existing}
+    tree_hashes = {tree_state.sha256 for _, tree_state in existing if tree_state.exists}
+    return len(existing) >= 2 and len(file_hashes) == 1 and len(tree_hashes) == 1
+
+
+def _skill_dir_from_skill_file(path: Path) -> Path:
+    return path.parent
+
+
+def _plugin_root_from_skill_file(path: Path) -> Path | None:
+    if path.name != "SKILL.md" or len(path.parents) < 3:
+        return None
+    if path.parent.name != "telegram" or path.parent.parent.name != "skills":
+        return None
+    root = path.parents[2]
+    return root if _looks_like_plugin_root(root) else None
+
+
+def _looks_like_plugin_root(path: Path) -> bool:
+    return (
+        (path / ".codex-plugin" / "plugin.json").is_file()
+        or (path / ".mcp.json").is_file()
+        or (path / "skills" / "telegram" / "SKILL.md").is_file()
+    )
+
+
 def _resolve_marketplace_root(
     codex_config: CodexPluginConfigState,
     local_marketplace_path: Path,
@@ -369,21 +460,8 @@ def _installer_command(
     marketplace_name: str,
     codex_config: CodexPluginConfigState,
 ) -> list[str]:
-    if codex_config.marketplace_source and Path(codex_config.marketplace_source).expanduser().is_absolute():
-        return [
-            "codex",
-            "plugin",
-            "marketplace",
-            "remove",
-            marketplace_name,
-            "&&",
-            "codex",
-            "plugin",
-            "marketplace",
-            "add",
-            codex_config.marketplace_source,
-        ]
-    return ["codex", "plugin", "marketplace", "upgrade", marketplace_name]
+    plugin_key = f"telegram@{marketplace_name}" if marketplace_name else "telegram"
+    return ["codex", "plugin", "remove", plugin_key, "&&", "codex", "plugin", "add", plugin_key]
 
 
 def check_plugin_drift(
@@ -431,12 +509,47 @@ def check_plugin_drift(
     cache_manifest = _read_plugin_manifest(cache_plugin_root / ".codex-plugin" / "plugin.json")
     source_mcp = _read_json_state(_expand_path(plugin_source_mcp_path))
     cache_mcp = _read_json_state(resolved_cache_mcp_path)
+    skill_tree_ignored_root_files = {".mcp.json"}
+    live_tree, live_tree_files = _hash_tree(
+        _skill_dir_from_skill_file(_expand_path(live_skill_path)),
+        ignored_root_files=skill_tree_ignored_root_files,
+    )
+    source_tree, source_tree_files = _hash_tree(
+        _skill_dir_from_skill_file(_expand_path(plugin_source_skill_path)),
+        ignored_root_files=skill_tree_ignored_root_files,
+    )
+    staged_tree, staged_tree_files = _hash_tree(
+        _skill_dir_from_skill_file(resolved_marketplace_skill_path),
+        ignored_root_files=skill_tree_ignored_root_files,
+    )
+    cache_tree, cache_tree_files = _hash_tree(
+        _skill_dir_from_skill_file(resolved_cache_skill_path),
+        ignored_root_files=skill_tree_ignored_root_files,
+    )
+    source_package_tree, source_package_files = _hash_tree(_plugin_root_from_skill_file(_expand_path(plugin_source_skill_path)))
+    cache_package_tree, cache_package_files = _hash_tree(cache_plugin_root if _looks_like_plugin_root(cache_plugin_root) else None)
+    tree_diff: dict[str, dict[str, list[str]]] = {}
+    if source_tree.exists and live_tree.exists and source_tree.sha256 != live_tree.sha256:
+        tree_diff["plugin_source_vs_live_skill_tree"] = _tree_diff(source_tree_files, live_tree_files)
+    if source_tree.exists and staged_tree.exists and source_tree.sha256 != staged_tree.sha256:
+        tree_diff["plugin_source_vs_marketplace_skill_tree"] = _tree_diff(source_tree_files, staged_tree_files)
+    if source_tree.exists and cache_tree.exists and source_tree.sha256 != cache_tree.sha256:
+        tree_diff["plugin_source_vs_cache_skill_tree"] = _tree_diff(source_tree_files, cache_tree_files)
+    if source_package_tree.exists and cache_package_tree.exists and source_package_tree.sha256 != cache_package_tree.sha256:
+        tree_diff["plugin_source_vs_cache_package_tree"] = _tree_diff(source_package_files, cache_package_files)
     skill_states = {
         "live_skill": live,
         "plugin_source_skill": source,
         "marketplace_skill": staged,
         "plugin_cache_skill": cache,
     }
+    mcp_metadata_drift = (
+        source_mcp.exists
+        and cache_mcp.exists
+        and source_mcp.sha256 is not None
+        and cache_mcp.sha256 is not None
+        and source_mcp.sha256 != cache_mcp.sha256
+    )
     source_candidates = _existing_skill_candidates(skill_states)
     installer_marketplace_name = local_marketplace.name or codex_config.marketplace_name
     installer_command = _installer_command(
@@ -461,8 +574,32 @@ def check_plugin_drift(
         canonical_source = "unproven"
         sync_safe = False
         recommendation = "Plugin cache skill is missing and source does not match live skill; repair source first."
-    elif all(state.exists for state in (live, source, staged, cache)) and _all_same_hash(
-        [live, source, staged, cache]
+    elif mcp_metadata_drift:
+        status = "metadata_drift"
+        source_matches_live = _same_skill_layer(live, source, live_tree, source_tree)
+        canonical_source = "plugin_source_skill" if source_matches_live else "unproven"
+        sync_safe = source_matches_live
+        installer_safe = codex_config.enabled and local_marketplace.plugin_declared and source_mcp.valid_json
+        installer_reason = (
+            "plugin source MCP metadata differs from installed cache and can repair cache through installer flow"
+            if installer_safe
+            else "plugin source MCP metadata differs from installed cache"
+        )
+        recommendation = (
+            "Plugin source and installed cache MCP metadata differ. Materialize a new versioned "
+            "cache from the canonical source before treating the installed plugin as current."
+        )
+    elif all(state.exists for state in (live, source, staged, cache)) and _all_same_skill_layers(
+        [
+            (live, live_tree),
+            (source, source_tree),
+            (staged, staged_tree),
+            (cache, cache_tree),
+        ]
+    ) and (
+        not source_package_tree.exists
+        or not cache_package_tree.exists
+        or _same_tree(source_package_tree, cache_package_tree)
     ):
         status = "ok"
         canonical_source = "plugin_source_skill"
@@ -474,7 +611,7 @@ def check_plugin_drift(
             else "plugin files match, but Codex config/marketplace/MCP metadata is incomplete"
         )
         recommendation = "All known Telegram skill layers match; plugin source can be treated as canonical."
-    elif _same_hash(live, source) and not _same_hash(source, cache):
+    elif _same_skill_layer(live, source, live_tree, source_tree) and not _same_skill_layer(source, cache, source_tree, cache_tree):
         status = "installer_ready_drift"
         canonical_source = "plugin_source_skill"
         sync_safe = True
@@ -489,7 +626,7 @@ def check_plugin_drift(
             "Use the Codex installer flow when available; for local marketplaces, materialize only "
             "a new versioned cache from the canonical source and leave older cache versions intact."
         )
-    elif _same_hash(staged, cache) and not _same_hash(source, cache):
+    elif _same_skill_layer(staged, cache, staged_tree, cache_tree) and not _same_skill_layer(source, cache, source_tree, cache_tree):
         status = "source_drift"
         canonical_source = "unproven"
         sync_safe = False
@@ -530,6 +667,13 @@ def check_plugin_drift(
             reason=installer_reason,
         ),
         recommendation=recommendation,
+        live_skill_tree=live_tree,
+        plugin_source_skill_tree=source_tree,
+        marketplace_skill_tree=staged_tree,
+        plugin_cache_skill_tree=cache_tree,
+        plugin_source_package_tree=source_package_tree,
+        plugin_cache_package_tree=cache_package_tree,
+        tree_diff=tree_diff,
     )
 
 
@@ -624,6 +768,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"marketplace sha256: {report.marketplace_skill.sha256}")
         if report.plugin_cache_skill.sha256:
             print(f"cache sha256: {report.plugin_cache_skill.sha256}")
+        if report.plugin_source_skill_tree.sha256:
+            print(f"source skill tree sha256: {report.plugin_source_skill_tree.sha256}")
+        if report.plugin_cache_skill_tree.sha256:
+            print(f"cache skill tree sha256: {report.plugin_cache_skill_tree.sha256}")
+        if report.plugin_source_package_tree.sha256:
+            print(f"source package tree sha256: {report.plugin_source_package_tree.sha256}")
+        if report.plugin_cache_package_tree.sha256:
+            print(f"cache package tree sha256: {report.plugin_cache_package_tree.sha256}")
         print(
             "source manifest: "
             f"{report.plugin_source_manifest.path} "

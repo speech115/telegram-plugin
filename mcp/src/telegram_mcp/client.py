@@ -97,6 +97,7 @@ class TelegramWrapper(
             "download_media_batch_dedupe_count": 0,
             "download_media_batch_effective_concurrency": 0,
         }
+        self._dialog_send_confirmations: dict[str, tuple[float, dict[str, object]]] = {}
         self._last_download_cleanup_at: float = 0.0
         self._connect_lock = asyncio.Lock()
         self._scheduler = TelegramOperationScheduler(
@@ -471,27 +472,10 @@ class TelegramWrapper(
     async def doctor_check(self) -> DoctorInfo:
         warnings: list[str] = []
         checks: dict[str, str] = {}
+        from .runtime import get_runtime_report
 
         transport = self.settings.mcp_transport.strip().lower()
         checks["transport"] = transport
-        runtime_report: dict[str, object]
-        if transport == "stdio":
-            runtime_report = {
-                "host": None,
-                "port": None,
-                "http_path": None,
-                "endpoint_url": None,
-            }
-        else:
-            runtime_report = {
-                "host": self.settings.mcp_host,
-                "port": self.settings.mcp_port,
-                "http_path": self.settings.mcp_http_path,
-                "endpoint_url": (
-                    f"http://{self.settings.mcp_host}:{self.settings.mcp_port}"
-                    f"{self.settings.mcp_http_path}"
-                ),
-            }
 
         try:
             self.settings.ensure_dirs()
@@ -540,7 +524,7 @@ class TelegramWrapper(
             runtime_stats=self._runtime_stats_snapshot(),
             **{
                 key: value
-                for key, value in runtime_report.items()
+                for key, value in get_runtime_report().items()
                 if key in {"host", "port", "http_path", "endpoint_url"}
             },
         )

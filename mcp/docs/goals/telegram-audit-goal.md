@@ -8,7 +8,7 @@
 
 ## Critical Source Of Truth
 
-- Treat `${TELEGRAM_MCP_REPO:-./mcp}` as the likely canonical source repo, but verify it.
+- Treat `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp` as the likely canonical source repo, but verify it.
 - Plugin cache, local skills, launchd files, and MCP connector config are read-only audit surfaces unless you prove they are the actual source of truth.
 - Do not edit plugin cache or generated plugin bundles directly if a repo source exists.
 - Do not read private Telegram message content for this audit.

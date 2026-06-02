@@ -14,9 +14,9 @@ class PluginDriftTests(unittest.TestCase):
         config = root / "config.toml"
         config.write_text(
             (
-                '[plugins."telegram@local"]\n'
+                '[plugins."telegram@sereja-local"]\n'
                 "enabled = true\n\n"
-                "[marketplaces.local]\n"
+                "[marketplaces.sereja-local]\n"
                 f'source = "{root.as_posix()}"\n'
             ),
             encoding="utf-8",
@@ -29,7 +29,7 @@ class PluginDriftTests(unittest.TestCase):
         marketplace.write_text(
             json.dumps(
                 {
-                    "name": "local",
+                    "name": "sereja-local",
                     "plugins": [
                         {
                             "name": "telegram",
@@ -103,15 +103,13 @@ class PluginDriftTests(unittest.TestCase):
                 [
                     "codex",
                     "plugin",
-                    "marketplace",
                     "remove",
-                    "local",
+                    "telegram@sereja-local",
                     "&&",
                     "codex",
                     "plugin",
-                    "marketplace",
                     "add",
-                    str(root),
+                    "telegram@sereja-local",
                 ],
             )
             self.assertEqual(report.installer_flow.source_path, str((root / "plugins" / "telegram").resolve()))
@@ -161,14 +159,16 @@ class PluginDriftTests(unittest.TestCase):
             source = plugin_root / "skills" / "telegram" / "SKILL.md"
             cache = root / "cache" / "telegram" / "0.2.0" / "skills" / "telegram" / "SKILL.md"
             manifest = plugin_root / ".codex-plugin" / "plugin.json"
+            cache_manifest = root / "cache" / "telegram" / "0.2.0" / ".codex-plugin" / "plugin.json"
             source_mcp = plugin_root / ".mcp.json"
             cache_mcp = root / "cache" / "telegram" / "0.2.0" / ".mcp.json"
-            for path in (live, source, cache, manifest, source_mcp, cache_mcp):
+            for path in (live, source, cache, manifest, cache_manifest, source_mcp, cache_mcp):
                 path.parent.mkdir(parents=True, exist_ok=True)
             live.write_text("same skill\n", encoding="utf-8")
             source.write_text("same skill\n", encoding="utf-8")
             cache.write_text("same skill\n", encoding="utf-8")
             manifest.write_text('{"name":"telegram","version":"0.2.0"}\n', encoding="utf-8")
+            cache_manifest.write_text('{"name":"telegram","version":"0.2.0"}\n', encoding="utf-8")
             source_mcp.write_text('{"mcpServers": {}}\n', encoding="utf-8")
             cache_mcp.write_text('{"mcpServers": {}}\n', encoding="utf-8")
             config = self._write_enabled_config(root)
@@ -186,6 +186,84 @@ class PluginDriftTests(unittest.TestCase):
             self.assertEqual(report.status, "ok")
             self.assertEqual(report.plugin_source_manifest.version, "0.2.0")
             self.assertIn("/0.2.0/", report.plugin_cache_skill.path)
+
+    def test_reports_metadata_drift_when_mcp_files_differ(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            live = root / "live" / "SKILL.md"
+            source = root / "source" / "SKILL.md"
+            marketplace = root / "marketplace" / "SKILL.md"
+            cache = root / "cache" / "SKILL.md"
+            source_mcp = root / "source" / ".mcp.json"
+            cache_mcp = root / "cache" / ".mcp.json"
+            for path in (live, source, marketplace, cache, source_mcp, cache_mcp):
+                path.parent.mkdir(parents=True, exist_ok=True)
+            live.write_text("same skill\n", encoding="utf-8")
+            source.write_text("same skill\n", encoding="utf-8")
+            marketplace.write_text("same skill\n", encoding="utf-8")
+            cache.write_text("same skill\n", encoding="utf-8")
+            source_mcp.write_text('{"mcpServers":{"telegram-local":{"allowedTools":["get_me"]}}}\n', encoding="utf-8")
+            cache_mcp.write_text('{"mcpServers":{"telegram-local":{"allowedTools":["get_me","old_tool"]}}}\n', encoding="utf-8")
+
+            report = check_plugin_drift(
+                live_skill_path=live,
+                plugin_source_skill_path=source,
+                marketplace_skill_path=marketplace,
+                plugin_cache_skill_path=cache,
+                plugin_source_mcp_path=source_mcp,
+                plugin_cache_mcp_path=cache_mcp,
+            )
+
+            self.assertEqual(report.status, "metadata_drift")
+            self.assertEqual(report.canonical_source, "plugin_source_skill")
+            self.assertTrue(report.sync_safe)
+
+    def test_reports_installer_ready_when_reference_file_lags_but_skill_md_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plugin_root = root / "plugins" / "telegram"
+            live_root = root / "live-skill"
+            source_root = plugin_root / "skills" / "telegram"
+            marketplace_root = root / "marketplace" / "skills" / "telegram"
+            cache_root = root / "cache" / "telegram" / "0.2.0" / "skills" / "telegram"
+            manifest = plugin_root / ".codex-plugin" / "plugin.json"
+            source_mcp = plugin_root / ".mcp.json"
+            cache_mcp = root / "cache" / "telegram" / "0.2.0" / ".mcp.json"
+            for skill_root in (live_root, source_root, marketplace_root, cache_root):
+                (skill_root / "references").mkdir(parents=True, exist_ok=True)
+                (skill_root / "scripts").mkdir(parents=True, exist_ok=True)
+                (skill_root / "SKILL.md").write_text("same skill\n", encoding="utf-8")
+                (skill_root / "references/facade-routing.md").write_text("new routing\n", encoding="utf-8")
+                (skill_root / "scripts/helper.py").write_text("print('same')\n", encoding="utf-8")
+            (marketplace_root / "references/facade-routing.md").write_text("old routing\n", encoding="utf-8")
+            (cache_root / "references/facade-routing.md").write_text("old routing\n", encoding="utf-8")
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.write_text('{"name":"telegram","version":"0.2.0"}\n', encoding="utf-8")
+            source_mcp.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+            cache_mcp.write_text('{"mcpServers": {}}\n', encoding="utf-8")
+            config = self._write_enabled_config(root)
+            marketplace = self._write_marketplace(root)
+
+            report = check_plugin_drift(
+                live_skill_path=live_root / "SKILL.md",
+                plugin_source_skill_path=source_root / "SKILL.md",
+                marketplace_skill_path=marketplace_root / "SKILL.md",
+                plugin_cache_root=root / "cache" / "telegram",
+                plugin_source_mcp_path=source_mcp,
+                codex_config_path=config,
+                local_marketplace_path=marketplace,
+            )
+
+            self.assertEqual(report.status, "installer_ready_drift")
+            self.assertEqual(report.canonical_source, "plugin_source_skill")
+            self.assertTrue(report.sync_safe)
+            self.assertEqual(report.live_skill.sha256, report.plugin_cache_skill.sha256)
+            self.assertNotEqual(report.plugin_source_skill_tree.sha256, report.plugin_cache_skill_tree.sha256)
+            self.assertIn("plugin_source_vs_cache_skill_tree", report.tree_diff)
+            self.assertIn(
+                "references/facade-routing.md",
+                report.tree_diff["plugin_source_vs_cache_skill_tree"]["changed"],
+            )
 
     def test_reports_drift_for_different_skill_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -314,3 +392,5 @@ class PluginDriftTests(unittest.TestCase):
             self.assertEqual(payload["status"], "ok")
             self.assertEqual(payload["canonical_source"], "plugin_source_skill")
             self.assertTrue(payload["sync_safe"])
+            self.assertIn("plugin_source_skill_tree", payload)
+            self.assertIn("plugin_cache_skill_tree", payload)

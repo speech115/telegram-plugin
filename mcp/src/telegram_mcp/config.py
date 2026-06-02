@@ -6,6 +6,12 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from telethon.sessions import StringSession
 
+from .media_policy import (
+    DEFAULT_DOWNLOAD_DIR,
+    DEFAULT_DOWNLOAD_RETENTION_DAYS,
+    DEFAULT_SESSION_DIR,
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -18,10 +24,10 @@ class Settings(BaseSettings):
     api_id: int
     api_hash: str
     session_string: str | None = None
-    session_dir: Path = Path.home() / ".telegram-mcp"
-    download_dir: Path = Path.home() / "telegram-mcp" / "downloads"
+    session_dir: Path = DEFAULT_SESSION_DIR
+    download_dir: Path = DEFAULT_DOWNLOAD_DIR
     download_registry_path: Path | None = None
-    download_retention_days: int = 0
+    download_retention_days: int = DEFAULT_DOWNLOAD_RETENTION_DAYS
     download_cleanup_interval_seconds: int = 60 * 60
     resolve_cache_size: int = 256
 
@@ -86,8 +92,11 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         if self.uses_file_session:
             self.session_dir.mkdir(parents=True, exist_ok=True)
+            self.session_dir.chmod(0o700)
         self.download_dir.mkdir(parents=True, exist_ok=True)
+        self.download_dir.chmod(0o700)
         self.media_download_registry_path.parent.mkdir(parents=True, exist_ok=True)
+        self.media_download_registry_path.parent.chmod(0o700)
 
 
 @lru_cache(maxsize=1)
