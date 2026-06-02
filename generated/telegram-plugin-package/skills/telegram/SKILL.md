@@ -19,8 +19,10 @@ operator/debug-only and not a normal user workflow.
 ## Non-Negotiables
 
 - **No accidental writes:** never call `send_dialog_message` or
-  `reply_in_dialog` without explicit user write intent, an unambiguous resolved
-  target, and exact message text or reply id.
+  `reply_in_dialog` in default mode. Use `prepare_send_message`,
+  `prepare_reply_message`, or `telegram_prepare_reply` first, then
+  `telegram_confirmed_send` with the returned `confirmation_token` and the exact
+  preview text.
 - **Stable identity before writes:** aliases, first names, pronouns, and "the
   last chat" are not enough. Resolve and carry forward the canonical
   `dialog_ref`; ask for a stable identifier when resolution is fuzzy.
@@ -69,15 +71,17 @@ Prefer the task-shaped and dialog facade tools exposed by Telegram MCP:
 - `read_today_dialog`
 - `collect_dialog_context`
 - `prepare_dialog_reply`
+- `prepare_send_message`
+- `prepare_reply_message`
 - `search_dialog_messages`
 - `download_media`
 - `download_media_batch`
-- `send_dialog_message`
-- `reply_in_dialog`
+- `telegram_confirmed_send`
 - `transcribe_voice`
 
-When Power/Write Mode exposes it, use `telegram_confirmed_send` only with a
-fresh `confirmation_token` returned by the matching preview.
+Use `telegram_confirmed_send` only with a fresh `confirmation_token` returned
+by the matching preview. Raw `send_dialog_message` / `reply_in_dialog` are
+Power/Write Mode only.
 
 When exposed, use these preview/media helpers before writes or media-heavy work:
 

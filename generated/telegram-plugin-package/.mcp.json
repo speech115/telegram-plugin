@@ -15,6 +15,7 @@
         "telegram_read",
         "telegram_search",
         "telegram_prepare_reply",
+        "telegram_confirmed_send",
         "telegram_inspect_media",
         "prepare_dialog_reply",
         "prepare_reply_message",

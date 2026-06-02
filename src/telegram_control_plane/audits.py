@@ -51,6 +51,7 @@ APPROVED_FACADE_TOOLS = {
     "download_media_batch",
     "download_dialog_media",
     "telegram_inspect_media",
+    "telegram_confirmed_send",
     "telegram_prepare_reply",
     "telegram_read",
     "telegram_search",
@@ -485,10 +486,31 @@ def _imported_tool_names(init_py: Path) -> list[str]:
     return sorted(set(names))
 
 
+def _confirmed_write_facade_tools() -> set[str]:
+    policy = load_json(POLICY_DIR / "write-policy.json") or {}
+    default_profile = policy.get("default_mcp_profile")
+    if not isinstance(default_profile, dict):
+        return set()
+    tools = default_profile.get("confirmed_write_facade_tools")
+    if not isinstance(tools, list):
+        return set()
+    return {str(item) for item in tools if isinstance(item, str)}
+
+
+def _is_unexpected_default_surface_tool(name: str, dialog_annotations: dict[str, str]) -> bool:
+    if name in _confirmed_write_facade_tools():
+        return False
+    if WRITE_OR_DESTRUCTIVE_RE.search(name):
+        return True
+    return dialog_annotations.get(name) not in {None, "readonly"}
+
+
 def _dialog_annotation_map(dialog_tools_py: Path) -> dict[str, str]:
     text = dialog_tools_py.read_text(encoding="utf-8")
     mapping: dict[str, str] = {}
-    pattern = re.compile(r"mcp\.tool\(annotations=(READONLY|ADDITIVE)\)\(tool_error_handler\((\w+)\)\)")
+    pattern = re.compile(
+        r"mcp\.tool\(annotations=(READONLY|ADDITIVE|CONFIRMED_WRITE)\)\(tool_error_handler\((\w+)\)\)"
+    )
     for annotation, tool_name in pattern.findall(text):
         mapping[tool_name] = annotation.lower()
     return mapping
@@ -517,7 +539,7 @@ def audit_mcp_surface() -> dict[str, Any]:
     unexpected_write = [
         name
         for name in effective_default_tools
-        if WRITE_OR_DESTRUCTIVE_RE.search(name) or dialog_annotations.get(name) not in {None, "readonly"}
+        if _is_unexpected_default_surface_tool(name, dialog_annotations)
     ]
     non_facade = [name for name in effective_default_tools if name not in APPROVED_FACADE_TOOLS]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
@@ -549,8 +571,7 @@ def audit_mcp_surface() -> dict[str, Any]:
             tool
             for tool in allowlist
             if tool not in APPROVED_FACADE_TOOLS
-            or WRITE_OR_DESTRUCTIVE_RE.search(tool)
-            or dialog_annotations.get(tool) not in {None, "readonly"}
+            or _is_unexpected_default_surface_tool(tool, dialog_annotations)
         )
         if unsafe_tools:
             findings.append(

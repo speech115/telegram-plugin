@@ -50,6 +50,7 @@ def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
     assert "create_channel" not in report["default_surface_tools"]
     assert "send_dialog_message" not in report["default_surface_tools"]
     assert "send_file" not in report["default_surface_tools"]
+    assert "telegram_confirmed_send" in report["default_surface_tools"]
     assert not report["unexpected_write_or_destructive_tools"]
 
 
