@@ -33,6 +33,15 @@ turning this directory into a monorepo or private-state dump.
 - Do not rewrite LaunchAgents or refresh plugin cache without a later explicit
   dry-run repair plan.
 
+## Milestone Status
+
+Roadmap milestones 1–7 are implemented in code and gates:
+
+- default surface parity, fast reads, confirmed send, task-shaped tools;
+- portable `install-adapters` / `check-release-gates` in `telegram-mcp`;
+- private-cache media defaults and PII-gated `telegram_export_members`;
+- control-plane `telegram-release-gate` runs packaging, adapter, and safety gates.
+
 ## Verification
 
 Run these before calling the control-plane healthy:

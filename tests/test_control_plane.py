@@ -102,6 +102,19 @@ def test_registry_includes_fast_read_adapter_component() -> None:
     assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
 
 
+def test_release_gates_audit_passes() -> None:
+    report = audits.audit_release_gates()
+
+    assert report["status"] == "ok", report.get("findings")
+
+
+def test_install_adapters_audit_is_portable() -> None:
+    report = audits.audit_install_adapters()
+
+    assert report["status"] == "ok", report.get("findings")
+    assert report["planned_files"] >= 4
+
+
 def test_registry_includes_docs_component() -> None:
     registry = build_registry()
 
@@ -328,6 +341,10 @@ def test_plugin_drift_uses_mcp_checker_tree_output(monkeypatch) -> None:
         "run_json",
         lambda *args, **kwargs: {
             "status": "installer_ready_drift",
+            "installer_flow": {
+                "safe_to_apply": True,
+                "command": ["codex", "plugin", "remove", "telegram@sereja-local"],
+            },
             "live_skill": {"sha256": "skill-sha"},
             "plugin_source_skill": {"sha256": "skill-sha"},
             "plugin_cache_skill": {"sha256": "skill-sha"},
@@ -347,8 +364,8 @@ def test_plugin_drift_uses_mcp_checker_tree_output(monkeypatch) -> None:
 
     report = audit_plugin_drift()
 
-    assert report["status"] == "fail"
-    assert any(item["id"] == "plugin_drift" for item in report["findings"])
+    assert report["status"] == "warn"
+    assert any(item["id"] == "plugin_cache_needs_materialization" for item in report["findings"])
     assert report["sha256"]["plugin_cache_skill"] == "skill-sha"
     assert report["tree_sha256"]["plugin_source_skill_tree"] == "source-tree"
     assert report["tree_sha256"]["plugin_cache_package"] == "cache-package"

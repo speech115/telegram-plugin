@@ -23,6 +23,7 @@ from .paths import (
     POLICY_DIR,
     PLUGIN_CACHE,
     PLUGIN_CACHE_ROOT,
+    PLUGIN_PACKAGE,
     PLUGIN_SOURCE,
     TELECRAWL_ARCHIVE,
     TELECRAWL_DEFAULT_DB,
@@ -97,12 +98,26 @@ def audit_plugin_drift() -> dict[str, Any]:
     raw = run_json(command, timeout=30)
     findings: list[dict[str, Any]] = []
     status = raw.get("status")
-    if status != "ok":
+    installer_flow = raw.get("installer_flow") if isinstance(raw.get("installer_flow"), dict) else {}
+    installer_ready = status == "installer_ready_drift" and installer_flow.get("safe_to_apply") is True
+    if status != "ok" and not installer_ready:
         findings.append(
             {
                 "id": "plugin_drift",
                 "severity": "blocking",
                 "message": f"Plugin drift checker status is {status!r}.",
+            }
+        )
+    elif installer_ready:
+        findings.append(
+            {
+                "id": "plugin_cache_needs_materialization",
+                "severity": "warn",
+                "message": (
+                    "Plugin source is ahead of installed cache; run the Codex installer flow "
+                    "before treating cache as current."
+                ),
+                "installer_command": installer_flow.get("command"),
             }
         )
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
@@ -296,6 +311,100 @@ def audit_fast_read_adapter() -> dict[str, Any]:
             "fallback": "live_mcp_facade",
             "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
         },
+    }
+
+
+def audit_release_gates() -> dict[str, Any]:
+    """Packaging hygiene, fresh-install adapter smoke, and prompt-safety heuristics."""
+
+    command = [
+        str(MCP_REPO / "bin/check-release-gates"),
+        "--package-dir",
+        str(PLUGIN_PACKAGE),
+        "--json",
+    ]
+    raw = run_json(command, timeout=60)
+    findings: list[dict[str, Any]] = []
+    if raw.get("exit_code") not in {0, None} and raw.get("status") is None:
+        findings.append(
+            {
+                "id": "release_gates_command_failed",
+                "severity": "blocking",
+                "message": "telegram-mcp release gate command failed.",
+                "command": command,
+                "stderr": raw.get("stderr"),
+            }
+        )
+        return {
+            "status": status_from_findings(findings),
+            "findings": findings,
+            "command": command,
+        }
+
+    if raw.get("status") != "ok":
+        for gate in raw.get("gates", []):
+            if not isinstance(gate, dict) or gate.get("status") == "ok":
+                continue
+            for issue in gate.get("findings", []):
+                findings.append(
+                    {
+                        "id": f"release_gate_{gate.get('name', 'unknown')}",
+                        "severity": "blocking",
+                        "message": str(issue),
+                    }
+                )
+        if not findings:
+            findings.append(
+                {
+                    "id": "release_gates_failed",
+                    "severity": "blocking",
+                    "message": "Release gates reported failure without details.",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "gates": raw.get("gates", []),
+        "failed": raw.get("failed", []),
+    }
+
+
+def audit_install_adapters() -> dict[str, Any]:
+    """Dry-run host adapter generation must stay portable."""
+
+    command = [str(MCP_REPO / "bin/install-adapters"), "--host", "all", "--json"]
+    raw = run_json(command, timeout=30)
+    findings: list[dict[str, Any]] = []
+    if raw.get("status") != "ok":
+        findings.append(
+            {
+                "id": "install_adapters_plan_failed",
+                "severity": "blocking",
+                "message": "Adapter installer returned non-ok status.",
+            }
+        )
+    planned = raw.get("planned_files", [])
+    for item in planned:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", "")
+        if isinstance(content, str) and "/Users/sereja" in content:
+            findings.append(
+                {
+                    "id": "install_adapters_private_path",
+                    "severity": "blocking",
+                    "message": f"Adapter plan contains a hardcoded private path: {item.get('path')}",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "hosts": raw.get("hosts", []),
+        "planned_files": len(planned) if isinstance(planned, list) else 0,
     }
 
 
@@ -1352,6 +1461,8 @@ def _collect_components() -> dict[str, dict[str, Any]]:
         "docs": audit_docs(),
         "plugin_drift": audit_plugin_drift(),
         "fast_read_adapter": audit_fast_read_adapter(),
+        "release_gates": audit_release_gates(),
+        "install_adapters": audit_install_adapters(),
         "mcp_surface": audit_mcp_surface(),
         "mcp_profiles": audit_mcp_profiles(),
         "launchd": audit_launchd(),

@@ -21,6 +21,8 @@ desired policy.
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
 ./bin/telegram-docs-audit --json
+./bin/telegram-release-gates --json
+./bin/telegram-install-adapters --json
 ./bin/telegram-release-gate
 ```
 
@@ -125,7 +127,7 @@ unit tests only). Integration smokes stay manual: `python3 -m pytest -q -m integ
   source repos, plugin/skill surfaces, runtime data roots, and archive tools.
   A missing blocking-protected path is a fail-closed defect.
 - Portable plugin package, marketplace alias, live skill, and installed cache are
-  aligned at local Telegram plugin version `0.1.9`.
+  aligned at local Telegram plugin version `0.1.10`.
 - The default MCP tool profile is the restricted facade profile. Admin/channel
   management tools require an explicit full/admin profile.
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they

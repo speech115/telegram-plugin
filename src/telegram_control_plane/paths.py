@@ -18,6 +18,7 @@ TELECRAWL_DEFAULT_DB = Path("/Users/sereja/Projects/.artifacts/telecrawl/telecra
 FAST_READ_ADAPTER = CONTROL_ROOT / "bin/telegram-fast-read-today"
 LAUNCHAGENTS_DIR = HOME / "Library/LaunchAgents"
 GENERATED_DIR = CONTROL_ROOT / "generated"
+PLUGIN_PACKAGE = GENERATED_DIR / "telegram-plugin-package"
 OBSERVED_REGISTRY = GENERATED_DIR / "observed-registry.json"
 POLICY_DIR = CONTROL_ROOT / "policy"
 

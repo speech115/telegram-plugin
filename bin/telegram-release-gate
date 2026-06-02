@@ -33,6 +33,8 @@ else
   run_gate managed-systems ./bin/telegram-managed-systems --json
   run_gate mcp-surface ./bin/telegram-mcp-surface --json
   run_gate plugin-drift ./bin/telegram-plugin-drift --json
+  run_gate release-gates ./bin/telegram-release-gates --json
+  run_gate install-adapters ./bin/telegram-install-adapters --json
   run_gate docs-audit ./bin/telegram-docs-audit --json
   run_gate pytest python3 -m pytest -q
 fi
