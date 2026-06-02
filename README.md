@@ -21,6 +21,7 @@ desired policy.
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
 ./bin/telegram-repair-plan-apply --json
+./bin/telegram-telemetry-status --json
 ./bin/telegram-docs-audit --json
 ./bin/telegram-release-gates --json
 ./bin/telegram-install-adapters --json

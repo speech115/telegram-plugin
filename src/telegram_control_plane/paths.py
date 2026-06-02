@@ -48,3 +48,5 @@ def _latest_plugin_cache() -> Path:
 
 
 PLUGIN_CACHE = _latest_plugin_cache()
+MCP_TELEMETRY_LOG = HOME / "telegram-mcp" / "telemetry.jsonl"
+MCP_TELEMETRY_STATS = HOME / "telegram-mcp" / "telemetry-stats.json"

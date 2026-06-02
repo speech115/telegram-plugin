@@ -18,6 +18,15 @@
     "managed_systems": ["status", "findings", "summary", "systems", "deletion_policy"],
     "docs": ["status", "findings", "checked_paths", "plugin_version"],
     "plugin_drift": ["status", "findings", "raw_status", "version", "artifacts", "sha256"],
+    "mcp_telemetry": [
+      "status",
+      "findings",
+      "events_in_window",
+      "tool_errors",
+      "cache_hit_rate",
+      "stats_file_present",
+      "tools_observed"
+    ],
     "fast_read_adapter": ["status", "findings", "adapter", "routing"],
     "mcp_surface": [
       "status",

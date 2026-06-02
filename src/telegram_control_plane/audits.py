@@ -17,6 +17,8 @@ from .paths import (
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
+    MCP_TELEMETRY_LOG,
+    MCP_TELEMETRY_STATS,
     MIRROR_LEGACY_ALIAS,
     MIRROR_ROOT,
     MIRROR_RUNTIME_ROOT,
@@ -157,6 +159,85 @@ def audit_plugin_drift() -> dict[str, Any]:
         },
         "tree_diff": raw.get("tree_diff") if isinstance(raw.get("tree_diff"), dict) else {},
         "raw": raw,
+    }
+
+
+def audit_mcp_telemetry(*, window_hours: float = 24.0) -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    python_bin = MCP_REPO / ".venv/bin/python"
+    log_path = Path(MCP_TELEMETRY_LOG)
+
+    summary: dict[str, Any]
+    if log_path.exists() and python_bin.exists():
+        summary = run_json(
+            [
+                str(python_bin),
+                "-m",
+                "telegram_mcp.telemetry",
+                "--summarize",
+                "--json",
+                "--log-path",
+                str(log_path),
+                "--window-hours",
+                str(window_hours),
+            ],
+            timeout=60,
+        )
+    else:
+        summary = {
+            "status": "missing",
+            "log_path": str(log_path),
+            "events_in_window": 0,
+        }
+
+    summary_status = summary.get("status")
+    events_in_window = int(summary.get("events_in_window") or 0)
+    tool_errors = int(summary.get("tool_errors") or 0)
+
+    if summary_status == "missing":
+        findings.append(
+            {
+                "id": "telemetry_log_missing",
+                "severity": "warn",
+                "message": (
+                    "MCP telemetry log is not present yet. Restart HTTP MCP with "
+                    "TELEGRAM_TELEMETRY_ENABLED=true (default) to begin collecting events."
+                ),
+            }
+        )
+    elif summary_status == "ok" and events_in_window == 0:
+        findings.append(
+            {
+                "id": "telemetry_no_recent_events",
+                "severity": "warn",
+                "message": (
+                    f"No telemetry events in the last {window_hours:g}h. "
+                    "Confirm MCP HTTP daemons are running and receiving tool traffic."
+                ),
+            }
+        )
+    elif tool_errors >= 10:
+        findings.append(
+            {
+                "id": "telemetry_high_tool_error_rate",
+                "severity": "warn",
+                "message": f"MCP telemetry recorded {tool_errors} tool errors in the recent window.",
+            }
+        )
+
+    cache = summary.get("cache") if isinstance(summary.get("cache"), dict) else {}
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "summary": summary,
+        "artifacts": {
+            "telemetry_log": str(log_path),
+            "telemetry_stats": str(MCP_TELEMETRY_STATS),
+        },
+        "stats_file_present": MCP_TELEMETRY_STATS.exists(),
+        "events_in_window": events_in_window,
+        "tool_errors": tool_errors,
+        "cache_hit_rate": cache.get("hit_rate"),
     }
 
 
@@ -1539,6 +1620,7 @@ def _collect_components() -> dict[str, dict[str, Any]]:
         "managed_systems": audit_managed_systems(),
         "docs": audit_docs(),
         "plugin_drift": audit_plugin_drift(),
+        "mcp_telemetry": audit_mcp_telemetry(),
         "fast_read_adapter": audit_fast_read_adapter(),
         "agent_docs_sync": audit_agent_docs_sync(),
         "release_gates": audit_release_gates(),
@@ -1596,6 +1678,18 @@ def _project_registry_component(name: str, report: dict[str, Any]) -> dict[str, 
 
 
 def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str, Any]:
+    if name == "mcp_telemetry":
+        summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+        tool_latency = summary.get("tool_latency") if isinstance(summary.get("tool_latency"), dict) else {}
+        return {
+            "status": report.get("status"),
+            "findings": report.get("findings", []),
+            "events_in_window": report.get("events_in_window"),
+            "tool_errors": report.get("tool_errors"),
+            "cache_hit_rate": report.get("cache_hit_rate"),
+            "stats_file_present": report.get("stats_file_present"),
+            "tools_observed": sorted(tool_latency.keys())[:8],
+        }
     if name == "sessions":
         sessions = report.get("sessions") if isinstance(report.get("sessions"), list) else []
         policy = report.get("policy") if isinstance(report.get("policy"), dict) else {}

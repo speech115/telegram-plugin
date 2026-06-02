@@ -58,12 +58,20 @@ Restarts local MCP HTTP daemons automatically after sync. CI uses `--check --no-
 `build-plugin-package` runs the same sync automatically. Manifest:
 `skills/telegram/agent-docs/manifest.json`.
 
+### Telemetry (local)
+
+- JSONL: `~/telegram-mcp/telemetry.jsonl` (tool latency, cache, errors; no message text).
+- Snapshot: `~/telegram-mcp/telemetry-stats.json` (runtime_stats + scheduler, ~60s).
+- Summarize: `./bin/telegram-telemetry-status --json` or MCP `bin/telemetry-summary --json`.
+- `doctor_check` includes `telemetry_summary` for the last 24h.
+
 ### Verification on this host
 
 ```bash
 ./bin/telegram-fast-read-today me --limit 1
 ./bin/telegram-mcp-surface --json
 ./bin/telegram-doctor --json
+./bin/telegram-telemetry-status --json
 ```
 
 Fast read must return `payload.data_source == "live_telegram"`, not

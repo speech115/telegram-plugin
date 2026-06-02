@@ -16,6 +16,7 @@ from .audits import (
     audit_mcp_surface,
     audit_mirror,
     audit_mirror_preflight,
+    audit_mcp_telemetry,
     audit_plugin_drift,
     audit_sessions,
     audit_telecrawl,
@@ -29,6 +30,7 @@ from .planner import apply_repair_plan, build_repair_plan
 COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "managed-systems": audit_managed_systems,
     "plugin-drift": audit_plugin_drift,
+    "telemetry-status": audit_mcp_telemetry,
     "docs-audit": audit_docs,
     "fast-read-adapter": audit_fast_read_adapter,
     "release-gates": audit_release_gates,
