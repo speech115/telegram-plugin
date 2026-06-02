@@ -16,6 +16,7 @@
   },
   "component_fields": {
     "managed_systems": ["status", "findings", "summary", "systems", "deletion_policy"],
+    "docs": ["status", "findings", "checked_paths", "plugin_version"],
     "plugin_drift": ["status", "findings", "raw_status", "version", "artifacts", "sha256"],
     "fast_read_adapter": ["status", "findings", "adapter", "routing"],
     "mcp_surface": [

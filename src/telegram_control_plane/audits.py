@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import (
+    CONTROL_ROOT,
     FAST_READ_ADAPTER,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
@@ -25,6 +26,7 @@ from .paths import (
     PLUGIN_SOURCE,
     TELECRAWL_ARCHIVE,
     TELECRAWL_DEFAULT_DB,
+    plugin_source_version,
 )
 from .util import load_json, run_json, status_from_findings
 
@@ -142,6 +144,72 @@ def audit_plugin_drift() -> dict[str, Any]:
         },
         "tree_diff": raw.get("tree_diff") if isinstance(raw.get("tree_diff"), dict) else {},
         "raw": raw,
+    }
+
+
+DOC_AUDIT_PATHS = (
+    CONTROL_ROOT / "README.md",
+    CONTROL_ROOT / "PLAN.md",
+)
+DOC_PLUGIN_VERSION_RE = re.compile(r"plugin version `(\d+\.\d+\.\d+)`")
+DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS = frozenset({"list_chats"})
+
+
+def audit_docs() -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    plugin_version = plugin_source_version()
+    checked: list[str] = []
+
+    for path in DOC_AUDIT_PATHS:
+        if not path.exists():
+            findings.append(
+                {
+                    "id": "docs_missing",
+                    "severity": "blocking",
+                    "message": f"Expected control-plane doc is missing: {path.name}",
+                    "path": str(path),
+                }
+            )
+            continue
+        checked.append(str(path))
+        text = path.read_text(encoding="utf-8")
+        for match in DOC_PLUGIN_VERSION_RE.finditer(text):
+            mentioned = match.group(1)
+            if plugin_version and mentioned != plugin_version:
+                findings.append(
+                    {
+                        "id": "stale_plugin_version_in_docs",
+                        "severity": "blocking",
+                        "message": (
+                            f"{path.name} mentions plugin version {mentioned!r}; "
+                            f"canonical package version is {plugin_version!r}."
+                        ),
+                        "path": str(path),
+                        "mentioned_version": mentioned,
+                        "expected_version": plugin_version,
+                    }
+                )
+        for tool in sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS):
+            if tool in text:
+                findings.append(
+                    {
+                        "id": "deprecated_default_surface_tool_in_docs",
+                        "severity": "blocking",
+                        "message": (
+                            f"{path.name} documents deprecated default-surface tool {tool!r}; "
+                            "update examples to facade tools."
+                        ),
+                        "path": str(path),
+                        "tool": tool,
+                    }
+                )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "checked_paths": checked,
+        "plugin_version": plugin_version,
+        "deprecated_default_surface_tools": sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS),
     }
 
 
@@ -1208,15 +1276,32 @@ def audit_telecrawl() -> dict[str, Any]:
             if telecrawl_policy.get("known_gaps_are_blocking_for_archive_search") is False
             else "blocking"
         )
+        retryable = import_gaps.get("retryable_error_summary")
+        terminal = import_gaps.get("terminal_error_summary")
+        retryable_count = len(retryable) if isinstance(retryable, list) else 0
+        terminal_count = len(terminal) if isinstance(terminal, list) else 0
+        expected_ids = telecrawl_policy.get("expected_doctor_warning_ids")
+        expected_gap_warning = (
+            isinstance(expected_ids, list)
+            and "telecrawl_known_gaps" in expected_ids
+            and severity == "warn"
+        )
         findings.append(
             {
                 "id": "telecrawl_known_gaps",
                 "severity": severity,
-                "message": "Telecrawl default archive has known import gaps.",
+                "message": (
+                    "Telecrawl default archive has known import gaps "
+                    f"({retryable_count} retryable, {terminal_count} terminal); "
+                    "not a control-plane release blocker."
+                    if expected_gap_warning
+                    else "Telecrawl default archive has known import gaps."
+                ),
                 "summary": import_gaps.get("error_summary"),
-                "retryable_summary": import_gaps.get("retryable_error_summary"),
-                "terminal_summary": import_gaps.get("terminal_error_summary"),
+                "retryable_summary": retryable,
+                "terminal_summary": terminal,
                 "retry_policy": import_gaps.get("retry_policy"),
+                "expected_operational_warning": expected_gap_warning,
             }
         )
     if status.get("source_kind") != "archive_snapshot":
@@ -1247,6 +1332,7 @@ def audit_telecrawl() -> dict[str, Any]:
 def _collect_components() -> dict[str, dict[str, Any]]:
     return {
         "managed_systems": audit_managed_systems(),
+        "docs": audit_docs(),
         "plugin_drift": audit_plugin_drift(),
         "fast_read_adapter": audit_fast_read_adapter(),
         "mcp_surface": audit_mcp_surface(),

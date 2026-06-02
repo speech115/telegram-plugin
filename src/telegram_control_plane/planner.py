@@ -10,6 +10,29 @@ def _finding_ids(registry: dict[str, Any]) -> set[str]:
     return {str(item.get("id")) for item in registry.get("findings", []) if isinstance(item, dict)}
 
 
+def _findings_for_component(registry: dict[str, Any], component: str) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in registry.get("findings", [])
+        if isinstance(item, dict) and item.get("component") == component
+    ]
+
+
+def _mcp_surface_repair_reason(registry: dict[str, Any]) -> str:
+    findings = _findings_for_component(registry, "mcp_surface")
+    if not findings:
+        return "Default MCP surface gate is clean."
+    parts: list[str] = []
+    for item in findings:
+        finding_id = item.get("id")
+        tools = item.get("tools")
+        if isinstance(tools, list) and tools:
+            parts.append(f"{finding_id}: {', '.join(str(tool) for tool in tools)}")
+        else:
+            parts.append(str(item.get("message") or finding_id))
+    return "; ".join(parts)
+
+
 def _component_status(registry: dict[str, Any], component: str) -> str | None:
     summary = registry.get("summary")
     if not isinstance(summary, dict):
@@ -119,40 +142,42 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
     )
 
     mcp_surface_blocked = _component_status(registry, "mcp_surface") == "fail"
+    unexpected_write = next(
+        (
+            item.get("tools")
+            for item in _findings_for_component(registry, "mcp_surface")
+            if item.get("id") == "unexpected_write_tools"
+        ),
+        None,
+    )
+    mcp_apply_commands: list[list[str]] = []
+    if mcp_surface_blocked and isinstance(unexpected_write, list) and "send_file" in unexpected_write:
+        mcp_apply_commands = [
+            ["python3", "-m", "pytest", "-q", "tests/test_registration.py"],
+        ]
     steps.append(
         _step(
             step_id="mcp-surface-allowlist",
-            title="Add hard allowlist/profile split for default Telegram MCP surface",
+            title="Restore read-only default Telegram MCP facade surface",
             status="blocked_by_current_surface" if mcp_surface_blocked else "already_clean",
-            reason=(
-                "Default plugin endpoint exposes low-level write/destructive tools and plugin metadata has no "
-                "hard allowlist."
-                if mcp_surface_blocked
-                else "Default MCP surface gate is clean."
-            ),
+            reason=_mcp_surface_repair_reason(registry),
             touched_paths=[
                 str(MCP_REPO / "src/telegram_mcp/tools/__init__.py"),
+                str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py"),
                 str(PLUGIN_SOURCE / ".mcp.json"),
             ],
             dry_run_commands=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mcp-surface", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
             ],
-            apply_commands=[
-                [
-                    "python3",
-                    "-m",
-                    "pytest",
-                    "-q",
-                    "tests/test_tool_surface.py",
-                ]
-            ],
+            apply_commands=mcp_apply_commands,
             rollback=[
-                "Revert the MCP profile/allowlist patch.",
+                "Revert FACADE_TOOL_NAMES and media_tools.register_facade() in telegram-mcp.",
                 "Keep plugin .mcp.json on the prior endpoint until the server-side allowlist is verified.",
             ],
             verifies=[
-                ["/Users/sereja/Projects/tools/telegram/bin/telegram-mcp-surface", "--json"],
+                [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
                 [str(MCP_REPO / "bin/contract-smoke"), "--json"],
+                ["python3", "-m", "pytest", "-q", str(CONTROL_ROOT)],
             ],
         )
     )

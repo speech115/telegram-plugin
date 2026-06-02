@@ -1,6 +1,8 @@
 {
   "classification": "archive_snapshot",
   "is_live": false,
+  "expected_doctor_warning_ids": ["telecrawl_known_gaps"],
+  "known_gaps_operator_note": "Retryable TimeoutError import gaps are archive backlog, not live MCP blockers. Retry via telecrawl gap jobs when archive evidence must be complete.",
   "known_gaps_are_blocking_for_archive_search": false,
   "known_gaps_are_blocking_for_current_claims": true,
   "non_retryable_error_types": [

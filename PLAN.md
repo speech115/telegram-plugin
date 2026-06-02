@@ -38,16 +38,22 @@ turning this directory into a monorepo or private-state dump.
 Run these before calling the control-plane healthy:
 
 ```bash
-./bin/telegram-managed-systems --json
+./bin/telegram-release-gate
 ./bin/telegram-doctor --json
-python3 -m pytest -q
 python3 -m pytest -q -m integration
 ```
 
 Expected current shape:
 
+- `telegram-release-gate`: exit `0`
 - `telegram-managed-systems`: `ok`
+- `telegram-mcp-surface`: `ok`
+- `telegram-docs-audit`: `ok`
 - `telegram-doctor`: `warn` with `0` blocking findings
 - known warnings only for `telegram-mirror` recovery state and telecrawl archive
   gaps
+
+## karpathy-kb
+
+Canonical entity: `research/karpathy-kb/wiki/entities/telegram-control-plane.md`
 

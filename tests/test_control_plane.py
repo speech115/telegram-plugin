@@ -8,6 +8,7 @@ import telegram_control_plane.audits as audits
 from telegram_control_plane.audits import (
     _dialog_annotation_map,
     _imported_tool_names,
+    audit_docs,
     audit_managed_systems,
     audit_mirror_preflight,
     audit_mcp_surface,
@@ -48,7 +49,38 @@ def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
     assert report["status"] == "ok"
     assert "create_channel" not in report["default_surface_tools"]
     assert "send_dialog_message" not in report["default_surface_tools"]
+    assert "send_file" not in report["default_surface_tools"]
     assert not report["unexpected_write_or_destructive_tools"]
+
+
+def test_docs_audit_passes_for_current_control_plane_docs() -> None:
+    report = audit_docs()
+    assert report["status"] == "ok"
+    assert report["findings"] == []
+
+
+def test_docs_audit_flags_stale_plugin_version(monkeypatch, tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text("Aligned at local Telegram plugin version `0.1.0`.\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "DOC_AUDIT_PATHS", (readme,))
+    monkeypatch.setattr(audits, "plugin_source_version", lambda: "0.1.9")
+
+    report = audit_docs()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "stale_plugin_version_in_docs" for item in report["findings"])
+
+
+def test_docs_audit_flags_deprecated_default_surface_tool(monkeypatch, tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text("Use list_chats for smoke.\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "DOC_AUDIT_PATHS", (readme,))
+    monkeypatch.setattr(audits, "plugin_source_version", lambda: "0.1.9")
+
+    report = audit_docs()
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "deprecated_default_surface_tool_in_docs" for item in report["findings"])
 
 
 def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
@@ -67,6 +99,13 @@ def test_registry_includes_fast_read_adapter_component() -> None:
 
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
     assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+
+
+def test_registry_includes_docs_component() -> None:
+    registry = build_registry()
+
+    assert registry["summary"]["components"]["docs"] == "ok"
+    assert registry["components"]["docs"]["plugin_version"] is not None
 
 
 def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) -> None:
@@ -628,6 +667,7 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
     components = {
         "plugin_drift": {"status": "ok", "findings": []},
         "managed_systems": {"status": "ok", "findings": []},
+        "docs": {"status": "ok", "findings": [], "checked_paths": [], "plugin_version": "0.1.9"},
         "mcp_surface": {"status": "ok", "findings": []},
         "mcp_profiles": {"status": "ok", "findings": []},
         "launchd": {"status": "ok", "findings": []},
@@ -652,6 +692,7 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
     assert registry["summary"]["blocking_findings"] == 0
     assert {
         "managed_systems",
+        "docs",
         "plugin_drift",
         "mcp_surface",
         "launchd",
@@ -659,6 +700,35 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
         "telegram_mirror",
         "telecrawl",
     }.issubset(registry["components"])
+
+
+def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
+    monkeypatch.setattr(
+        planner,
+        "build_registry",
+        lambda: {
+            "status": "fail",
+            "summary": {"components": {"mcp_surface": "fail"}},
+            "findings": [
+                {
+                    "component": "mcp_surface",
+                    "id": "unexpected_write_tools",
+                    "severity": "blocking",
+                    "message": "Default MCP endpoint exposes write/destructive tools outside the approved facade.",
+                    "tools": ["send_file"],
+                }
+            ],
+            "components": {},
+        },
+    )
+
+    plan = build_repair_plan()
+    step = {item["id"]: item for item in plan["steps"]}["mcp-surface-allowlist"]
+
+    assert step["status"] == "blocked_by_current_surface"
+    assert "send_file" in step["reason"]
+    assert step["apply_commands"] == [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
+    assert str(planner.MCP_REPO / "src/telegram_mcp/tools/media_tools.py") in step["touched_paths"]
 
 
 def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:

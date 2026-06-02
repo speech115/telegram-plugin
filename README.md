@@ -20,6 +20,8 @@ desired policy.
 ./bin/telegram-mirror-preflight --json
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
+./bin/telegram-docs-audit --json
+./bin/telegram-release-gate
 ```
 
 ## Plugin Packaging
@@ -96,10 +98,27 @@ not contain Telegram user IDs, Telegram handles, phone numbers, exact session
 paths, Telegram Desktop `tdata` paths, archive database paths, archive manifest
 paths, subscriber exports, media payloads, or raw private errors.
 
+## Release Gate
+
+Run the bundled pre-release checks:
+
+```bash
+./bin/telegram-release-gate
+```
+
+This runs managed-systems, MCP surface, plugin drift, docs audit, and unit
+tests. Use `./bin/telegram-release-gate --ci` in GitHub Actions (docs audit +
+unit tests only). Integration smokes stay manual: `python3 -m pytest -q -m integration`.
+
+`telegram-doctor` includes the docs audit via the `docs` registry component.
+
 ## Current Status
 
-- `telegram-doctor --json` is expected to return `warn` with `0` blocking
-  findings while recovery/archive caveats remain.
+- Healthy control-plane target: `telegram-doctor --json` returns `warn` with
+  `0` blocking findings; any blocking finding is a release blocker (`exit 1`).
+- Expected operational warning: `telecrawl_known_gaps` when the default archive
+  still has retryable import gaps (`TimeoutError` backlog). This is documented
+  in `policy/telecrawl.json` and is not a release blocker.
 - `telegram-fast-read-today me --limit 1` is the local fast smoke for the
   supported simple-read shortcut.
 - `telegram-managed-systems --json` is the canonical inventory of Telegram

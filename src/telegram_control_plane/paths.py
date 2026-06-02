@@ -22,7 +22,7 @@ OBSERVED_REGISTRY = GENERATED_DIR / "observed-registry.json"
 POLICY_DIR = CONTROL_ROOT / "policy"
 
 
-def _plugin_source_version() -> str | None:
+def plugin_source_version() -> str | None:
     manifest = PLUGIN_SOURCE / ".codex-plugin/plugin.json"
     try:
         data = json.loads(manifest.read_text())
@@ -30,6 +30,10 @@ def _plugin_source_version() -> str | None:
         return None
     version = data.get("version")
     return version if isinstance(version, str) and version else None
+
+
+def _plugin_source_version() -> str | None:
+    return plugin_source_version()
 
 
 def _latest_plugin_cache() -> Path:

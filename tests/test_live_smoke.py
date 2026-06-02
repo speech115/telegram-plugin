@@ -17,7 +17,11 @@ def test_live_registry_has_expected_warn_shape() -> None:
     assert registry["status"] == "warn"
     assert registry["summary"]["blocking_findings"] == 0
     assert registry["summary"]["warning_findings"] >= 1
+    assert registry["summary"]["components"]["docs"] == "ok"
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
+    assert registry["summary"]["components"]["mcp_surface"] == "ok"
+    finding_ids = {item.get("id") for item in registry.get("findings", []) if isinstance(item, dict)}
+    assert "telecrawl_known_gaps" in finding_ids
 
 
 def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
