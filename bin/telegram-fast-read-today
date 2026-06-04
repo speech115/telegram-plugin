@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MCP_REPO="/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
-PYTHON="${MCP_REPO}/.venv/bin/python"
+# shellcheck source=telegram-env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
+
+PYTHON="${TELEGRAM_MCP_REPO}/.venv/bin/python"
 
 if [ ! -x "${PYTHON}" ]; then
   printf 'telegram-fast-read-today: missing MCP venv python: %s\n' "${PYTHON}" >&2
   exit 2
 fi
 
-export PYTHONPATH="${MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${TELEGRAM_MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PYTHON}" -m telegram_mcp.fast_read_today "$@"

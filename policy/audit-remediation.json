@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "recommended_order": [
+    "managed-systems-inventory",
+    "plugin-cache-parity",
+    "plugin-cache-materialize",
+    "mcp-surface-allowlist",
+    "launchd-inventory-and-cold-mode",
+    "session-registry",
+    "mirror-runtime-promotion-policy",
+    "telecrawl-archive-policy"
+  ],
+  "auto_apply_step_ids": ["plugin-cache-materialize"],
+  "safety": {
+    "default_mode": "dry_run_only",
+    "stateful_apply_requires_explicit_step": true,
+    "do_not_do_first": [
+      "move repos",
+      "delete Telegram-related paths without managed-systems inventory",
+      "rewrite LaunchAgents",
+      "refresh plugin cache without dry-run evidence",
+      "sync skill-index before plugin cache parity",
+      "start mirror watchers/backfills/sync",
+      "copy sessions"
+    ]
+  },
+  "finding_to_steps": {
+    "managed_system_missing": ["managed-systems-inventory"],
+    "managed_system_kind_mismatch": ["managed-systems-inventory"],
+    "managed_system_marker_missing": ["managed-systems-inventory"],
+    "plugin_cache_needs_materialization": ["plugin-cache-materialize"],
+    "unexpected_write_tools": ["mcp-surface-allowlist"],
+    "non_facade_tools": ["mcp-surface-allowlist"],
+    "launchd_path_outside_allowed_roots": ["launchd-inventory-and-cold-mode"],
+    "mirror_runtime_exports_missing": ["mirror-runtime-promotion-policy"],
+    "mirror_runtime_exports_incomplete": ["mirror-runtime-promotion-policy"],
+    "telecrawl_known_gaps": ["telecrawl-archive-policy"],
+    "telecrawl_active_archives_incomplete": ["telecrawl-archive-policy"]
+  }
+}

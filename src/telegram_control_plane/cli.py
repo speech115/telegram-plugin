@@ -24,7 +24,9 @@ from .audits import (
     write_registry,
 )
 from .paths import OBSERVED_REGISTRY
-from .planner import apply_repair_plan, build_repair_plan
+from .audit_remediation import apply_repair_plan, build_repair_plan
+from .runtime_inventory import audit_runtime_inventory
+from .source_routing import audit_source_routing, recommend_route
 
 
 COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -42,6 +44,8 @@ COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "mirror-audit": audit_mirror,
     "mirror-preflight": audit_mirror_preflight,
     "telecrawl-status": audit_telecrawl,
+    "source-routing": audit_source_routing,
+    "runtime-inventory": audit_runtime_inventory,
     "repair-plan": build_repair_plan,
     "repair-plan-apply": apply_repair_plan,
 }
@@ -49,7 +53,11 @@ COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read-only Telegram control-plane")
-    parser.add_argument("command", choices=["doctor", "status", *COMMANDS], help="Audit command")
+    parser.add_argument(
+        "command",
+        choices=["doctor", "status", "route", *COMMANDS],
+        help="Audit command",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON")
     parser.add_argument(
         "--no-write-registry",
@@ -75,7 +83,21 @@ def render_text(report: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv or sys.argv[1:])
+    raw_argv = argv if argv is not None else sys.argv[1:]
+    if raw_argv and raw_argv[0] == "route":
+        emit_json = "--json" in raw_argv
+        intent_tokens = [token for token in raw_argv[1:] if token != "--json"]
+        report = recommend_route(" ".join(intent_tokens))
+        if emit_json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(f"primary_source: {report.get('primary_source')}")
+            print(f"backend: {report.get('backend')}")
+            for warning in report.get("warnings", []):
+                print(f"warning: {warning}")
+        return 0
+
+    args = parse_args(raw_argv)
     if args.command in {"doctor", "status"}:
         report = build_registry()
         if not args.no_write_registry:

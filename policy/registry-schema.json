@@ -15,7 +15,7 @@
     ]
   },
   "component_fields": {
-    "managed_systems": ["status", "findings", "summary", "systems", "deletion_policy"],
+    "managed_systems": ["status", "findings", "summary", "systems", "topology", "deletion_policy"],
     "docs": ["status", "findings", "checked_paths", "plugin_version"],
     "plugin_drift": ["status", "findings", "raw_status", "version", "artifacts", "sha256"],
     "mcp_telemetry": [
@@ -42,9 +42,11 @@
       "plugin_mcp_servers"
     ],
     "mcp_profiles": ["status", "findings", "profiles"],
+    "source_routing": ["status", "findings", "rules", "sources", "sample_routes"],
+    "runtime_inventory": ["status", "findings", "summary", "children"],
     "launchd": ["status", "findings", "jobs", "loaded_jobs", "policy"],
     "sessions": ["status", "findings", "summary", "policy_summary"],
     "telegram_mirror": ["status", "classification", "findings", "policy", "runtime_state_summary"],
-    "telecrawl": ["status", "findings", "wrapper", "policy", "account_summary", "freshness"]
+    "telecrawl": ["status", "findings", "wrapper", "gap_policy", "account_summary", "freshness"]
   }
 }

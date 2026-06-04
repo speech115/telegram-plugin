@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# shellcheck source=telegram-env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
+
+TG_BIN="${TELEGRAM_TG_CLI}"
+
+if [[ ! -x "${TG_BIN}" ]]; then
+  printf 'tg: missing telegram-mcp CLI: %s\n' "${TG_BIN}" >&2
+  exit 2
+fi
+
+exec "${TG_BIN}" "$@"

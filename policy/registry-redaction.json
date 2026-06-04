@@ -1,0 +1,32 @@
+{
+  "drop_keys": [
+    "db_path",
+    "manifest_path",
+    "phone_masked",
+    "telegram_user_id",
+    "tdata_path",
+    "username"
+  ],
+  "preserve_path_unless_substrings": [
+    ".session",
+    "/Users/sereja/.telegram-mcp",
+    "/Users/sereja/.telegram-mcp-pl",
+    "/Users/sereja/Library/Application Support/Telegram Desktop/tdata",
+    "/Users/sereja/Projects/.artifacts/telecrawl"
+  ],
+  "redact_string_substrings": [
+    ".session",
+    "/Users/sereja/.telegram-mcp",
+    "/Users/sereja/.telegram-mcp-pl",
+    "/Users/sereja/Library/Application Support/Telegram Desktop/tdata",
+    "/Users/sereja/Projects/.artifacts/telecrawl"
+  ],
+  "redact_string_prefixes": ["tg:", "Telegram @"],
+  "scan_patterns": [
+    {"id": "telegram_user_id_key", "pattern": "\"telegram_user_id\""},
+    {"id": "tdata_path_key", "pattern": "\"tdata_path\""},
+    {"id": "session_path", "pattern": "\\.session"},
+    {"id": "telecrawl_artifacts", "pattern": "/Projects/\\.artifacts/telecrawl"},
+    {"id": "telegram_handle", "pattern": "Telegram @"}
+  ]
+}

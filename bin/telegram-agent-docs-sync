@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MCP_REPO="/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp"
-PLUGIN_DIR="${ROOT}/generated/telegram-plugin-package"
-PYTHON="${MCP_REPO}/.venv/bin/python"
+# shellcheck source=telegram-env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
+
+PLUGIN_DIR="${TELEGRAM_CONTROL_ROOT}/generated/telegram-plugin-package"
+PYTHON="${TELEGRAM_MCP_REPO}/.venv/bin/python"
 
 if [ ! -x "${PYTHON}" ]; then
   printf 'telegram-agent-docs-sync: missing MCP venv python: %s\n' "${PYTHON}" >&2
   exit 2
 fi
 
-export PYTHONPATH="${MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${TELEGRAM_MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PYTHON}" -m telegram_mcp.agent_doc_sync --plugin-dir "${PLUGIN_DIR}" "$@"

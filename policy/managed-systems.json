@@ -134,8 +134,56 @@
       "source_of_truth": false,
       "deletion_protection": "warn",
       "safe_delete": "only_after_rebuild_path_verified"
+    },
+    {
+      "id": "telegram-mirror-runtime",
+      "role": "mirror_runtime_state",
+      "path": "/Users/sereja/Projects/runtime/telegram-mirror",
+      "expected_kind": "directory",
+      "required_markers": [],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_explicit_plan"
+    },
+    {
+      "id": "telecrawl-fast-db",
+      "role": "patched_archive_database",
+      "path": "/Users/sereja/Projects/.artifacts/telecrawl/telecrawl-fast.db",
+      "expected_kind": "file",
+      "required_markers": [],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_backup_and_explicit_plan"
     }
   ],
+  "topology": {
+    "bindings": {
+      "control_root": "telegram-control-plane",
+      "mcp_repo": "telegram-mcp",
+      "plugin_package": "telegram-plugin-package",
+      "plugin_source": "telegram-plugin-source",
+      "plugin_cache_root": "telegram-plugin-cache",
+      "live_skill": "telegram-live-skill",
+      "local_mirror_skill": "telegram-local-mirror-skill",
+      "mirror_root": "telegram-mirror",
+      "mirror_runtime_root": "telegram-mirror-runtime",
+      "mirror_legacy_alias": "telegram-mirror-compat-alias",
+      "telecrawl_archive": "telecrawl-archive-wrapper",
+      "telecrawl_default_db": "telecrawl-fast-db"
+    },
+    "derived": {
+      "generated_dir": "${control_root}/generated",
+      "policy_dir": "${control_root}/policy",
+      "fast_read_adapter": "${control_root}/bin/telegram-fast-read-today",
+      "tg_cli": "${mcp_repo}/bin/tg",
+      "observed_registry": "${control_root}/generated/observed-registry.json",
+      "launchagents_dir": "$HOME/Library/LaunchAgents",
+      "mcp_telemetry_log": "$HOME/telegram-mcp/telemetry.jsonl",
+      "mcp_telemetry_dir": "$HOME/telegram-mcp/telemetry",
+      "mcp_telemetry_stats": "$HOME/telegram-mcp/telemetry-stats.json",
+      "telemetry_alert_thresholds": "${control_root}/policy/telemetry/alert-thresholds.json"
+    }
+  },
   "deletion_policy": {
     "default": "deny",
     "telegram_related_paths_require": [

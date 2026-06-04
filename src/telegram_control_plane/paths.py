@@ -3,24 +3,32 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .managed_systems import resolve_topology
 
-HOME = Path("/Users/sereja")
-CONTROL_ROOT = Path("/Users/sereja/Projects/tools/telegram")
-MCP_REPO = Path("/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp")
-PLUGIN_SOURCE = Path("/Users/sereja/plugins/telegram")
-PLUGIN_CACHE_ROOT = Path("/Users/sereja/.codex/plugins/cache/sereja-local/telegram")
-LIVE_SKILL = Path("/Users/sereja/.agents/skills/telegram")
-MIRROR_ROOT = Path("/Users/sereja/Projects/tools/telegram-mirror")
-MIRROR_RUNTIME_ROOT = Path("/Users/sereja/Projects/runtime/telegram-mirror")
-MIRROR_LEGACY_ALIAS = Path("/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror")
-TELECRAWL_ARCHIVE = Path("/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-archive")
-TELECRAWL_DEFAULT_DB = Path("/Users/sereja/Projects/.artifacts/telecrawl/telecrawl-fast.db")
-FAST_READ_ADAPTER = CONTROL_ROOT / "bin/telegram-fast-read-today"
-LAUNCHAGENTS_DIR = HOME / "Library/LaunchAgents"
-GENERATED_DIR = CONTROL_ROOT / "generated"
-PLUGIN_PACKAGE = GENERATED_DIR / "telegram-plugin-package"
-OBSERVED_REGISTRY = GENERATED_DIR / "observed-registry.json"
-POLICY_DIR = CONTROL_ROOT / "policy"
+_TOPOLOGY = resolve_topology()
+
+HOME = Path.home()
+CONTROL_ROOT = _TOPOLOGY["control_root"]
+MCP_REPO = _TOPOLOGY["mcp_repo"]
+PLUGIN_SOURCE = _TOPOLOGY["plugin_source"]
+PLUGIN_CACHE_ROOT = _TOPOLOGY["plugin_cache_root"]
+LIVE_SKILL = _TOPOLOGY["live_skill"]
+MIRROR_ROOT = _TOPOLOGY["mirror_root"]
+MIRROR_RUNTIME_ROOT = _TOPOLOGY["mirror_runtime_root"]
+MIRROR_LEGACY_ALIAS = _TOPOLOGY["mirror_legacy_alias"]
+TELECRAWL_ARCHIVE = _TOPOLOGY["telecrawl_archive"]
+TELECRAWL_DEFAULT_DB = _TOPOLOGY["telecrawl_default_db"]
+FAST_READ_ADAPTER = _TOPOLOGY["fast_read_adapter"]
+TG_CLI = _TOPOLOGY["tg_cli"]
+LAUNCHAGENTS_DIR = _TOPOLOGY["launchagents_dir"]
+GENERATED_DIR = _TOPOLOGY["generated_dir"]
+PLUGIN_PACKAGE = _TOPOLOGY["plugin_package"]
+OBSERVED_REGISTRY = _TOPOLOGY["observed_registry"]
+POLICY_DIR = _TOPOLOGY["policy_dir"]
+MCP_TELEMETRY_LOG = _TOPOLOGY["mcp_telemetry_log"]
+MCP_TELEMETRY_DIR = _TOPOLOGY["mcp_telemetry_dir"]
+MCP_TELEMETRY_STATS = _TOPOLOGY["mcp_telemetry_stats"]
+TELEMETRY_ALERT_THRESHOLDS = _TOPOLOGY["telemetry_alert_thresholds"]
 
 
 def plugin_source_version() -> str | None:
@@ -48,7 +56,3 @@ def _latest_plugin_cache() -> Path:
 
 
 PLUGIN_CACHE = _latest_plugin_cache()
-MCP_TELEMETRY_LOG = HOME / "telegram-mcp" / "telemetry.jsonl"
-MCP_TELEMETRY_DIR = HOME / "telegram-mcp" / "telemetry"
-MCP_TELEMETRY_STATS = HOME / "telegram-mcp" / "telemetry-stats.json"
-TELEMETRY_ALERT_THRESHOLDS = CONTROL_ROOT / "policy/telemetry/alert-thresholds.json"

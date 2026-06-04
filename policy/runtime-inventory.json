@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "aggregates": [
+    {
+      "id": "launchd",
+      "title": "LaunchAgent inventory",
+      "audit_command": "launchd-audit"
+    },
+    {
+      "id": "sessions",
+      "title": "Telegram session registry",
+      "audit_command": "session-audit"
+    },
+    {
+      "id": "mirror_runtime",
+      "title": "Mirror runtime exports",
+      "audit_command": "mirror-audit",
+      "summary_fields": [
+        "session_count",
+        "recovery_session_count",
+        "ledger_count",
+        "runtime_exports_exists",
+        "export_ready_count",
+        "export_missing_count"
+      ]
+    }
+  ],
+  "blocking_when_any_fail": ["launchd", "sessions"],
+  "warn_when_any_warn": ["mirror_runtime"]
+}
