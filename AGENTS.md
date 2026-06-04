@@ -88,3 +88,17 @@ Fast read must return `payload.data_source == "live_telegram"`, not
 - Live MCP backend: `policy/managed-systems.json` → `telegram-mcp`
 - Portable plugin: `generated/telegram-plugin-package`
 - Human map: `MAP.md`, roadmap: `TELEGRAM_AGENT_KIT_ROADMAP.md`
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live as markdown under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) map 1:1 to `Status:` lines in local issue files. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout: `CONTEXT.md` at the repo root and `docs/adr/` for decisions. See `docs/agents/domain.md`.
