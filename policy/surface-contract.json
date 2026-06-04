@@ -1,0 +1,53 @@
+{
+  "default_profile": {
+    "approved_facade_tools": [
+      "collect_context",
+      "collect_dialog_context",
+      "doctor_check",
+      "download_dialog_media",
+      "download_media",
+      "download_media_batch",
+      "find_dialog",
+      "get_me",
+      "prepare_media_inspection_manifest",
+      "resolve_dialog",
+      "telegram_confirmed_send",
+      "telegram_export_members",
+      "telegram_inspect_media",
+      "telegram_prepare_reply",
+      "telegram_read",
+      "telegram_search"
+    ],
+    "confirmed_write_facade_tools": ["telegram_confirmed_send"],
+    "deprecated_doc_tools": ["list_chats"],
+    "legacy_tool_aliases": {
+      "draft_reply": "telegram_prepare_reply",
+      "prepare_dialog_reply": "telegram_prepare_reply",
+      "prepare_reply_message": "telegram_prepare_reply",
+      "prepare_send_message": "telegram_prepare_reply",
+      "read_dialog": "telegram_read",
+      "read_dialog_by_date": "telegram_read",
+      "read_recent_dialog": "telegram_read",
+      "read_today_dialog": "telegram_read",
+      "search_dialog_messages": "telegram_search"
+    },
+    "full_profile_additive_tools": [
+      "reply_in_dialog",
+      "reply_message",
+      "send_dialog_message"
+    ],
+    "full_profile_legacy_facade_tools": [
+      "draft_reply",
+      "prepare_dialog_reply",
+      "prepare_reply_message",
+      "prepare_send_message",
+      "search_dialog_messages"
+    ],
+    "full_profile_legacy_read_tools": [
+      "read_dialog",
+      "read_dialog_by_date",
+      "read_recent_dialog",
+      "read_today_dialog"
+    ]
+  }
+}

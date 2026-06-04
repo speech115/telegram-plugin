@@ -21,7 +21,7 @@ calls or browse `telegram-mcp` unless debugging.
 
 1. Classify: current/today/recent → **live only** (never mirror/archive).
 2. On this host, run first:
-   `bin/telegram-fast-read-today <chat> --limit 30` (read-only, ~sub-second).
+   `tg read today <chat> --limit 30 --json` (or `bin/telegram-fast-read-today` alias).
 3. If that fails, call MCP `telegram_read` with `mode="fast"`, not legacy
    `read_today_dialog` (not on default allowlist).
 4. Skip `mcporter list`, doctor, launchd, and plugin README until a real failure.
@@ -37,14 +37,16 @@ calls or browse `telegram-mcp` unless debugging.
 | Photos/video | `telegram_inspect_media` / downloads | Never answer from captions only |
 | Historical (allowlist) | `telegram-local-mirror` skill | Not for today/latest |
 
-### Default MCP surface (21 tools)
+### Default MCP surface (16 tools)
 
 Only these are exposed to agents via plugin allowlist: `telegram_read`,
 `telegram_search`, `telegram_prepare_reply`, `telegram_confirmed_send`,
 `telegram_inspect_media`, `telegram_export_members`, `resolve_dialog`,
-`find_dialog`, `collect_dialog_context`, `collect_context`, prepare/download
-helpers, `get_me`, `doctor_check`. Raw `send_dialog_message` / `reply_in_dialog`
-are **not** on the default surface.
+`find_dialog`, `collect_dialog_context`, `collect_context`, `download_media`,
+`download_media_batch`, `download_dialog_media`, `prepare_media_inspection_manifest`,
+`get_me`, `doctor_check`. Legacy aliases (`read_today_dialog`, `prepare_dialog_reply`,
+`draft_reply`, `search_dialog_messages`, …) and raw `send_dialog_message` /
+`reply_in_dialog` are **not** on the default surface (full/admin profile only).
 
 ### Doc sync (skill ↔ MCP resources)
 

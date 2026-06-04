@@ -14,6 +14,7 @@ from typing import Any
 from .paths import (
     CONTROL_ROOT,
     FAST_READ_ADAPTER,
+    TG_CLI,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
@@ -33,36 +34,11 @@ from .paths import (
     TELECRAWL_DEFAULT_DB,
     plugin_source_version,
 )
+from . import surface_contract
+from .surface_contract import WRITE_OR_DESTRUCTIVE_RE
 from .util import load_json, run_json, status_from_findings
 
-
-APPROVED_FACADE_TOOLS = {
-    "doctor_check",
-    "get_me",
-    "resolve_dialog",
-    "find_dialog",
-    "collect_dialog_context",
-    "collect_context",
-    "prepare_dialog_reply",
-    "draft_reply",
-    "prepare_send_message",
-    "prepare_reply_message",
-    "prepare_media_inspection_manifest",
-    "download_media",
-    "download_media_batch",
-    "download_dialog_media",
-    "telegram_inspect_media",
-    "telegram_confirmed_send",
-    "telegram_export_members",
-    "telegram_prepare_reply",
-    "telegram_read",
-    "telegram_search",
-    "search_dialog_messages",
-}
-
-WRITE_OR_DESTRUCTIVE_RE = re.compile(
-    r"^(create|delete|demote|edit|forward|import|invite|leave|mark|promote|reply|send|set|update)_"
-)
+APPROVED_FACADE_TOOLS = surface_contract.approved_facade_tools()
 PATH_LIKE_RE = re.compile(r"^(/Users/sereja/Projects|/Users/sereja/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)")
 
 SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
@@ -323,11 +299,11 @@ def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
 
 
 DOC_AUDIT_PATHS = (
+    CONTROL_ROOT / "AGENTS.md",
     CONTROL_ROOT / "README.md",
     CONTROL_ROOT / "PLAN.md",
 )
 DOC_PLUGIN_VERSION_RE = re.compile(r"plugin version `(\d+\.\d+\.\d+)`")
-DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS = frozenset({"list_chats"})
 
 
 def audit_docs() -> dict[str, Any]:
@@ -364,27 +340,20 @@ def audit_docs() -> dict[str, Any]:
                         "expected_version": plugin_version,
                     }
                 )
-        for tool in sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS):
-            if tool in text:
-                findings.append(
-                    {
-                        "id": "deprecated_default_surface_tool_in_docs",
-                        "severity": "blocking",
-                        "message": (
-                            f"{path.name} documents deprecated default-surface tool {tool!r}; "
-                            "update examples to facade tools."
-                        ),
-                        "path": str(path),
-                        "tool": tool,
-                    }
-                )
+        findings.extend(
+            surface_contract.evaluate_docs_surface_contract(
+                doc_name=path.name,
+                text=text,
+            )
+        )
 
     return {
         "status": status_from_findings(findings),
         "findings": findings,
         "checked_paths": checked,
         "plugin_version": plugin_version,
-        "deprecated_default_surface_tools": sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS),
+        "surface_contract": surface_contract.contract_summary(),
+        "deprecated_default_surface_tools": sorted(surface_contract.deprecated_doc_tools()),
     }
 
 
@@ -415,99 +384,93 @@ def _raw_tree_file_count(raw: dict[str, Any], key: str) -> int | None:
 def audit_fast_read_adapter() -> dict[str, Any]:
     """Verify the local read-only fast path used before mcporter for simple reads."""
 
-    exists = FAST_READ_ADAPTER.is_file()
-    executable = exists and FAST_READ_ADAPTER.stat().st_mode & 0o111 != 0
-    command = [str(FAST_READ_ADAPTER), "--help"]
-    help_probe: dict[str, Any] = {"ran": False}
     findings: list[dict[str, Any]] = []
+    adapters: list[dict[str, Any]] = []
 
-    if not exists:
-        findings.append(
+    for label, path, usage_needle in (
+        ("tg", TG_CLI, "tg"),
+        ("telegram-fast-read-today", FAST_READ_ADAPTER, "telegram-fast-read-today"),
+    ):
+        exists = path.is_file()
+        executable = exists and path.stat().st_mode & 0o111 != 0
+        command = [str(path), "--help"]
+        help_probe: dict[str, Any] = {"ran": False}
+        if not exists:
+            findings.append(
+                {
+                    "id": f"fast_read_adapter_missing_{label}",
+                    "severity": "blocking" if label == "tg" else "warn",
+                    "message": f"{label} adapter is missing.",
+                }
+            )
+        elif not executable:
+            findings.append(
+                {
+                    "id": f"fast_read_adapter_not_executable_{label}",
+                    "severity": "blocking" if label == "tg" else "warn",
+                    "message": f"{label} adapter exists but is not executable.",
+                }
+            )
+        else:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            help_probe = {
+                "ran": True,
+                "exit_code": completed.returncode,
+                "stdout_contains_usage": usage_needle in completed.stdout,
+            }
+            if completed.returncode != 0 or usage_needle not in completed.stdout:
+                findings.append(
+                    {
+                        "id": f"fast_read_adapter_help_failed_{label}",
+                        "severity": "blocking" if label == "tg" else "warn",
+                        "message": f"{label} --help probe failed.",
+                    }
+                )
+        adapters.append(
             {
-                "id": "fast_read_adapter_missing",
-                "severity": "blocking",
-                "message": "telegram-fast-read-today adapter is missing.",
+                "label": label,
+                "path": str(path),
+                "exists": exists,
+                "executable": executable,
+                "help_probe": help_probe,
             }
         )
-    elif not executable:
+
+    tg_module = MCP_REPO / "src/telegram_mcp/tg_cli.py"
+    tg_source = tg_module.read_text(encoding="utf-8", errors="replace") if tg_module.is_file() else ""
+    if '"telegram_read"' not in tg_source:
         findings.append(
             {
-                "id": "fast_read_adapter_not_executable",
+                "id": "tg_cli_stale_tool",
                 "severity": "blocking",
-                "message": "telegram-fast-read-today adapter exists but is not executable.",
+                "message": "telegram_mcp.tg_cli must call telegram_read on the default MCP surface.",
             }
         )
-    else:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
+
+    legacy_source = FAST_READ_ADAPTER.read_text(encoding="utf-8", errors="replace") if FAST_READ_ADAPTER.is_file() else ""
+    if legacy_source and "telegram_mcp.fast_read_today" not in legacy_source:
+        findings.append(
+            {
+                "id": "fast_read_adapter_wrapper_drift",
+                "severity": "warn",
+                "message": "telegram-fast-read-today must delegate to telegram_mcp.fast_read_today.",
+            }
         )
-        help_probe = {
-            "ran": True,
-            "exit_code": completed.returncode,
-            "stdout_contains_usage": "telegram-fast-read-today" in completed.stdout,
-        }
-        if completed.returncode != 0 or "telegram-fast-read-today" not in completed.stdout:
-            findings.append(
-                {
-                    "id": "fast_read_adapter_help_failed",
-                    "severity": "blocking",
-                    "message": "telegram-fast-read-today --help did not return the expected CLI contract.",
-                }
-            )
-        adapter_source = FAST_READ_ADAPTER.read_text(encoding="utf-8", errors="replace")
-        module_path = MCP_REPO / "src/telegram_mcp/fast_read_today.py"
-        module_source = (
-            module_path.read_text(encoding="utf-8", errors="replace")
-            if module_path.is_file()
-            else ""
-        )
-        if "telegram_mcp.fast_read_today" not in adapter_source:
-            findings.append(
-                {
-                    "id": "fast_read_adapter_wrapper_drift",
-                    "severity": "blocking",
-                    "message": "telegram-fast-read-today must delegate to telegram_mcp.fast_read_today.",
-                }
-            )
-        if '"telegram_read"' not in module_source:
-            findings.append(
-                {
-                    "id": "fast_read_adapter_stale_tool",
-                    "severity": "blocking",
-                    "message": (
-                        "telegram_mcp.fast_read_today must call the task-shaped "
-                        "telegram_read tool exposed on the default MCP surface."
-                    ),
-                }
-            )
-        if '"read_today_dialog"' in module_source:
-            findings.append(
-                {
-                    "id": "fast_read_adapter_legacy_tool",
-                    "severity": "blocking",
-                    "message": (
-                        "telegram_mcp.fast_read_today still references read_today_dialog, "
-                        "which is not on the default plugin allowlist."
-                    ),
-                }
-            )
 
     return {
         "status": status_from_findings(findings),
         "findings": findings,
-        "adapter": {
-            "path": str(FAST_READ_ADAPTER),
-            "exists": exists,
-            "executable": bool(executable),
-            "command": command,
-            "help_probe": help_probe,
-        },
+        "adapter": adapters[0] if adapters else {},
+        "adapters": adapters,
         "routing": {
-            "first_path_for": ["simple_today_read"],
+            "first_path_for": ["simple_today_read", "simple_recent_read", "dialog_search"],
+            "cli": "tg",
             "fallback": "live_mcp_facade",
             "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
         },
@@ -832,25 +795,6 @@ def _imported_tool_names(init_py: Path) -> list[str]:
     return sorted(set(names))
 
 
-def _confirmed_write_facade_tools() -> set[str]:
-    policy = load_json(POLICY_DIR / "write-policy.json") or {}
-    default_profile = policy.get("default_mcp_profile")
-    if not isinstance(default_profile, dict):
-        return set()
-    tools = default_profile.get("confirmed_write_facade_tools")
-    if not isinstance(tools, list):
-        return set()
-    return {str(item) for item in tools if isinstance(item, str)}
-
-
-def _is_unexpected_default_surface_tool(name: str, dialog_annotations: dict[str, str]) -> bool:
-    if name in _confirmed_write_facade_tools():
-        return False
-    if WRITE_OR_DESTRUCTIVE_RE.search(name):
-        return True
-    return dialog_annotations.get(name) not in {None, "readonly"}
-
-
 def _dialog_annotation_map(dialog_tools_py: Path) -> dict[str, str]:
     text = dialog_tools_py.read_text(encoding="utf-8")
     mapping: dict[str, str] = {}
@@ -882,12 +826,12 @@ def audit_mcp_surface() -> dict[str, Any]:
     default_surface = sorted(_facade_tool_names(init_py)) if init_py.exists() else []
     effective_default_tools = default_surface or tools
     dialog_annotations = _dialog_annotation_map(dialog_py) if dialog_py.exists() else {}
-    unexpected_write = [
-        name
-        for name in effective_default_tools
-        if _is_unexpected_default_surface_tool(name, dialog_annotations)
-    ]
-    non_facade = [name for name in effective_default_tools if name not in APPROVED_FACADE_TOOLS]
+    surface_eval = surface_contract.evaluate_default_surface_tools(
+        effective_default_tools,
+        dialog_annotations,
+    )
+    unexpected_write = surface_eval["unexpected_write_or_destructive_tools"]
+    non_facade = surface_eval["non_facade_tools"]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
     mcp_servers = plugin_mcp.get("mcpServers") if isinstance(plugin_mcp.get("mcpServers"), dict) else {}
     findings: list[dict[str, Any]] = []
@@ -916,8 +860,7 @@ def audit_mcp_surface() -> dict[str, Any]:
         unsafe_tools = sorted(
             tool
             for tool in allowlist
-            if tool not in APPROVED_FACADE_TOOLS
-            or _is_unexpected_default_surface_tool(tool, dialog_annotations)
+            if surface_contract.is_unsafe_plugin_allowlist_tool(tool, dialog_annotations)
         )
         if unsafe_tools:
             findings.append(
@@ -928,6 +871,20 @@ def audit_mcp_surface() -> dict[str, Any]:
                     "tools": unsafe_tools,
                 }
             )
+        if allowlist is not None:
+            drift = surface_contract.evaluate_plugin_allowlist_contract(set(allowlist))
+            if not drift["matches_contract"]:
+                findings.append(
+                    {
+                        "id": "plugin_allowlist_surface_contract_drift",
+                        "severity": "blocking",
+                        "message": (
+                            f"MCP server {name!r} allowlist does not match surface-contract.json."
+                        ),
+                        "extra_tools": drift["extra_tools"],
+                        "missing_tools": drift["missing_tools"],
+                    }
+                )
     return {
         "status": status_from_findings(findings),
         "findings": findings,
@@ -939,6 +896,7 @@ def audit_mcp_surface() -> dict[str, Any]:
         "non_facade_tools": non_facade,
         "dialog_facade_annotations": dialog_annotations,
         "plugin_mcp_servers": mcp_servers,
+        "surface_contract": surface_contract.contract_summary(),
     }
 
 
