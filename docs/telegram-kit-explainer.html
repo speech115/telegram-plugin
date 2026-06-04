@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Telegram для агентов — объяснение простыми словами</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --accent: #2aabee;
+      --accent2: #7c5cff;
+      --green: #3dd68c;
+      --amber: #f5a623;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --radius: 14px;
+      --font: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+
+    .glow {
+      position: fixed;
+      width: 60vmax;
+      height: 60vmax;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-a { top: -20%; left: -10%; background: var(--accent); }
+    .glow-b { bottom: -30%; right: -10%; background: var(--accent2); }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: clamp(1.6rem, 5vw, 2.2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .badge {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.35rem 0.85rem;
+      background: var(--surface2);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    nav.tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      justify-content: center;
+    }
+
+    nav.tabs button {
+      font: inherit;
+      font-size: 0.9rem;
+      padding: 0.55rem 1rem;
+      border: 1px solid var(--surface2);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    nav.tabs button:hover { color: var(--text); border-color: var(--accent); }
+    nav.tabs button.active {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .panel { display: none; animation: fade 0.35s ease; }
+    .panel.active { display: block; }
+
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+    }
+
+    .card h2 {
+      font-size: 1.15rem;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card h2 span.emoji { font-size: 1.35rem; }
+
+    .card p, .card li { color: var(--muted); font-size: 0.98rem; }
+    .card p strong, .card li strong { color: var(--text); }
+
+    .card ul { margin: 0.6rem 0 0 1.2rem; }
+    .card li { margin-bottom: 0.35rem; }
+
+    /* Interactive diagram */
+    .diagram {
+      display: grid;
+      gap: 0.75rem;
+      margin: 1rem 0;
+    }
+
+    .diagram-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+
+    @media (min-width: 520px) {
+      .diagram-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+      .diagram-row.cols-2 { grid-template-columns: 1fr 1fr; }
+    }
+
+    .box {
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.2s, background 0.2s;
+      text-align: center;
+      font-size: 0.88rem;
+    }
+
+    .box:hover { transform: scale(1.02); }
+    .box.selected {
+      border-color: var(--accent);
+      background: rgba(42, 171, 238, 0.12);
+    }
+
+    .box.you { background: #2a3548; }
+    .box.agent { background: #2d2848; }
+    .box.rules { background: #283848; }
+    .box.engine { background: #1e3a4a; border-color: var(--accent); }
+    .box.tg { background: #1a4a3a; }
+    .box.old { background: #3a3020; opacity: 0.85; }
+
+    .box small { display: block; color: var(--muted); margin-top: 0.25rem; font-size: 0.75rem; }
+
+    .arrow-down {
+      text-align: center;
+      color: var(--muted);
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+
+    #explain-box {
+      min-height: 4.5rem;
+      padding: 1rem;
+      background: var(--surface2);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      color: var(--text);
+      margin-top: 0.5rem;
+    }
+
+    #explain-box em { color: var(--accent); font-style: normal; }
+
+    /* Accordion */
+    details {
+      background: var(--surface);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius);
+      margin-bottom: 0.65rem;
+      overflow: hidden;
+    }
+
+    details summary {
+      padding: 1rem 1.2rem;
+      cursor: pointer;
+      font-weight: 600;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    details summary::-webkit-details-marker { display: none; }
+    details summary::after { content: "+"; color: var(--accent); font-size: 1.2rem; }
+    details[open] summary::after { content: "−"; }
+
+    details .inner {
+      padding: 0 1.2rem 1rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    /* Quiz */
+    .quiz-opt {
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin: 0.4rem 0;
+      padding: 0.75rem 1rem;
+      font: inherit;
+      font-size: 0.95rem;
+      background: var(--surface2);
+      border: 2px solid transparent;
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .quiz-opt:hover { border-color: var(--muted); }
+    .quiz-opt.correct { border-color: var(--green); background: rgba(61, 214, 140, 0.15); }
+    .quiz-opt.wrong { border-color: #e85d5d; background: rgba(232, 93, 93, 0.12); }
+
+    #quiz-result {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      border-radius: 10px;
+      display: none;
+    }
+    #quiz-result.show { display: block; }
+    #quiz-result.ok { background: rgba(61, 214, 140, 0.15); color: var(--green); }
+    #quiz-result.no { background: rgba(232, 93, 93, 0.12); color: #f0a0a0; }
+
+    /* Slider compare */
+    .compare {
+      margin: 1rem 0;
+    }
+
+    .compare-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      height: 8px;
+    }
+
+    .compare-display {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    @media (max-width: 480px) {
+      .compare-display { grid-template-columns: 1fr; }
+    }
+
+    .compare-card {
+      padding: 1rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+
+    .compare-card.now { background: #2a2838; border: 1px solid var(--surface2); }
+    .compare-card.future { background: #1e2a3a; border: 1px solid var(--accent); }
+
+    .compare-card h3 { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--muted); }
+
+    /* Speed meter */
+    .meter {
+      height: 12px;
+      background: var(--surface2);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .meter-fill {
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width 0.4s ease;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    footer a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="glow glow-a"></div>
+  <div class="glow glow-b"></div>
+
+  <div class="wrap">
+    <header>
+      <h1>🤖 Твой Telegram для умных помощников</h1>
+      <p>Без программирования. Как будто тебе 15 — но по делу.</p>
+      <span class="badge">Проект: telegram control-plane на Mac</span>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="active" data-tab="story">📖 История</button>
+      <button type="button" data-tab="map">🗺 Карта</button>
+      <button type="button" data-tab="flow">⚡ Как работает</button>
+      <button type="button" data-tab="future">🚀 Будущее</button>
+      <button type="button" data-tab="quiz">🎮 Проверка</button>
+    </nav>
+
+    <!-- STORY -->
+    <section id="story" class="panel active">
+      <div class="card">
+        <h2><span class="emoji">🎯</span> Что ты хотел</h2>
+        <p>
+          Ты не хотел «писать код для Telegram». Ты хотел, чтобы <strong>ИИ-помощники</strong>
+          (в Cursor, Codex, Claude…) могли: читать чаты, искать, кратко говорить «что нового»,
+          иногда помогать с ответом — <strong>быстро</strong> и <strong>без сюрпризов</strong>
+          (типа случайно отправить сообщение от твоего имени).
+        </p>
+      </div>
+
+      <div class="card">
+        <h2><span class="emoji">🏫</span> Главная аналогия: школа</h2>
+        <ul>
+          <li><strong>Ты</strong> — директор, который ставит задачу: «что писал Вася за сегодня?»</li>
+          <li><strong>ИИ-агент</strong> — умный стажёр. Сам в Telegram не заходит, он просит помощь.</li>
+          <li><strong>Инструкция (навык / skill)</strong> — памятка стажёру: что можно, что нельзя.</li>
+          <li><strong>Движок на Mac (telegram-mcp)</strong> — единственный, кто реально открывает твой Telegram (как ключ от кабинета).</li>
+          <li><strong>Пульт (этот проект tools/telegram)</strong> — охрана и техосмотр: всё ли подключено, нет ли поломок. Сам в чаты не лезет.</li>
+          <li><strong>Архив / зеркало</strong> — старые тетради в шкафу. Для «что было в прошлом году», не для «что написали 5 минут назад».</li>
+        </ul>
+      </div>
+
+      <details>
+        <summary>Что такое MCP? (одним предложением)</summary>
+        <div class="inner">
+          <strong>MCP</strong> — это «розетка на твоём Mac», в которую агент втыкается, чтобы вызывать готовые действия
+          (прочитать чат, найти слово), вместо того чтобы самому ковырять Telegram. Как пульт от телевизора с кнопками, а не отвёртка внутри.
+        </div>
+      </details>
+
+      <details>
+        <summary>Почему папок так много — это нормально?</summary>
+        <div class="inner">
+          Да, выглядит страшно. Но это как в ресторане: <strong>кухня</strong> (движок),
+          <strong>меню для официанта</strong> (навык + плагин), <strong>проверяющий санитарии</strong> (пульт).
+          Тебе в жизни важны в основном первые два + чтобы проверяющий горел зелёным.
+        </div>
+      </details>
+    </section>
+
+    <!-- MAP -->
+    <section id="map" class="panel">
+      <div class="card">
+        <h2><span class="emoji">👆</span> Нажми на блок — объясню</h2>
+        <p>Так устроена система на твоём Mac (упрощённо):</p>
+
+        <div class="diagram">
+          <div class="diagram-row">
+            <div class="box you" data-id="you">👤 Ты <small>задаёшь вопрос агенту</small></div>
+          </div>
+          <div class="arrow-down">↓</div>
+          <div class="diagram-row cols-2">
+            <div class="box agent" data-id="agent">🤖 Агент <small>Cursor, Codex…</small></div>
+            <div class="box rules" data-id="rules">📋 Навык + плагин <small>правила и кнопки</small></div>
+          </div>
+          <div class="arrow-down">↓</div>
+          <div class="diagram-row">
+            <div class="box engine" data-id="engine">⚙️ telegram-mcp <small>localhost:8799</small></div>
+          </div>
+          <div class="arrow-down">↓</div>
+          <div class="diagram-row cols-2">
+            <div class="box tg" data-id="tg">✈️ Живой Telegram <small>сейчас</small></div>
+            <div class="box old" data-id="old">📦 Архив / зеркало <small>прошлое</small></div>
+          </div>
+          <div class="diagram-row" style="margin-top:0.5rem">
+            <div class="box you" data-id="control" style="border-style:dashed">🛡 Пульт control-plane <small>смотрит, не читает чаты</small></div>
+          </div>
+        </div>
+
+        <div id="explain-box">Нажми любой блок выше ↑</div>
+      </div>
+
+      <div class="card">
+        <h2><span class="emoji">📁</span> Где что лежит (шпаргалка)</h2>
+        <ul>
+          <li><strong>tools/telegram</strong> — пульт, проверки, «всё ли ок»</li>
+          <li><strong>telegram-mcp</strong> (другая папка) — мотор, сессия, реальные запросы</li>
+          <li><strong>~/.agents/skills/telegram</strong> — инструкция для агентов</li>
+          <li><strong>generated/telegram-plugin-package</strong> — упаковка для Codex</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- FLOW -->
+    <section id="flow" class="panel">
+      <div class="card">
+        <h2><span class="emoji">🐇</span> Быстрый путь vs 🐢 полный</h2>
+        <p style="margin-bottom:1rem">Потяни ползунок — увидишь, что происходит, когда ты спрашиваешь агента.</p>
+
+        <div class="compare">
+          <div class="compare-labels">
+            <span>«Что нового за сегодня?»</span>
+            <span>«Найди, скачай фото, подготовь ответ»</span>
+          </div>
+          <input type="range" id="task-slider" min="0" max="100" value="15" />
+          <div class="meter"><div class="meter-fill" id="speed-meter" style="width: 92%"></div></div>
+          <p style="font-size:0.8rem;color:var(--muted);margin-top:0.35rem" id="speed-label">Скорость: почти мгновенно ⚡</p>
+        </div>
+
+        <div class="compare-display">
+          <div class="compare-card now">
+            <h3>Сейчас (упрощённо)</h3>
+            <p id="flow-now">Ты → агент → быстрая команда <code>fast-read-today</code> → ответ. Без архива.</p>
+          </div>
+          <div class="compare-card future">
+            <h3>Тяжёлая задача</h3>
+            <p id="flow-heavy">Несколько шагов: поиск → контекст → медиа → черновик. Дольше, но полнее.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="emoji">🔒</span> Почему не отправит случайно</h2>
+        <ul>
+          <li>В обычном режиме агенту <strong>не дают кнопку «Отправить»</strong> напрямую.</li>
+          <li>Сначала <strong>черновик + превью</strong>, потом отправка только с особым «пропуском» (токен) и твоим явным текстом.</li>
+          <li>Текст из чужих сообщений в Telegram = как объявление на столбе: <strong>не приказ агенту</strong>, а просто данные.</li>
+        </ul>
+      </div>
+
+      <details>
+        <summary>21 «кнопка» — зачем столько?</summary>
+        <div class="inner">
+          Это разные действия: прочитать, найти, скачать медиа, найти диалог… Агент выбирает нужную.
+          Минус: иногда путается или делает лишние шаги. В будущем хотят сжать до 2–3 «супер-кнопок».
+        </div>
+      </details>
+    </section>
+
+    <!-- FUTURE -->
+    <section id="future" class="panel">
+      <div class="card">
+        <h2><span class="emoji">🚀</span> Как можно сделать ОЧЕНЬ круче</h2>
+        <p style="margin-bottom:0.75rem">Не обязательно всё сразу — идеи «если переделывать по-взрослому»:</p>
+      </div>
+
+      <details open>
+        <summary>1. Локальная копия чатов на диске (как сохранённый чат)</summary>
+        <div class="inner">
+          Mac сам подтягивает новые сообщения в фоне. Агент читает с диска за доли секунды — не дергает Telegram каждый раз.
+        </div>
+      </details>
+
+      <details>
+        <summary>2. Три кнопки вместо двадцати одной</summary>
+        <div class="inner">
+          <strong>Спросить</strong> · <strong>Подготовить ответ</strong> · <strong>Отправить (с твоим ОК)</strong>.
+          Меньше путаницы у агента.
+        </div>
+      </details>
+
+      <details>
+        <summary>3. Кнопка «Отправить» в маленьком сайте на Mac</summary>
+        <div class="inner">
+          Агент пишет черновик → ты видишь карточку в браузере на localhost → жмёшь «Да, отправить».
+          Понятнее, чем токены в логах.
+        </div>
+      </details>
+
+      <details>
+        <summary>4. Одна установка: telegram-kit install</summary>
+        <div class="inner">
+          Вместо карты из 6 папок — одна команда или иконка в меню: подключил Telegram → зелёный статус → готово.
+        </div>
+      </details>
+
+      <div class="card" style="margin-top:1rem">
+        <h2><span class="emoji">💡</span> Одна фраза</h2>
+        <p>
+          <strong>Не «робот каждый раз лезет в Telegram»</strong>, а
+          <strong>«на Mac всегда лежит свежая копия нужных чатов + ты одним кликом разрешаешь отправку»</strong>.
+        </p>
+      </div>
+    </section>
+
+    <!-- QUIZ -->
+    <section id="quiz" class="panel">
+      <div class="card">
+        <h2><span class="emoji">🎮</span> Мини-викторина</h2>
+        <p id="quiz-q" style="margin-bottom:0.75rem">Куда агент должен идти, если ты спросил «что написали за сегодня»?</p>
+        <button type="button" class="quiz-opt" data-q="1" data-ok="0">В старый архив telecrawl</button>
+        <button type="button" class="quiz-opt" data-q="1" data-ok="1">В живой Telegram (быстрый путь)</button>
+        <button type="button" class="quiz-opt" data-q="1" data-ok="0">В пульт tools/telegram — он же читает чаты</button>
+        <div id="quiz-result"></div>
+      </div>
+
+      <div class="card" id="quiz2-card" style="display:none">
+        <p id="quiz-q2" style="margin-bottom:0.75rem">Может ли агент в обычном режиме нажать «отправить» без подготовки?</p>
+        <button type="button" class="quiz-opt" data-q="2" data-ok="0">Да, всегда</button>
+        <button type="button" class="quiz-opt" data-q="2" data-ok="1">Нет — только через превью и подтверждение</button>
+        <div id="quiz-result2"></div>
+      </div>
+
+      <div class="card" id="quiz-done" style="display:none;text-align:center">
+        <h2>🎉 Круто!</h2>
+        <p>Ты понял схему лучше, чем половина разработчиков, которые не читали MAP.md.</p>
+      </div>
+    </section>
+
+    <footer>
+      Файл: <code>docs/telegram-kit-explainer.html</code> ·
+      Открой в браузере двойным кликом или
+      <a href="#" id="open-hint">file://…</a>
+    </footer>
+  </div>
+
+  <script>
+    // Tabs
+    document.querySelectorAll("nav.tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("nav.tabs button").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    // Diagram
+    const explains = {
+      you: "Ты задаёшь вопрос обычным языком в Cursor или другом агенте. Тебе не нужно знать команды.",
+      agent: "ИИ читает <em>навык</em> и решает, какие «кнопки» (инструменты) нажать. Сам Telegram не открывает.",
+      rules: "Навык и плагин — это правила: «сегодня = только live», «не отправляй без разрешения». Список разрешённых кнопок.",
+      engine: "Единственная программа с твоей сессией Telegram. Крутится на Mac (порт 8799). Все запросы идут сюда.",
+      tg: "Настоящий Telegram прямо сейчас — переписки, каналы, что пришло минуту назад.",
+      old: "Копии и архивы для <em>прошлого</em>. Если спросить «сегодня» — сюда идти нельзя, иначе ответ будет неправильный.",
+      control: "Пульт только проверяет: файлы на месте? плагин не сломан? Быстрый тест работает? В чаты не заглядывает."
+    };
+
+    const explainBox = document.getElementById("explain-box");
+    document.querySelectorAll(".diagram .box").forEach((box) => {
+      box.addEventListener("click", () => {
+        document.querySelectorAll(".diagram .box").forEach((b) => b.classList.remove("selected"));
+        box.classList.add("selected");
+        const id = box.dataset.id;
+        explainBox.innerHTML = explains[id] || "";
+      });
+    });
+    document.querySelector(".box.engine").click();
+
+    // Slider
+    const slider = document.getElementById("task-slider");
+    const meter = document.getElementById("speed-meter");
+    const speedLabel = document.getElementById("speed-label");
+    const flowNow = document.getElementById("flow-now");
+    const flowHeavy = document.getElementById("flow-heavy");
+
+    function updateSlider() {
+      const v = Number(slider.value);
+      const fast = v < 40;
+      meter.style.width = fast ? 92 - v * 0.3 + "%" : Math.max(25, 90 - v) + "%";
+      if (fast) {
+        speedLabel.textContent = "Скорость: почти мгновенно ⚡";
+        flowNow.textContent = "Ты → агент → fast-read-today → готово. Архив не трогаем.";
+        flowHeavy.textContent = "Пока не нужно тяжёлое.";
+      } else if (v < 70) {
+        speedLabel.textContent = "Скорость: несколько секунд 🚶";
+        flowNow.textContent = "Поиск слова → подтянуть контекст вокруг.";
+        flowHeavy.textContent = "telegram_search + telegram_read (полный режим).";
+      } else {
+        speedLabel.textContent = "Скорость: дольше, но умнее 🐢";
+        flowNow.textContent = "Скачать медиа, посмотреть файл, не верить только подписи.";
+        flowHeavy.textContent = "inspect_media + prepare_reply + твоё ОК на отправку.";
+      }
+    }
+    slider.addEventListener("input", updateSlider);
+    updateSlider();
+
+    // Quiz
+    let q1done = false;
+    const result = document.getElementById("quiz-result");
+    const result2 = document.getElementById("quiz-result2");
+
+    document.querySelectorAll(".quiz-opt[data-q='1']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (q1done) return;
+        const ok = btn.dataset.ok === "1";
+        document.querySelectorAll(".quiz-opt[data-q='1']").forEach((b) => {
+          b.disabled = true;
+          if (b.dataset.ok === "1") b.classList.add("correct");
+          else if (b === btn && !ok) b.classList.add("wrong");
+        });
+        result.classList.add("show", ok ? "ok" : "no");
+        result.textContent = ok
+          ? "Верно! «Сегодня» = только живой Telegram."
+          : "Почти. Сегодня — только live, не архив и не пульт.";
+        q1done = true;
+        if (ok) setTimeout(() => { document.getElementById("quiz2-card").style.display = "block"; }, 600);
+      });
+    });
+
+    let q2done = false;
+    document.querySelectorAll(".quiz-opt[data-q='2']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (q2done) return;
+        const ok = btn.dataset.ok === "1";
+        document.querySelectorAll(".quiz-opt[data-q='2']").forEach((b) => {
+          b.disabled = true;
+          if (b.dataset.ok === "1") b.classList.add("correct");
+          else if (b === btn && !ok) b.classList.add("wrong");
+        });
+        result2.classList.add("show", ok ? "ok" : "no");
+        result2.textContent = ok
+          ? "Точно! Сначала черновик, потом отправка с подтверждением."
+          : "В обычном режиме прямой «Отправить» отключён специально.";
+        q2done = true;
+        if (ok) setTimeout(() => { document.getElementById("quiz-done").style.display = "block"; }, 500);
+      });
+    });
+
+    document.getElementById("open-hint").addEventListener("click", (e) => {
+      e.preventDefault();
+      alert("Открой этот файл в Finder и двойной клик — или перетащи в Chrome/Safari.");
+    });
+  </script>
+</body>
+</html>

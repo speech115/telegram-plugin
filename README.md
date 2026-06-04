@@ -78,6 +78,8 @@ codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-lo
 - `MAP.md` explains where every Telegram-related system lives.
 - `PLAN.md` records the current control-plane rollout strategy.
 - `PROTECTION.md` defines the cleanup and deletion safety contract.
+- `docs/telegram-kit-explainer.html` is a self-contained Russian explainer for
+  how the Telegram agent kit fits together (open locally in a browser).
 
 `telegram-doctor --json` writes the runtime-only
 `generated/observed-registry.json` snapshot and exits non-zero while blocking
