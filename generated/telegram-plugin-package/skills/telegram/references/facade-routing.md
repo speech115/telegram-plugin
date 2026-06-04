@@ -1,5 +1,28 @@
 # Facade Routing
 
+## Codex entry card (read first)
+
+Codex incident class: minutes spent on **how** to read, not on Telegram itself.
+
+For live «что нового» / today / recent — **do not load this full skill**. Use MCP resource
+`telegram://docs/routing` or run immediately:
+
+```bash
+tg read today <chat> --limit 30 --json
+```
+
+Fallbacks (same turn, stop on first success):
+
+1. `telegram-fast-read-today <chat> --limit 30 --json`
+2. MCP `telegram_read` with `mode="fast"`, `limit` ≤ 30
+
+**Forbidden before the first successful read:** `mcporter`, `tool_search`, plugin README,
+`doctor_check`, launchd inspection, `@telegram` bootstrap, mirror/telecrawl for today/latest.
+
+After JSON returns: reuse `chat.dialog_ref`; summarize; escalate to `mode="full"` only if needed.
+
+Install `tg`: `<control-plane>/bin/telegram-kit --local` → `~/bin/tg`.
+
 ## Fast Defaults
 
 - Live/current tasks require live MCP facade tools or aliases. If they are not
@@ -35,6 +58,21 @@
 - If the default endpoint has a transient timeout but an alternate configured
   live MCP profile succeeds on `get_me`, use the healthy profile immediately;
   do not spend multiple rounds proving the unhealthy profile is broken.
+
+## HTTP MCP session (Codex / agents)
+
+- Prefer `tg read today` on PATH — one subprocess, no MCP discovery round-trip.
+- Install via `<control-plane>/bin/telegram-kit --local` (symlinks `~/bin/tg` → kit wrapper with
+  resolved `telegram-env.sh`; do not copy the wrapper by hand).
+- Default stack uses a **shared Telethon client** in the MCP process (`mcp_shared_client`).
+- **Stickiness limit:** stateless HTTP still opens a **fresh MCP session per POST** from many hosts.
+  Telethon reuse helps only inside one worker process — not across back-to-back HTTP tool calls.
+- **Mitigation:** use `tg read today` / `telegram-fast-read-today` for agent hot paths (one subprocess,
+  shared MCP connection inside that process). Do not chain multiple bare `telegram_read` HTTP calls
+  when a single CLI read suffices.
+- Do not expect `result_cache_hit` across separate HTTP tool calls unless the host keeps one
+  long-lived MCP connection.
+- For «что нового», always issue a **new live read** (Q9 B); cache hints are for dedupe only.
 
 ## Read result cache hints
 

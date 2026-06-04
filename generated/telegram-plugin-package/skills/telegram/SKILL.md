@@ -5,6 +5,20 @@ description: Use for live Telegram dialog reading, searching, summarizing, draft
 
 # Telegram
 
+## Codex — live read hot path
+
+For «прочитай чат / что нового за сегодня» on **Codex**: do **not** read this whole file first.
+
+1. MCP resource `telegram://docs/routing` **or** run: `tg read today <chat> --limit 30 --json`
+2. Fallback: `telegram-fast-read-today` → MCP `telegram_read` `mode="fast"`
+3. **Stop** if step 1–2 fails; then report live gap (never mirror/archive for today)
+
+**Forbidden before a successful read:** mcporter, tool_search, plugin README, doctor_check, launchd.
+
+Details: [references/facade-routing.md](references/facade-routing.md) (Codex entry card).
+
+---
+
 Use this skill as the live Telegram entrypoint. The portable package under
 `generated/telegram-plugin-package` is the local materialization source of
 truth. The live standalone skill under `$HOME/.agents/skills/telegram` should be

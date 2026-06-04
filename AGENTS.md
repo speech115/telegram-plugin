@@ -9,6 +9,18 @@
 
 ## Agent Entry (read this first)
 
+### Codex (live read — hot path)
+
+Do **not** load the full telegram skill for «что нового / прочитай чат за сегодня».
+
+1. `telegram://docs/routing` **or** `tg read today <chat> --limit 30 --json`
+2. Fallback: `bin/telegram-fast-read-today` → MCP `telegram_read` `mode="fast"`
+3. Forbidden until read fails: mcporter, tool_search, plugin README, doctor, launchd
+
+`tg` on PATH: `./bin/telegram-kit --local`
+
+### All hosts
+
 For live Telegram work, read MCP resources first (smaller than the full skill):
 
 - `telegram://docs/routing`, `telegram://docs/tools`, `telegram://docs/sources`
@@ -75,13 +87,15 @@ Restarts local MCP HTTP daemons automatically after sync. CI uses `--check --no-
 
 ```bash
 ./bin/telegram-fast-read-today me --limit 1
+./bin/telegram-golden-read-smoke --json
 ./bin/telegram-mcp-surface --json
 ./bin/telegram-doctor --json
 ./bin/telegram-telemetry-status --json
 ```
 
 Fast read must return `payload.data_source == "live_telegram"`, not
-`Unknown tool`.
+`Unknown tool`. Golden smoke covers five dialogs in `policy/golden-dialogs.json`
+(me, Конспекты, three DMs). Use `TELEGRAM_GOLDEN_READ_SKIP=1` only in CI/offline.
 
 ### Runtime locations
 

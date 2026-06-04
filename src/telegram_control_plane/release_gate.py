@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -36,29 +35,19 @@ def load_release_gate_manifest(path: Path = RELEASE_GATES_PATH) -> dict[str, Any
     return payload
 
 
-def _tg_read_smoke_argv() -> list[str]:
-    if shutil.which("tg"):
-        return ["tg", "read", "today", "me", "--limit", "1", "--json"]
-    return [str(TG_CLI), "read", "today", "me", "--limit", "1", "--json"]
-
-
 def _run_gate(gate_id: str, spec: dict[str, Any]) -> dict[str, Any]:
-    if spec.get("kind") == "tg_read_smoke":
-        argv = _tg_read_smoke_argv()
-        cwd = None
-    else:
-        raw_argv = spec.get("argv")
-        if not isinstance(raw_argv, list) or not raw_argv:
-            return {
-                "id": gate_id,
-                "status": "fail",
-                "message": "Gate spec is missing argv.",
-                "argv": [],
-                "exit_code": None,
-            }
-        argv = _format_argv([str(item) for item in raw_argv])
-        cwd_raw = spec.get("cwd")
-        cwd = _format_argv([str(cwd_raw)])[0] if isinstance(cwd_raw, str) else None
+    raw_argv = spec.get("argv")
+    if not isinstance(raw_argv, list) or not raw_argv:
+        return {
+            "id": gate_id,
+            "status": "fail",
+            "message": "Gate spec is missing argv.",
+            "argv": [],
+            "exit_code": None,
+        }
+    argv = _format_argv([str(item) for item in raw_argv])
+    cwd_raw = spec.get("cwd")
+    cwd = _format_argv([str(cwd_raw)])[0] if isinstance(cwd_raw, str) else None
 
     completed = subprocess.run(
         argv,

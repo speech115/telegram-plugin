@@ -1,7 +1,0 @@
----
-description: Telegram live reads via tg CLI; sends require human approval
-globs:
-alwaysApply: true
----
-
-For Telegram tasks: use the `telegram` skill. For live reads (today/recent/search), run `tg` first — do not require `@telegram`. Use MCP only for media, sends, or fallback. For sends: open `human_approval_url` and Approve before `telegram_confirmed_send`.

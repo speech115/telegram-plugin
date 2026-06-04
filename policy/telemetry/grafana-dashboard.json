@@ -47,6 +47,36 @@
           "legendFormat": "{{source}}"
         }
       ]
+    },
+    {
+      "type": "stat",
+      "title": "Preflight violations / h",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum(rate(telegram_mcp_events_total{event=\"preflight_violation\"}[1h])) * 3600"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Seconds to first read (gauge)",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "targets": [
+        {
+          "expr": "telegram_mcp_runtime_gauge{gauge=\"agent_seconds_to_first_read\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "First-read events / min",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum(rate(telegram_mcp_events_total{event=\"seconds_to_first_read\"}[5m])) * 60"
+        }
+      ]
     }
   ]
 }

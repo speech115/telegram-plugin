@@ -27,9 +27,10 @@
       "stats_file_present",
       "tools_observed",
       "source_counts",
-      "prometheus_targets"
+      "prometheus_targets",
+      "agent_preflight"
     ],
-    "fast_read_adapter": ["status", "findings", "adapter", "routing"],
+    "fast_read_adapter": ["status", "findings", "tg_on_path", "adapters", "routing"],
     "mcp_surface": [
       "status",
       "findings",

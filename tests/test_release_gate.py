@@ -15,7 +15,13 @@ def test_release_gate_manifest_defines_local_and_ci_modes() -> None:
     assert "local" in manifest["modes"]
     assert "ci" in manifest["modes"]
     assert "managed-systems" in manifest["modes"]["local"]
-    assert manifest["modes"]["ci"] == ["agent-docs-check", "docs-audit", "pytest"]
+    assert manifest["modes"]["ci"] == [
+        "agent-docs-check",
+        "docs-audit",
+        "mcp-surface",
+        "source-routing-audit",
+        "pytest",
+    ]
 
 
 def test_release_gate_manifest_matches_shell_gate_ids() -> None:
@@ -37,8 +43,15 @@ def test_run_release_gates_ci_mode(monkeypatch) -> None:
     report = run_release_gates(mode="ci")
 
     assert report["status"] == "ok"
-    assert len(calls) == 3
-    assert calls[0][-2:] == ["--check", "--json"] or "agent-docs-sync" in calls[0][0]
+    assert len(calls) == 5
+    assert calls[0][-2:] == ["--check", "--json"] or "agent-docs-sync" in str(calls[0][0])
+
+
+def test_release_gate_local_includes_golden_read_smoke() -> None:
+    manifest = load_release_gate_manifest()
+    assert "tg-read-smoke" in manifest["modes"]["local"]
+    spec = manifest["gates"]["tg-read-smoke"]
+    assert "telegram-golden-read-smoke" in spec["argv"][0]
 
 
 def test_release_gate_policy_file_is_valid_json() -> None:

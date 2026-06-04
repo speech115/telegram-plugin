@@ -41,6 +41,14 @@ def test_audit_persisted_registry_fails_on_private_leak() -> None:
     assert any(item["id"] == "registry_persisted_private_leak" for item in report["findings"])
 
 
+def test_redact_for_persistence_normalizes_unix_home_paths() -> None:
+    payload = {"path": "/Users/sereja/Projects/tools/telegram/bin/tg"}
+    redacted = redact_for_persistence(payload)
+    assert redacted["path"] == "<home>/Projects/tools/telegram/bin/tg"
+    report = audit_persisted_registry(redacted)
+    assert report["status"] == "ok"
+
+
 def test_project_registry_component_uses_allowlist() -> None:
     projected = project_registry_component(
         "telecrawl",

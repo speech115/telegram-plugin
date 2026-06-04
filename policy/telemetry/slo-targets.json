@@ -1,0 +1,13 @@
+{
+  "phase": "week_1_baseline",
+  "effective_from": "2026-06-04",
+  "notes": "Doctor/Prometheus use alert-thresholds.json; tighten alert-thresholds toward these after one week of telemetry.",
+  "targets": {
+    "fast_read_p95_ms": 3000,
+    "cold_first_tool_seconds": 8,
+    "typical_what_new_tool_calls": 2,
+    "typical_what_new_wall_seconds": 60,
+    "live_vs_archive_mixups": 0,
+    "repeat_read_cache_hit_rate_min": 0.7
+  }
+}

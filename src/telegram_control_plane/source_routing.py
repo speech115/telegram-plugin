@@ -167,16 +167,31 @@ def audit_source_routing() -> dict[str, Any]:
                     "message": "Source routing policy is missing a required source definition.",
                 }
             )
-    sample = recommend_route("что нового за сегодня в чате")
-    if sample.get("primary_source") != "live_mcp":
-        findings.append(
-            {
-                "id": "source_routing_live_sample_misrouted",
-                "severity": "blocking",
-                "message": "Sample today intent did not route to live_mcp.",
-                "sample": sample,
-            }
-        )
+    for phrase in (
+        "что нового за сегодня в чате",
+        "прочитай переписку за сегодня",
+        "latest in chat",
+    ):
+        sample = recommend_route(phrase)
+        if sample.get("primary_source") != "live_mcp":
+            findings.append(
+                {
+                    "id": "source_routing_live_sample_misrouted",
+                    "severity": "blocking",
+                    "message": f"Today/live phrase routed to {sample.get('primary_source')!r}, not live_mcp.",
+                    "sample": sample,
+                }
+            )
+        blocked = sample.get("blocked_sources") if isinstance(sample.get("blocked_sources"), list) else []
+        if "telecrawl_archive" not in blocked:
+            findings.append(
+                {
+                    "id": "source_routing_archive_not_blocked",
+                    "severity": "blocking",
+                    "message": "Live route must block telecrawl_archive for today intents.",
+                    "sample": sample,
+                }
+            )
     return {
         "status": status_from_findings(findings),
         "findings": findings,

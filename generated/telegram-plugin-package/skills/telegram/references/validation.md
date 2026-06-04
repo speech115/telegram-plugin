@@ -28,12 +28,19 @@ needed for the task:
 
 ```bash
 <telegram-control-plane>/bin/telegram-fast-read-today me --limit 1
+<telegram-control-plane>/bin/telegram-golden-read-smoke --json
 mcporter list telegram --json
 ```
 
 Use `telegram-fast-read-today` as the host-local simple-read smoke. It is not a
 replacement for `mcporter list` or contract smoke when validating the full
 facade surface.
+
+Golden regression set (live Telegram, local release gate `tg-read-smoke`):
+
+- Manifest: `<control-plane>/policy/golden-dialogs.json`
+- Runner: `telegram-golden-read-smoke` (expects `data_source=live_telegram` per dialog)
+- Offline/CI: `TELEGRAM_GOLDEN_READ_SKIP=1` or `--skip-live`
 
 Expected default-read facade names, when the host exposes the Telegram MCP
 facade:

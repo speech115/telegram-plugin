@@ -3,6 +3,20 @@
 Community-maintained packaging for local use. This is not an official Telegram
 client or Telegram LLC distribution.
 
+## Codex: read a chat (8 lines)
+
+For «что нового» / today / recent — **do not** explore mcporter or this README first.
+
+```bash
+tg read today <chat> --limit 30 --json
+```
+
+Then: `telegram-fast-read-today` → MCP `telegram_read` `mode="fast"`. Skill routing:
+`skills/telegram/references/facade-routing.md` (Codex entry card). Install `tg`:
+`tools/telegram/bin/telegram-kit --local`.
+
+---
+
 This plugin gives Codex a Telegram-flavored front door backed by the local
 `telegram-mcp` daemon at `http://127.0.0.1:8799/mcp`.
 

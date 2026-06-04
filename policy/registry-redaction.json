@@ -27,6 +27,7 @@
     {"id": "tdata_path_key", "pattern": "\"tdata_path\""},
     {"id": "session_path", "pattern": "\\.session"},
     {"id": "telecrawl_artifacts", "pattern": "/Projects/\\.artifacts/telecrawl"},
-    {"id": "telegram_handle", "pattern": "Telegram @"}
+    {"id": "telegram_handle", "pattern": "Telegram @"},
+    {"id": "unix_home_absolute", "pattern": "\"/Users/[^\"]+\""}
   ]
 }

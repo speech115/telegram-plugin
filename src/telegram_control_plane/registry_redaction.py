@@ -13,6 +13,7 @@ from .util import load_json, status_from_findings
 
 REGISTRY_SCHEMA_PATH = POLICY_DIR / "registry-schema.json"
 REGISTRY_REDACTION_PATH = POLICY_DIR / "registry-redaction.json"
+_HOME_SEGMENT_RE = re.compile(r"/Users/[^/\"\s]+")
 
 
 @dataclass(frozen=True)
@@ -83,14 +84,20 @@ def redact_for_persistence(
             if key in rules.drop_keys:
                 continue
             if key == "path" and isinstance(item, str) and not _path_is_private(item, rules):
-                result[key] = item
+                path_value = item
+                if "/Users/" in path_value:
+                    path_value = _HOME_SEGMENT_RE.sub("<home>", path_value)
+                result[key] = path_value
                 continue
             result[key] = redact_for_persistence(item, policy=rules)
         return result
     if isinstance(value, list):
         return [redact_for_persistence(item, policy=rules) for item in value]
-    if isinstance(value, str) and _should_redact_string(value, rules):
-        return "<redacted>"
+    if isinstance(value, str):
+        if _should_redact_string(value, rules):
+            return "<redacted>"
+        if "/Users/" in value:
+            return _HOME_SEGMENT_RE.sub("<home>", value)
     return copy.deepcopy(value)
 
 
@@ -126,6 +133,9 @@ def enrich_registry_component(name: str, report: dict[str, Any]) -> dict[str, An
     if name == "mcp_telemetry":
         summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
         tool_latency = summary.get("tool_latency") if isinstance(summary.get("tool_latency"), dict) else {}
+        agent_preflight = (
+            summary.get("agent_preflight") if isinstance(summary.get("agent_preflight"), dict) else {}
+        )
         return {
             "status": report.get("status"),
             "findings": report.get("findings", []),
@@ -136,6 +146,7 @@ def enrich_registry_component(name: str, report: dict[str, Any]) -> dict[str, An
             "tools_observed": sorted(tool_latency.keys())[:8],
             "source_counts": report.get("source_counts"),
             "prometheus_targets": report.get("prometheus_targets"),
+            "agent_preflight": agent_preflight,
         }
     if name == "sessions":
         sessions = report.get("sessions") if isinstance(report.get("sessions"), list) else []
@@ -215,6 +226,29 @@ def enrich_registry_component(name: str, report: dict[str, Any]) -> dict[str, An
                     else None
                 ),
             },
+        }
+    if name == "fast_read_adapter":
+        adapters = report.get("adapters") if isinstance(report.get("adapters"), list) else []
+        safe_adapters = []
+        for item in adapters:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            safe_adapters.append(
+                {
+                    "label": item.get("label"),
+                    "exists": item.get("exists"),
+                    "executable": item.get("executable"),
+                    "path": redact_for_persistence(path) if isinstance(path, str) else path,
+                }
+            )
+        routing = report.get("routing") if isinstance(report.get("routing"), dict) else {}
+        return {
+            "status": report.get("status"),
+            "findings": report.get("findings", []),
+            "tg_on_path": report.get("tg_on_path"),
+            "adapters": safe_adapters,
+            "routing": {k: v for k, v in routing.items() if k != "codex_hot_path_doc"},
         }
     if name == "mcp_profiles":
         profiles = report.get("profiles") if isinstance(report.get("profiles"), list) else []

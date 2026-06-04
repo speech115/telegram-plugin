@@ -94,8 +94,10 @@ def plan_local_install(*, dry_run: bool) -> KitInstallResult:
         )
 
     routing_note = (
-        "For Telegram: use the telegram skill. For live reads (today/recent/search), "
-        "run `tg` first — do not require @telegram. Use MCP only for media, sends, or fallback."
+        "Codex live read: tg read today <chat> --limit 30 --json first. "
+        "Do not use mcporter/tool_search/README/doctor before read. "
+        "Fallback: telegram-fast-read-today → telegram_read mode=fast. "
+        "See tools/telegram/generated/adapters/codex/telegram-codex-entry.md"
     )
     actions.append(
         {
@@ -116,10 +118,11 @@ def plan_local_install(*, dry_run: bool) -> KitInstallResult:
             if LIVE_SKILL.exists() or LIVE_SKILL.is_symlink():
                 LIVE_SKILL.unlink()
             LIVE_SKILL.symlink_to(skill_target)
-        if tg_source.exists():
+        if tg_wrapper.is_file():
             if tg_dest.exists() or tg_dest.is_symlink():
                 tg_dest.unlink()
-            tg_dest.symlink_to(tg_source)
+            tg_dest.symlink_to(tg_wrapper)
+        if tg_source.is_file():
             os.chmod(tg_source, 0o755)
         note_path = CONTROL_ROOT / "docs" / "agent-routing-note.txt"
         note_path.parent.mkdir(parents=True, exist_ok=True)

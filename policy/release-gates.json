@@ -14,6 +14,8 @@
     "ci": [
       "agent-docs-check",
       "docs-audit",
+      "mcp-surface",
+      "source-routing-audit",
       "pytest"
     ]
   },
@@ -36,6 +38,9 @@
     "docs-audit": {
       "argv": ["{control_root}/bin/telegram-docs-audit", "--json"]
     },
+    "source-routing-audit": {
+      "argv": ["{control_root}/bin/telegram-source-routing-audit", "--json"]
+    },
     "agent-docs-check": {
       "argv": [
         "{control_root}/bin/telegram-agent-docs-sync",
@@ -52,7 +57,7 @@
       "cwd": "{control_root}"
     },
     "tg-read-smoke": {
-      "kind": "tg_read_smoke"
+      "argv": ["{control_root}/bin/telegram-golden-read-smoke", "--json"]
     }
   }
 }

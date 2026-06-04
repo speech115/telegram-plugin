@@ -95,6 +95,10 @@ def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
     assert report["routing"]["cli"] == "tg"
     assert "simple_today_read" in report["routing"]["first_path_for"]
     assert report["routing"]["fallback"] == "live_mcp_facade"
+    assert "tg_on_path" in report
+    assert report["routing"]["codex_hot_path_doc"] == (
+        "generated/adapters/codex/telegram-codex-entry.md"
+    )
 
 
 def test_fast_read_adapter_calls_task_shaped_tool() -> None:
@@ -115,7 +119,8 @@ def test_registry_includes_fast_read_adapter_component() -> None:
     registry = build_registry()
 
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
-    assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+    adapters = registry["components"]["fast_read_adapter"]["adapters"]
+    assert any(item.get("label") == "tg" and item.get("exists") for item in adapters)
 
 
 def test_agent_docs_sync_audit_passes() -> None:

@@ -227,6 +227,25 @@ def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
             }
         )
 
+    agent_preflight = summary.get("agent_preflight") if isinstance(summary.get("agent_preflight"), dict) else {}
+    preflight_violations = agent_preflight.get("preflight_violations")
+    max_preflight = thresholds.get("max_preflight_violations")
+    if (
+        isinstance(preflight_violations, int)
+        and isinstance(max_preflight, int)
+        and preflight_violations > max_preflight
+    ):
+        findings.append(
+            {
+                "id": "telemetry_preflight_violations",
+                "severity": "warn",
+                "message": (
+                    f"Recorded {preflight_violations} preflight violations "
+                    f"(doctor/get_me before first read); threshold is {max_preflight}."
+                ),
+            }
+        )
+
     prometheus_ports = thresholds.get("prometheus_metrics_ports")
     metrics_targets: list[dict[str, Any]] = []
     if isinstance(prometheus_ports, list):
@@ -352,11 +371,84 @@ def _raw_tree_file_count(raw: dict[str, Any], key: str) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def audit_golden_read_smoke(*, probe_only: bool = True) -> dict[str, Any]:
+    """Live read smoke against golden dialogs (probe=me only by default)."""
+
+    from .golden_read_smoke import run_golden_read_smoke
+
+    dialog_ids = ["saved-messages"] if probe_only else None
+    raw = run_golden_read_smoke(limit=1, timeout=25.0, dialog_ids=dialog_ids)
+    findings: list[dict[str, Any]] = []
+    if raw.get("status") != "ok":
+        for item in raw.get("findings", []):
+            if not isinstance(item, dict):
+                continue
+            findings.append(
+                {
+                    "id": "golden_read_smoke_failed",
+                    "severity": "warn" if probe_only else "blocking",
+                    "message": str(item.get("message") or "golden read smoke failed"),
+                    "dialog": item.get("dialog"),
+                }
+            )
+        if not findings:
+            findings.append(
+                {
+                    "id": "golden_read_smoke_failed",
+                    "severity": "warn" if probe_only else "blocking",
+                    "message": "Golden read smoke failed without details.",
+                }
+            )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "probe_only": probe_only,
+        "dialogs": raw.get("dialogs", []),
+        "manifest_path": raw.get("manifest_path"),
+    }
+
+
 def audit_fast_read_adapter() -> dict[str, Any]:
     """Verify the local read-only fast path used before mcporter for simple reads."""
 
+    import shutil
+
     findings: list[dict[str, Any]] = []
     adapters: list[dict[str, Any]] = []
+    tg_on_path = shutil.which("tg")
+    kit_wrapper = CONTROL_ROOT / "bin" / "tg"
+    if not tg_on_path:
+        findings.append(
+            {
+                "id": "tg_not_on_path",
+                "severity": "warn",
+                "message": (
+                    "tg is not on PATH; Codex agents may miss the fast read hot path. "
+                    "Run: ./bin/telegram-kit --local"
+                ),
+            }
+        )
+    elif kit_wrapper.is_file():
+        try:
+            path_tg = Path(tg_on_path).resolve()
+            kit_tg = kit_wrapper.resolve()
+            mcp_tg = Path(TG_CLI).resolve()
+        except OSError:
+            path_tg = kit_tg = mcp_tg = None
+        if path_tg and kit_tg and mcp_tg and path_tg not in {kit_tg, mcp_tg}:
+            findings.append(
+                {
+                    "id": "tg_path_shadows_kit",
+                    "severity": "warn",
+                    "message": (
+                        f"PATH tg ({path_tg}) is not the kit wrapper ({kit_tg}) or MCP tg ({mcp_tg}). "
+                        "Run: ./bin/telegram-kit --local"
+                    ),
+                    "path_tg": str(path_tg),
+                    "kit_tg": str(kit_tg),
+                }
+            )
 
     for label, path, usage_needle in (
         ("tg", TG_CLI, "tg"),
@@ -439,11 +531,13 @@ def audit_fast_read_adapter() -> dict[str, Any]:
         "findings": findings,
         "adapter": adapters[0] if adapters else {},
         "adapters": adapters,
+        "tg_on_path": tg_on_path,
         "routing": {
             "first_path_for": ["simple_today_read", "simple_recent_read", "dialog_search"],
             "cli": "tg",
             "fallback": "live_mcp_facade",
             "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
+            "codex_hot_path_doc": "generated/adapters/codex/telegram-codex-entry.md",
         },
     }
 
@@ -1290,6 +1384,7 @@ def _collect_components() -> dict[str, dict[str, Any]]:
         "plugin_drift": audit_plugin_drift(),
         "mcp_telemetry": audit_mcp_telemetry(),
         "fast_read_adapter": audit_fast_read_adapter(),
+        "golden_read_smoke": audit_golden_read_smoke(),
         "agent_docs_sync": audit_agent_docs_sync(),
         "release_gates": audit_release_gates(),
         "install_adapters": audit_install_adapters(),
