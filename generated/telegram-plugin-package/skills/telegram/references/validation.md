@@ -47,18 +47,17 @@ facade:
 - `find_dialog`
 - `collect_context`
 - `collect_dialog_context`
-- `prepare_send_message`
-- `prepare_reply_message`
-- `prepare_dialog_reply`
 - `prepare_media_inspection_manifest`
 - `download_media`
 - `download_media_batch`
 - `download_dialog_media`
-- `search_dialog_messages`
 - `telegram_confirmed_send`
+- `get_me`
+- `doctor_check`
 
-Legacy low-level read aliases (`read_today_dialog`, `read_recent_dialog`,
-`read_dialog`, `read_dialog_by_date`, `transcribe_voice`) are full-profile only.
+Legacy prepare/read/search aliases (`prepare_dialog_reply`, `draft_reply`,
+`search_dialog_messages`, `read_today_dialog`, …) and `transcribe_voice` are
+full-profile only.
 
 Power/write names beyond confirmed send are expected only when an explicit local
 Power/Write Mode is enabled:

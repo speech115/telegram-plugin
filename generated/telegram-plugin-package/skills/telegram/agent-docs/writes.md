@@ -10,8 +10,10 @@
 
 ## Preview → send
 
+- After `prepare_*`, open `human_approval_url` and click **Approve** before any send.
+- Prefer `telegram_confirmed_send(preview_id=...)` from the preview; legacy path needs
+  matching `confirmation_token` and exact text.
 - "Send it" is valid only in the **same turn** with unchanged target, reply id, and text.
-- Pass `confirmation_token` from the matching preview when provided.
 - If context changed the draft, prepare a new preview or ask the user.
 
 ## Intent matrix

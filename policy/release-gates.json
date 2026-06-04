@@ -1,0 +1,58 @@
+{
+  "modes": {
+    "local": [
+      "managed-systems",
+      "mcp-surface",
+      "plugin-drift",
+      "release-gates",
+      "install-adapters",
+      "docs-audit",
+      "write-safety-smoke",
+      "pytest",
+      "tg-read-smoke"
+    ],
+    "ci": [
+      "agent-docs-check",
+      "docs-audit",
+      "pytest"
+    ]
+  },
+  "gates": {
+    "managed-systems": {
+      "argv": ["{control_root}/bin/telegram-managed-systems", "--json"]
+    },
+    "mcp-surface": {
+      "argv": ["{control_root}/bin/telegram-mcp-surface", "--json"]
+    },
+    "plugin-drift": {
+      "argv": ["{control_root}/bin/telegram-plugin-drift", "--json"]
+    },
+    "release-gates": {
+      "argv": ["{control_root}/bin/telegram-release-gates", "--json"]
+    },
+    "install-adapters": {
+      "argv": ["{control_root}/bin/telegram-install-adapters", "--json"]
+    },
+    "docs-audit": {
+      "argv": ["{control_root}/bin/telegram-docs-audit", "--json"]
+    },
+    "agent-docs-check": {
+      "argv": [
+        "{control_root}/bin/telegram-agent-docs-sync",
+        "--check",
+        "--no-restart",
+        "--json"
+      ]
+    },
+    "write-safety-smoke": {
+      "argv": ["{mcp_repo}/bin/telegram-write-safety-smoke", "--json"]
+    },
+    "pytest": {
+      "argv": ["python3", "-m", "pytest", "-q"],
+      "cwd": "{control_root}"
+    },
+    "tg-read-smoke": {
+      "kind": "tg_read_smoke"
+    }
+  }
+}

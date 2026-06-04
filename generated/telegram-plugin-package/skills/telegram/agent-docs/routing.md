@@ -9,7 +9,13 @@
   Only report live Telegram unavailable after both the exposed facade path and
   the bounded local MCP shortcut fail. Do not replace a current-state answer
   with mirror or archive evidence.
-- If the host ships a local read-only adapter for simple today reads, use it before `mcporter` discovery. Fall back to `telegram_read` when the adapter is absent or fails.
+- On hosts with the local `tg` CLI on PATH, use it first for live reads (no
+  `@telegram`, no plugin bootstrap):
+  - `tg read today <chat> --limit 30 --json`
+  - `tg read recent <chat> --limit 30 --json`
+  - `tg search <chat> "<query>" --limit 20 --json`
+- Fallback shortcut: `telegram-fast-read-today`. Use MCP facade for writes,
+  media inspection, subscriber export, fuzzy identity work, or complete-context paging.
 - Scoped today reads: one pass with `telegram_read(day=..., mode="fast", limit≤30)`. Reuse `chat.dialog_ref`. Near local midnight, also check the previous UTC day when the user gives a start time.
 - Quick orientation: `collect_dialog_context(mode="fast", recent_limit=15-30, include_pinned=false)`.
 - Date-specific today reads: use `telegram_read(day=...)` instead of manually computing today's range.
@@ -47,7 +53,7 @@
 
 - Do not call `resolve_dialog` after a facade read already returned `chat.dialog_ref`.
 - Do not follow `collect_dialog_context` with another broad read for the same window unless needed parameters were missing.
-- Do not follow `prepare_dialog_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
+- Do not follow `telegram_prepare_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
 - Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `telegram_search` first.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.
 - Do not page just because `has_more_before=true`; page only when the user asked for completeness or current evidence is insufficient.

@@ -128,9 +128,13 @@ Run the bundled pre-release checks:
 ./bin/telegram-release-gate
 ```
 
-This runs managed-systems, MCP surface, plugin drift, docs audit, and unit
-tests. Use `./bin/telegram-release-gate --ci` in GitHub Actions (docs audit +
-unit tests only). Integration smokes stay manual: `python3 -m pytest -q -m integration`.
+Gate order and commands are defined in `policy/release-gates.json`; the shell
+entrypoint is a thin wrapper over `telegram_control_plane.release_gate`.
+
+Local mode runs managed-systems, MCP surface, plugin drift, docs audit, unit
+tests, and live smokes. Use `./bin/telegram-release-gate --ci` in GitHub Actions
+(agent-docs check, docs audit, pytest only). Integration smokes stay manual:
+`python3 -m pytest -q -m integration`.
 
 `telegram-doctor` includes the docs audit via the `docs` registry component.
 

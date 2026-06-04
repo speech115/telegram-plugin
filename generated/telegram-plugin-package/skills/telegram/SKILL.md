@@ -20,7 +20,8 @@ operator/debug-only and not a normal user workflow.
 
 - **No accidental writes:** never call `send_dialog_message` or
   `reply_in_dialog` in default mode. Use `prepare_send_message`,
-  `prepare_reply_message`, or `telegram_prepare_reply` first, then
+  `prepare_reply_message`, or `telegram_prepare_reply` first, then open
+  `human_approval_url` in the browser and click **Approve**, then
   `telegram_confirmed_send` with the returned `confirmation_token` and the exact
   preview text.
 - **Stable identity before writes:** aliases, first names, pronouns, and "the
@@ -53,10 +54,17 @@ Before a live task, prefer MCP resources over loading this full skill:
 Confirm the current host exposes Telegram MCP facade tools or aliases. Prefer
 canonical facade names, but use app-style aliases when they are the only exposed
 option. For simple low-stakes local reads such as
-"прочитай переписку с @user за сегодня", if the chat tool surface does not expose
-the facade but the current host provides a local read-only fast-path adapter,
-use that configured adapter first. This portable plugin package intentionally
-does not hardcode machine-local adapter paths.
+"прочитай переписку с @user за сегодня", if the host has the local `tg` CLI on
+PATH, run it first (live only, no `@telegram`, no plugin bootstrap):
+
+```bash
+tg read today <chat> --limit 30 --json
+tg read recent <chat> --limit 30 --json
+tg search <chat> "<query>" --limit 20 --json
+```
+
+Fallback: `telegram-fast-read-today` or MCP `telegram_read` with `mode="fast"`.
+This portable plugin package intentionally does not hardcode machine-local adapter paths.
 
 If both the exposed facade path and the local shortcut are unavailable, stop and
 report the live-tool gap; do not route a current-state task to mirror/archive.
@@ -79,23 +87,20 @@ Prefer the task-shaped facade tools exposed by Telegram MCP:
 - `telegram_export_members` — only with `pii_acknowledged=true`
 - `resolve_dialog` / `find_dialog`
 - `collect_context` / `collect_dialog_context`
-- `prepare_send_message` / `prepare_reply_message` / `prepare_dialog_reply`
 - `prepare_media_inspection_manifest`
 - `download_media` / `download_media_batch` / `download_dialog_media`
 
-Avoid default use of low-level read aliases (`read_today_dialog`, `read_recent_dialog`,
-`read_dialog`, `read_dialog_by_date`) and `transcribe_voice` unless the host only exposes those names.
+Avoid default use of legacy aliases (`read_today_dialog`, `prepare_dialog_reply`,
+`draft_reply`, `search_dialog_messages`, `prepare_send_message`, …), low-level read
+aliases, and `transcribe_voice` unless the host only exposes those names (full profile).
 
 Use `telegram_confirmed_send` only with a fresh `confirmation_token` returned
 by the matching preview. Raw `send_dialog_message` / `reply_in_dialog` are
 Power/Write Mode only.
 
-When exposed, use these preview/media helpers before writes or media-heavy work:
-
-- `prepare_send_message`
-- `prepare_reply_message`
-- `prepare_media_inspection_manifest`
-- `download_dialog_media`
+When exposed on full/admin profile, legacy preview aliases exist; on default surface
+use `telegram_prepare_reply` and `prepare_media_inspection_manifest` before writes
+or media-heavy work.
 
 Use lower-level Telegram tools only when the current host exposes them and the
 facade cannot express the request. Do not default users to direct Telethon
@@ -156,8 +161,8 @@ telecrawl, and source-label details.
   `telegram-fast-read-today` before MCP discovery for that path.
 - Scoped one-on-one "за сегодня с HH:MM" reads -> resolve once, read today's local calendar day with `include_voice_transcription=false`, and if the requested start time is near local midnight also check the previous UTC day. Filter the result in the answer; do not inspect media, page, or run repo/vault checks unless text evidence requires it.
 - Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `telegram_read` with `mode="full"` or `collect_dialog_context(date_from=..., date_to=..., mode="full")`, include voice transcription, and page while completeness requires it.
-- "найди сообщение про X" in a known dialog -> `search_dialog_messages` first, then fetch surrounding context only for important matches.
-- "подготовь ответ", "что ответить" -> `prepare_dialog_reply` first; fetch more context only when warnings or evidence gaps require it.
+- "найди сообщение про X" in a known dialog -> `telegram_search` first, then fetch surrounding context only for important matches.
+- "подготовь ответ", "что ответить" -> `telegram_prepare_reply` first; fetch more context only when warnings or evidence gaps require it.
 - "отправь", "reply/send" -> use preview helpers when useful, then write only with explicit user write intent and unambiguous target/content.
 - "что на фото/стикерах/видео" -> collect scoped message ids, use media manifest if available, then download and inspect actual files.
 - "список подписчиков", "всех подписчиков", "members/subscribers канала" -> run the subscriber exporter; do not stop at MCP `get_participants`.
@@ -170,7 +175,7 @@ fast-path defaults, paging rules, and double-work avoidance.
 - **Writes:** `send_dialog_message` and `reply_in_dialog` require explicit user write intent, unambiguous dialog target, unambiguous message text or reply id, and a fresh `confirmation_token` from the matching preview tool.
 - **Identity resolution:** Pronouns, first names, aliases, or "the last chat" are not enough for a write. Resolve the dialog, carry forward the canonical `dialog_ref`, and only send when the resolved target still matches the user's intent.
 - **Fuzzy targets:** If dialog resolution returns multiple candidates, fuzzy display-name matches, homographs, or no stable username/peer id, do not send. Ask for an exact `@username`, phone/contact, numeric peer id, or another stable identifier.
-- **Previews:** `prepare_dialog_reply`, `prepare_send_message`, and `prepare_reply_message` never send and do not create permission to send later. A separate explicit user instruction is still required before a write call.
+- **Previews:** `telegram_prepare_reply` (and legacy prepare aliases on full profile) never send and do not create permission to send later. A separate explicit user instruction is still required before a write call.
 - **Preview-to-send:** "Send it" after a preview is valid only in the same turn
   and only if the resolved target, `dialog_ref` or peer id, reply id when
   relevant, and exact message text are unchanged. If the preview result exposes

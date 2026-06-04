@@ -9,10 +9,13 @@
   Only report live Telegram unavailable after both the exposed facade path and
   the bounded local MCP shortcut fail. Do not replace a current-state answer
   with mirror or archive evidence.
-- On the local Sereja host, the supported simple-read shortcut is
-  `telegram-fast-read-today`. Use it before `mcporter` only for simple read-only
-  today reads; fall back to the live facade for writes, media inspection,
-  subscriber export, fuzzy identity work, or complete-context paging.
+- On hosts with the local `tg` CLI on PATH, use it first for live reads (no
+  `@telegram`, no plugin bootstrap):
+  - `tg read today <chat> --limit 30 --json`
+  - `tg read recent <chat> --limit 30 --json`
+  - `tg search <chat> "<query>" --limit 20 --json`
+- Fallback shortcut: `telegram-fast-read-today`. Use MCP facade for writes,
+  media inspection, subscriber export, fuzzy identity work, or complete-context paging.
 - Scoped one-on-one reads like "прочитай переписку с @user за сегодня с HH:MM"
   should complete in one fast pass: read the requested local calendar day with
   `include_voice_transcription=false`, `include_sender_name=false`, and a
@@ -51,7 +54,7 @@ When exposed by the current host, app-style aliases are thin wrappers over the d
 - `find_dialog` -> `resolve_dialog`
 - `read_dialog` -> `telegram_read` when `day` is set, otherwise recent dialog read
 - `collect_context` -> `collect_dialog_context`
-- `draft_reply` -> `prepare_dialog_reply`
+- Legacy (full profile only): `draft_reply` -> `prepare_dialog_reply` -> prefer `telegram_prepare_reply` on default surface
 - `reply_message` -> `reply_in_dialog`
 
 Prefer canonical facade names in agent routing unless the host exposes only the aliases.
@@ -60,7 +63,7 @@ Prefer canonical facade names in agent routing unless the host exposes only the 
 
 - Do not call `resolve_dialog` after a facade read already returned `chat.dialog_ref`.
 - Do not follow `collect_dialog_context` with another broad read for the same window unless needed parameters were missing.
-- Do not follow `prepare_dialog_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
+- Do not follow `telegram_prepare_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
 - Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `search_dialog_messages` first.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.
 - Do not page just because `has_more_before=true`; page only when the user asked for completeness or current evidence is insufficient.
