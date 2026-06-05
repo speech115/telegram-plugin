@@ -1,0 +1,82 @@
+{
+  "title": "Telegram MCP",
+  "uid": "telegram-mcp-local",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Tool calls / min",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (tool, status) (rate(telegram_mcp_tool_calls_total[5m])) * 60",
+          "legendFormat": "{{tool}} {{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "telegram_read p95 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(telegram_mcp_tool_duration_ms_bucket{tool=\"telegram_read\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cache hit rate",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(telegram_mcp_cache_access_total{outcome=\"hit\"}[30m])) / clamp_min(sum(rate(telegram_mcp_cache_access_total[30m])), 1)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Events by source",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (source) (rate(telegram_mcp_events_total[5m])) * 60",
+          "legendFormat": "{{source}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Preflight violations / h",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum(rate(telegram_mcp_events_total{event=\"preflight_violation\"}[1h])) * 3600"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Seconds to first read (gauge)",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "targets": [
+        {
+          "expr": "telegram_mcp_runtime_gauge{gauge=\"agent_seconds_to_first_read\"}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "First-read events / min",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum(rate(telegram_mcp_events_total{event=\"seconds_to_first_read\"}[5m])) * 60"
+        }
+      ]
+    }
+  ]
+}

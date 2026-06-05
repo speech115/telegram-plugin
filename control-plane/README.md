@@ -20,6 +20,8 @@ desired policy.
 ./bin/telegram-mirror-preflight --json
 ./bin/telegram-telecrawl-status --json
 ./bin/telegram-repair-plan --json
+./bin/telegram-repair-plan-apply --json
+./bin/telegram-telemetry-status --json
 ./bin/telegram-docs-audit --json
 ./bin/telegram-release-gates --json
 ./bin/telegram-install-adapters --json
@@ -35,22 +37,33 @@ generated/telegram-plugin-package
 ```
 
 This directory is the editable package source for local materialization. The
-In this monorepo the canonical plugin source is `../plugin`. On a private host
-you may also keep a marketplace symlink alias, but audits treat
-`TELEGRAM_PLUGIN_SOURCE` as the package root.
+marketplace entrypoint `/Users/sereja/plugins/telegram` is only a symlink alias
+to this package root.
 
 To build a fresh package from an independent staging source into an empty output
 directory, use:
 
 ```bash
-../mcp/bin/build-plugin-package \
+/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/bin/build-plugin-package \
   --source-dir /path/to/telegram-plugin-staging \
   --output-dir /path/to/empty/telegram-plugin-package \
   --json
 ```
 
+`build-plugin-package` regenerates `telegram-mcp/docs/agent/` from
+`skills/telegram/agent-docs/manifest.json` and skill `references/` before copying
+files. To check or refresh docs without packaging:
+
+```bash
+/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/bin/sync-agent-docs \
+  --plugin-dir /Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package \
+  --check --json
+```
+
 The builder fails closed if the package would contain private paths, `.env`,
-`.session`, `__pycache__`, or `*.pyc` artifacts.
+`.session`, `__pycache__`, or `*.pyc` artifacts. The local marketplace still
+enters through `/Users/sereja/plugins/telegram`, but that path is now a symlink
+alias to the portable package root, not the canonical artifact source.
 
 After rebuilding the package, materialize Codex's local plugin cache with:
 
@@ -65,6 +78,8 @@ codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-lo
 - `MAP.md` explains where every Telegram-related system lives.
 - `PLAN.md` records the current control-plane rollout strategy.
 - `PROTECTION.md` defines the cleanup and deletion safety contract.
+- `docs/telegram-kit-explainer.html` is a self-contained Russian explainer for
+  how the Telegram agent kit fits together (open locally in a browser).
 
 `telegram-doctor --json` writes the runtime-only
 `generated/observed-registry.json` snapshot and exits non-zero while blocking
@@ -74,6 +89,14 @@ contains live PIDs, timestamps, and host inventory state.
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
 applying changes.
+
+`telegram-repair-plan-apply --json` runs only allowlisted safe apply steps (today:
+`plugin-cache-materialize` when drift reports installer-ready cache lag).
+
+`telegram-telemetry-status --json` summarizes daily JSONL logs, checks Prometheus
+`/metrics` targets (9109/9110), and applies thresholds from
+`policy/telemetry/alert-thresholds.json`. Import `policy/telemetry/grafana-dashboard.json`
+into Grafana and include `policy/telemetry/prometheus-scrape.yml` in Prometheus.
 
 ## Surface Contract
 
@@ -107,9 +130,13 @@ Run the bundled pre-release checks:
 ./bin/telegram-release-gate
 ```
 
-This runs managed-systems, MCP surface, plugin drift, docs audit, and unit
-tests. Use `./bin/telegram-release-gate --ci` in GitHub Actions (docs audit +
-unit tests only). Integration smokes stay manual: `python3 -m pytest -q -m integration`.
+Gate order and commands are defined in `policy/release-gates.json`; the shell
+entrypoint is a thin wrapper over `telegram_control_plane.release_gate`.
+
+Local mode runs managed-systems, MCP surface, plugin drift, docs audit, unit
+tests, and live smokes. Use `./bin/telegram-release-gate --ci` in GitHub Actions
+(agent-docs check, docs audit, pytest only). Integration smokes stay manual:
+`python3 -m pytest -q -m integration`.
 
 `telegram-doctor` includes the docs audit via the `docs` registry component.
 

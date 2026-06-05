@@ -6,6 +6,11 @@ import subprocess
 import pytest
 
 from telegram_control_plane.audits import audit_mirror_preflight, build_registry
+from telegram_control_plane.surface_contract import (
+    SURFACE_CONTRACT_PATH,
+    WRITE_POLICY_PATH,
+    load_surface_contract_policy,
+)
 
 
 pytestmark = pytest.mark.integration
@@ -35,6 +40,12 @@ def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
 
 
 def test_live_mcporter_default_surface_has_no_write_tools() -> None:
+    policy = load_surface_contract_policy(
+        str(SURFACE_CONTRACT_PATH),
+        str(WRITE_POLICY_PATH),
+    )
+    assert len(policy.approved_facade_tools) == 16
+
     completed = subprocess.run(
         ["mcporter", "list", "telegram"],
         check=True,
@@ -44,14 +55,8 @@ def test_live_mcporter_default_surface_has_no_write_tools() -> None:
     )
 
     output = completed.stdout
-    for name in [
-        "prepare_media_inspection_manifest",
-        "download_media",
-        "download_media_batch",
-        "download_dialog_media",
-        "transcribe_voice",
-    ]:
-        assert f"function {name}(" in output
+    for name in sorted(policy.approved_facade_tools):
+        assert f"function {name}(" in output, f"missing default facade tool: {name}"
     for name in [
         "send_dialog_message",
         "reply_in_dialog",
@@ -60,8 +65,11 @@ def test_live_mcporter_default_surface_has_no_write_tools() -> None:
         "reply_to_message",
         "delete_messages",
         "create_channel",
+        "transcribe_voice",
+        "read_today_dialog",
+        "search_dialog_messages",
     ]:
-        assert f"function {name}(" not in output
+        assert f"function {name}(" not in output, f"unexpected tool on default surface: {name}"
 
 
 def test_live_fast_read_adapter_reads_saved_messages() -> None:

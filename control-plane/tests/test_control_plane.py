@@ -16,7 +16,8 @@ from telegram_control_plane.audits import (
     build_registry,
 )
 import telegram_control_plane.planner as planner
-from telegram_control_plane.planner import build_repair_plan
+from telegram_control_plane.audit_remediation import apply_repair_plan, build_repair_plan
+from telegram_control_plane import audit_remediation as remediation
 from telegram_control_plane.paths import PLUGIN_SOURCE
 
 
@@ -88,18 +89,44 @@ def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
     report = audits.audit_fast_read_adapter()
 
     assert report["status"] == "ok"
+    assert report["adapter"]["label"] == "tg"
     assert report["adapter"]["exists"] is True
     assert report["adapter"]["executable"] is True
-    assert report["adapter"]["command"][-1] == "--help"
-    assert report["routing"]["first_path_for"] == ["simple_today_read"]
+    assert report["routing"]["cli"] == "tg"
+    assert "simple_today_read" in report["routing"]["first_path_for"]
     assert report["routing"]["fallback"] == "live_mcp_facade"
+    assert "tg_on_path" in report
+    assert report["routing"]["codex_hot_path_doc"] == (
+        "generated/adapters/codex/telegram-codex-entry.md"
+    )
+
+
+def test_fast_read_adapter_calls_task_shaped_tool() -> None:
+    wrapper = (Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today").read_text(
+        encoding="utf-8"
+    )
+    module = (
+        Path(__file__).resolve().parents[1].parents[1]
+        / "families/telegram/telegram-digest/telegram-mcp/src/telegram_mcp/fast_read_today.py"
+    ).read_text(encoding="utf-8")
+
+    assert "telegram_mcp.fast_read_today" in wrapper
+    assert '"telegram_read"' in module
+    assert '"read_today_dialog"' not in module
 
 
 def test_registry_includes_fast_read_adapter_component() -> None:
     registry = build_registry()
 
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
-    assert registry["components"]["fast_read_adapter"]["adapter"]["exists"] is True
+    adapters = registry["components"]["fast_read_adapter"]["adapters"]
+    assert any(item.get("label") == "tg" and item.get("exists") for item in adapters)
+
+
+def test_agent_docs_sync_audit_passes() -> None:
+    report = audits.audit_agent_docs_sync()
+
+    assert report["status"] == "ok", report.get("findings")
 
 
 def test_release_gates_audit_passes() -> None:
@@ -112,7 +139,7 @@ def test_install_adapters_audit_is_portable() -> None:
     report = audits.audit_install_adapters()
 
     assert report["status"] == "ok", report.get("findings")
-    assert report["planned_files"] >= 4
+    assert report["planned_files"] >= 8
 
 
 def test_registry_includes_docs_component() -> None:
@@ -158,7 +185,10 @@ def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) 
             ],
         }
 
+    import telegram_control_plane.telecrawl_gap as telecrawl_gap
+
     monkeypatch.setattr(audits, "TELECRAWL_DEFAULT_DB", db)
+    monkeypatch.setattr(telecrawl_gap, "TELECRAWL_DEFAULT_DB", db)
     monkeypatch.setattr(audits, "_safe_read_telecrawl_json", fake_telecrawl_json)
 
     report = audits.audit_telecrawl()
@@ -204,7 +234,9 @@ def test_telecrawl_access_denied_gaps_are_terminal_not_retryable(tmp_path: Path)
             """
         )
 
-    gaps = audits._telecrawl_import_gaps(db, non_retryable_error_types={"ChannelPrivateError"})
+    from telegram_control_plane.telecrawl_gap import import_gaps
+
+    gaps = import_gaps(db, non_retryable_error_types={"ChannelPrivateError"})
 
     assert gaps["errors"] == 3
     assert gaps["retryable_errors"] == 1
@@ -428,22 +460,26 @@ def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path)
 
 
 def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
-    def fake_load_json(path: Path):
-        if str(path).endswith("managed-systems.json"):
-            return {
-                "systems": [
-                    {
-                        "id": "telegram-mirror",
-                        "role": "mirror_recovery_candidate",
-                        "path": "/definitely/missing/telegram-mirror",
-                        "expected_kind": "directory",
-                        "deletion_protection": "blocking",
-                    }
-                ]
-            }
-        return {}
+    import telegram_control_plane.managed_systems as managed_systems
 
-    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    policy = {
+        "systems": [
+            {
+                "id": "telegram-mirror",
+                "role": "mirror_recovery_candidate",
+                "path": "/definitely/missing/telegram-mirror",
+                "expected_kind": "directory",
+                "deletion_protection": "blocking",
+            }
+        ],
+        "topology": {"bindings": {}, "derived": {}},
+        "deletion_policy": {},
+    }
+    monkeypatch.setattr(
+        managed_systems,
+        "load_managed_systems_policy",
+        lambda *_args, **_kwargs: policy,
+    )
 
     report = audit_managed_systems()
 
@@ -452,22 +488,26 @@ def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
 
 
 def test_managed_systems_warns_for_missing_warn_only_path(monkeypatch) -> None:
-    def fake_load_json(path: Path):
-        if str(path).endswith("managed-systems.json"):
-            return {
-                "systems": [
-                    {
-                        "id": "telegram-plugin-cache",
-                        "role": "installed_plugin_cache",
-                        "path": "/definitely/missing/telegram-plugin-cache",
-                        "expected_kind": "directory",
-                        "deletion_protection": "warn",
-                    }
-                ]
-            }
-        return {}
+    import telegram_control_plane.managed_systems as managed_systems
 
-    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    policy = {
+        "systems": [
+            {
+                "id": "telegram-plugin-cache",
+                "role": "installed_plugin_cache",
+                "path": "/definitely/missing/telegram-plugin-cache",
+                "expected_kind": "directory",
+                "deletion_protection": "warn",
+            }
+        ],
+        "topology": {"bindings": {}, "derived": {}},
+        "deletion_policy": {},
+    }
+    monkeypatch.setattr(
+        managed_systems,
+        "load_managed_systems_policy",
+        lambda *_args, **_kwargs: policy,
+    )
 
     report = audit_managed_systems()
 
@@ -479,23 +519,27 @@ def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch
     wrong_root = tmp_path / "telegram-mirror"
     wrong_root.mkdir()
 
-    def fake_load_json(path: Path):
-        if str(path).endswith("managed-systems.json"):
-            return {
-                "systems": [
-                    {
-                        "id": "telegram-mirror",
-                        "role": "mirror_recovery_candidate",
-                        "path": str(wrong_root),
-                        "expected_kind": "directory",
-                        "required_markers": ["AGENTS.md", "scripts/telegram_mirror_allowlist_report.py"],
-                        "deletion_protection": "blocking",
-                    }
-                ]
-            }
-        return {}
+    import telegram_control_plane.managed_systems as managed_systems
 
-    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    policy = {
+        "systems": [
+            {
+                "id": "telegram-mirror",
+                "role": "mirror_recovery_candidate",
+                "path": str(wrong_root),
+                "expected_kind": "directory",
+                "required_markers": ["AGENTS.md", "scripts/telegram_mirror_allowlist_report.py"],
+                "deletion_protection": "blocking",
+            }
+        ],
+        "topology": {"bindings": {}, "derived": {}},
+        "deletion_policy": {},
+    }
+    monkeypatch.setattr(
+        managed_systems,
+        "load_managed_systems_policy",
+        lambda *_args, **_kwargs: policy,
+    )
 
     report = audit_managed_systems()
 
@@ -511,23 +555,27 @@ def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path:
     actual.mkdir()
     link.symlink_to(actual, target_is_directory=True)
 
-    def fake_load_json(path: Path):
-        if str(path).endswith("managed-systems.json"):
-            return {
-                "systems": [
-                    {
-                        "id": "telegram-plugin-source",
-                        "role": "local_marketplace_plugin_alias",
-                        "path": str(link),
-                        "expected_kind": "symlink",
-                        "expected_resolved": str(expected),
-                        "deletion_protection": "blocking",
-                    }
-                ]
-            }
-        return {}
+    import telegram_control_plane.managed_systems as managed_systems
 
-    monkeypatch.setattr(audits, "load_json", fake_load_json)
+    policy = {
+        "systems": [
+            {
+                "id": "telegram-plugin-source",
+                "role": "local_marketplace_plugin_alias",
+                "path": str(link),
+                "expected_kind": "symlink",
+                "expected_resolved": str(expected),
+                "deletion_protection": "blocking",
+            }
+        ],
+        "topology": {"bindings": {}, "derived": {}},
+        "deletion_policy": {},
+    }
+    monkeypatch.setattr(
+        managed_systems,
+        "load_managed_systems_policy",
+        lambda *_args, **_kwargs: policy,
+    )
 
     report = audit_managed_systems()
 
@@ -666,8 +714,11 @@ def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
         "telecrawl": {
             "status": "warn",
             "findings": [],
+            "wrapper": "/bin/telecrawl-archive",
+            "gap_policy": {"is_live": False},
             "accounts": {"accounts": [{"active": 1}, {"active": 0}]},
             "default_archive_status": {"archive_ready": True, "import_gaps": {"errors": 3}},
+            "freshness": {"generated_at": "2026-06-04T00:00:00Z"},
         },
     })
 
@@ -677,6 +728,7 @@ def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
     assert "sessions" not in registry["components"]["sessions"]
     assert "accounts" not in registry["components"]["telecrawl"]
     assert "default_archive_status" not in registry["components"]["telecrawl"]
+    assert "gap_policy" in registry["components"]["telecrawl"]
     assert "runtime_state" not in registry["components"]["telegram_mirror"]
     assert "managed_systems" in registry["components"]
 
@@ -699,6 +751,13 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
             "status": "warn",
             "findings": [{"id": "telecrawl_known_gaps", "severity": "warn"}],
         },
+        "source_routing": {"status": "ok", "findings": []},
+        "runtime_inventory": {"status": "ok", "findings": [], "summary": {}},
+        "mcp_telemetry": {"status": "ok", "findings": []},
+        "fast_read_adapter": {"status": "ok", "findings": []},
+        "agent_docs_sync": {"status": "ok", "findings": []},
+        "release_gates": {"status": "ok", "findings": []},
+        "install_adapters": {"status": "ok", "findings": []},
     }
     monkeypatch.setattr(audits, "_collect_components", lambda: components)
 
@@ -717,12 +776,14 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
         "sessions",
         "telegram_mirror",
         "telecrawl",
+        "source_routing",
+        "runtime_inventory",
     }.issubset(registry["components"])
 
 
 def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
     monkeypatch.setattr(
-        planner,
+        remediation,
         "build_registry",
         lambda: {
             "status": "fail",
@@ -746,12 +807,14 @@ def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
     assert step["status"] == "blocked_by_current_surface"
     assert "send_file" in step["reason"]
     assert step["apply_commands"] == [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
-    assert str(planner.MCP_REPO / "src/telegram_mcp/tools/media_tools.py") in step["touched_paths"]
+    from telegram_control_plane.paths import MCP_REPO
+
+    assert str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py") in step["touched_paths"]
 
 
 def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
     monkeypatch.setattr(
-        planner,
+        remediation,
         "build_registry",
         lambda: {
             "status": "warn",
@@ -787,7 +850,7 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
 
 def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
     monkeypatch.setattr(
-        planner,
+        remediation,
         "build_registry",
         lambda: {
             "status": "warn",
@@ -821,6 +884,70 @@ def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
     assert by_id["mirror-runtime-promotion-policy"]["status"] == "needs_runtime_exports"
     assert "0/36 ready, 36 missing" in by_id["mirror-runtime-promotion-policy"]["reason"]
     assert [
-        str(planner.CONTROL_ROOT / "bin/telegram-mirror-preflight"),
+        "/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight",
         "--json",
     ] in by_id["mirror-runtime-promotion-policy"]["dry_run_commands"]
+
+
+def test_repair_plan_materialize_step_is_auto_apply_ready(monkeypatch) -> None:
+    monkeypatch.setattr(
+        remediation,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {"components": {"plugin_drift": "warn"}},
+            "findings": [
+                {
+                    "component": "plugin_drift",
+                    "id": "plugin_cache_needs_materialization",
+                    "severity": "warn",
+                    "materialize_command": ["/tmp/materialize", "--json"],
+                }
+            ],
+            "components": {},
+        },
+    )
+
+    plan = build_repair_plan()
+    by_id = {step["id"]: step for step in plan["steps"]}
+    step = by_id["plugin-cache-materialize"]
+    assert step["status"] == "ready_to_apply"
+    assert step["auto_apply_allowed"] is True
+    assert step["apply_commands"] == [["/tmp/materialize", "--json"]]
+    assert "plugin-cache-materialize" in plan["recommended_order"]
+
+
+def test_apply_repair_plan_runs_only_auto_apply_steps(monkeypatch) -> None:
+    monkeypatch.setattr(
+        remediation,
+        "build_registry",
+        lambda: {
+            "status": "warn",
+            "summary": {"components": {"plugin_drift": "warn"}},
+            "findings": [
+                {
+                    "component": "plugin_drift",
+                    "id": "plugin_cache_needs_materialization",
+                    "severity": "warn",
+                    "materialize_command": ["materialize", "--json"],
+                }
+            ],
+            "components": {},
+        },
+    )
+    runs: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        runs.append(command)
+        class Result:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(remediation.subprocess, "run", fake_run)
+
+    report = apply_repair_plan(verify=False)
+    assert report["status"] == "ok"
+    assert runs == [["materialize", "--json"]]

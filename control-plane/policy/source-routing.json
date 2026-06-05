@@ -1,7 +1,77 @@
 {
-  "live_current": "telegram-mcp profiles",
-  "user_facing_behavior": "plugin source and installed cache parity",
-  "historical_mirror": "telegram-mirror only after runtime preflight",
-  "historical_archive": "telecrawl account-scoped archive snapshots",
-  "runtime_state": "launchd inventory and session registry inputs"
+  "schema_version": 1,
+  "sources": {
+    "live_mcp": {
+      "label": "live_mcp",
+      "backend": "telegram-mcp",
+      "description": "Current Telegram state: today, latest, recent, send/reply, media, voice.",
+      "intent_keywords": [
+        "today",
+        "recent",
+        "latest",
+        "current",
+        "live",
+        "now",
+        "сегодня",
+        "новое",
+        "последн",
+        "сейчас"
+      ],
+      "task_keywords": [
+        "send",
+        "reply",
+        "media",
+        "voice",
+        "draft",
+        "photo",
+        "video",
+        "отправ",
+        "ответ",
+        "голос"
+      ],
+      "tools_first": ["tg", "telegram_read", "telegram_search", "telegram_prepare_reply"],
+      "never_for_intents": []
+    },
+    "telecrawl_archive": {
+      "label": "telecrawl_archive",
+      "backend": "telecrawl",
+      "description": "Historical lexical search over account-scoped archive snapshots.",
+      "intent_keywords": ["archive", "historical", "архив", "истор", "прошл"],
+      "task_keywords": ["search-all", "coverage", "import gap"],
+      "tools_first": ["telecrawl-archive"],
+      "requires_archive_ready": true,
+      "blocks_completeness_claims_when_gaps": true
+    },
+    "telegram_mirror": {
+      "label": "telegram_mirror",
+      "backend": "telegram-mirror",
+      "description": "Allowlisted mirror exports and recovery-scoped historical context.",
+      "intent_keywords": ["mirror", "allowlist", "зеркал", "recovery"],
+      "task_keywords": ["export", "watcher", "preflight"],
+      "requires_mirror_preflight": true
+    }
+  },
+  "rules": {
+    "route_current_latest_today_send_reply_media_to": "live_mcp",
+    "route_historical_lexical_to": "telecrawl_archive",
+    "route_allowlisted_mirror_to": "telegram_mirror",
+    "never_route_live_intents_to": ["telecrawl_archive"]
+  },
+  "matchers": {
+    "live_intent": "\\b(today|recent|latest|current|live|now|сегодня|новое|последн|сейчас)\\b",
+    "live_task": "\\b(send|reply|media|voice|draft|photo|video|отправ|ответ|голос)\\b",
+    "archive_intent": "\\b(archive|historical|архив|истор|прошл|search-all|coverage)\\b",
+    "mirror_intent": "\\b(mirror|allowlist|зеркал|recovery|preflight)\\b"
+  },
+  "claims": {
+    "negative_archive_results": "no matches in this archive coverage",
+    "never_infer_absence_from_archive_only": true
+  },
+  "operator_notes": {
+    "live_current": "telegram-mcp profiles",
+    "user_facing_behavior": "plugin source and installed cache parity",
+    "historical_mirror": "telegram-mirror only after runtime preflight",
+    "historical_archive": "telecrawl account-scoped archive snapshots",
+    "runtime_state": "launchd inventory and session registry inputs"
+  }
 }
