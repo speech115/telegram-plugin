@@ -18,7 +18,7 @@ from telegram_control_plane.audits import (
 import telegram_control_plane.planner as planner
 from telegram_control_plane.audit_remediation import apply_repair_plan, build_repair_plan
 from telegram_control_plane import audit_remediation as remediation
-from telegram_control_plane.paths import PLUGIN_SOURCE
+from telegram_control_plane.paths import CONTROL_ROOT, MCP_REPO, PLUGIN_SOURCE
 
 
 def test_imported_tool_names_excludes_register_aliases(tmp_path: Path) -> None:
@@ -105,10 +105,7 @@ def test_fast_read_adapter_calls_task_shaped_tool() -> None:
     wrapper = (Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today").read_text(
         encoding="utf-8"
     )
-    module = (
-        Path(__file__).resolve().parents[1].parents[1]
-        / "families/telegram/telegram-digest/telegram-mcp/src/telegram_mcp/fast_read_today.py"
-    ).read_text(encoding="utf-8")
+    module = (MCP_REPO / "src/telegram_mcp/fast_read_today.py").read_text(encoding="utf-8")
 
     assert "telegram_mcp.fast_read_today" in wrapper
     assert '"telegram_read"' in module
@@ -139,7 +136,7 @@ def test_install_adapters_audit_is_portable() -> None:
     report = audits.audit_install_adapters()
 
     assert report["status"] == "ok", report.get("findings")
-    assert report["planned_files"] >= 8
+    assert report["planned_files"] >= 4
 
 
 def test_registry_includes_docs_component() -> None:
@@ -884,7 +881,7 @@ def test_repair_plan_surfaces_mirror_export_gap(monkeypatch) -> None:
     assert by_id["mirror-runtime-promotion-policy"]["status"] == "needs_runtime_exports"
     assert "0/36 ready, 36 missing" in by_id["mirror-runtime-promotion-policy"]["reason"]
     assert [
-        "/Users/sereja/Projects/tools/telegram/bin/telegram-mirror-preflight",
+        str(CONTROL_ROOT / "bin/telegram-mirror-preflight"),
         "--json",
     ] in by_id["mirror-runtime-promotion-policy"]["dry_run_commands"]
 

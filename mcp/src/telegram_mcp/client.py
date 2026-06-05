@@ -472,10 +472,21 @@ class TelegramWrapper(
     async def doctor_check(self) -> DoctorInfo:
         warnings: list[str] = []
         checks: dict[str, str] = {}
-        from .runtime import get_runtime_report
-
         transport = self.settings.mcp_transport.strip().lower()
         checks["transport"] = transport
+        runtime_fields: dict[str, str | int | None] = {
+            "host": None,
+            "port": None,
+            "http_path": None,
+            "endpoint_url": None,
+        }
+        if transport != "stdio":
+            runtime_fields = {
+                "host": self.settings.mcp_host,
+                "port": self.settings.mcp_port,
+                "http_path": self.settings.mcp_http_path,
+                "endpoint_url": f"http://{self.settings.mcp_host}:{self.settings.mcp_port}{self.settings.mcp_http_path}",
+            }
 
         try:
             self.settings.ensure_dirs()
@@ -522,11 +533,7 @@ class TelegramWrapper(
             download_cleanup=download_cleanup,
             scheduler=self._scheduler.snapshot(),
             runtime_stats=self._runtime_stats_snapshot(),
-            **{
-                key: value
-                for key, value in get_runtime_report().items()
-                if key in {"host", "port", "http_path", "endpoint_url"}
-            },
+            **runtime_fields,
         )
 
     def _acquire_session_lock(self) -> None:

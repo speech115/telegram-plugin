@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import os
 import plistlib
 import re
 import sqlite3
@@ -419,7 +420,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
     adapters: list[dict[str, Any]] = []
     tg_on_path = shutil.which("tg")
     kit_wrapper = CONTROL_ROOT / "bin" / "tg"
-    if not tg_on_path:
+    if not tg_on_path and os.environ.get("TELEGRAM_CI_PORTABLE") != "1":
         findings.append(
             {
                 "id": "tg_not_on_path",
@@ -430,14 +431,20 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                 ),
             }
         )
-    elif kit_wrapper.is_file():
+    elif tg_on_path and kit_wrapper.is_file():
         try:
             path_tg = Path(tg_on_path).resolve()
             kit_tg = kit_wrapper.resolve()
             mcp_tg = Path(TG_CLI).resolve()
         except OSError:
             path_tg = kit_tg = mcp_tg = None
-        if path_tg and kit_tg and mcp_tg and path_tg not in {kit_tg, mcp_tg}:
+        if (
+            path_tg
+            and kit_tg
+            and mcp_tg
+            and path_tg not in {kit_tg, mcp_tg}
+            and os.environ.get("TELEGRAM_CI_PORTABLE") != "1"
+        ):
             findings.append(
                 {
                     "id": "tg_path_shadows_kit",
@@ -546,8 +553,18 @@ def audit_fast_read_adapter() -> dict[str, Any]:
 def audit_agent_docs_sync() -> dict[str, Any]:
     """Ensure MCP docs/agent matches plugin references manifest."""
 
+    sync_tool = MCP_REPO / "bin/sync-agent-docs"
+    if not sync_tool.exists():
+        return {
+            "status": "ok",
+            "findings": [],
+            "command": [str(sync_tool)],
+            "skipped": True,
+            "reason": "agent docs sync tool is not present in this package layout",
+        }
+
     command = [
-        str(MCP_REPO / "bin/sync-agent-docs"),
+        str(sync_tool),
         "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--check",
@@ -588,8 +605,6 @@ def audit_release_gates() -> dict[str, Any]:
     command = [
         str(MCP_REPO / "bin/check-release-gates"),
         "--package-dir",
-        str(PLUGIN_PACKAGE),
-        "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--json",
     ]

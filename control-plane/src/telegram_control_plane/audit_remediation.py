@@ -13,6 +13,20 @@ from .util import load_json
 AUDIT_REMEDIATION_PATH = POLICY_DIR / "audit-remediation.json"
 HOME = Path.home()
 
+DEFAULT_FINDING_TO_STEPS: dict[str, list[str]] = {
+    "managed_system_missing": ["managed-systems-inventory"],
+    "managed_system_kind_mismatch": ["managed-systems-inventory"],
+    "managed_system_marker_missing": ["managed-systems-inventory"],
+    "plugin_cache_needs_materialization": ["plugin-cache-materialize"],
+    "unexpected_write_tools": ["mcp-surface-allowlist"],
+    "non_facade_tools": ["mcp-surface-allowlist"],
+    "launchd_path_outside_allowed_roots": ["launchd-inventory-and-cold-mode"],
+    "mirror_runtime_exports_missing": ["mirror-runtime-promotion-policy"],
+    "mirror_runtime_exports_incomplete": ["mirror-runtime-promotion-policy"],
+    "telecrawl_known_gaps": ["telecrawl-archive-policy"],
+    "telecrawl_active_archives_incomplete": ["telecrawl-archive-policy"],
+}
+
 
 @lru_cache(maxsize=4)
 def load_remediation_policy(path: str = str(AUDIT_REMEDIATION_PATH)) -> dict[str, Any]:
@@ -89,10 +103,11 @@ class AuditRemediationPolicy:
 
     def steps_for_findings(self, context: RemediationContext) -> dict[str, list[str]]:
         mapping = self.payload.get("finding_to_steps")
-        if not isinstance(mapping, dict):
-            return {}
+        merged_mapping: dict[str, Any] = dict(DEFAULT_FINDING_TO_STEPS)
+        if isinstance(mapping, dict):
+            merged_mapping.update(mapping)
         result: dict[str, list[str]] = {}
-        for finding_id, step_ids in mapping.items():
+        for finding_id, step_ids in merged_mapping.items():
             if finding_id not in context.finding_ids or not isinstance(step_ids, list):
                 continue
             result[str(finding_id)] = [str(step) for step in step_ids if isinstance(step, str)]

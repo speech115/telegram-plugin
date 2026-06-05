@@ -8,6 +8,8 @@ export TELEGRAM_MCP_REPO="${ROOT}/mcp"
 export TELEGRAM_PLUGIN_SOURCE="${ROOT}/plugin"
 export TELEGRAM_PLUGIN_PACKAGE="${ROOT}/plugin"
 export TELEGRAM_PROJECTS_ROOT="${ROOT}"
+export TELEGRAM_API_ID="${TELEGRAM_API_ID:-1}"
+export TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-hash}"
 
 failures=0
 
@@ -51,9 +53,9 @@ run_gate plugin-package-build bash -lc "
   test -f \"\${tmp}/out/.codex-plugin/plugin.json\"
 "
 
-run_gate control-plane-pytest bash -lc "cd '${ROOT}/control-plane' && '${PYTHON_BIN}' -m pytest -q"
-
 CP_ENV="TELEGRAM_CI_PORTABLE=1 TELEGRAM_MONOREPO_ROOT='${ROOT}' TELEGRAM_CONTROL_PLANE_ROOT='${ROOT}/control-plane' TELEGRAM_MCP_REPO='${ROOT}/mcp' TELEGRAM_PLUGIN_SOURCE='${ROOT}/plugin' TELEGRAM_PLUGIN_PACKAGE='${ROOT}/plugin' TELEGRAM_PROJECTS_ROOT='${ROOT}' PYTHONPATH='${ROOT}/control-plane/src:${ROOT}/mcp/src'"
+
+run_gate control-plane-pytest bash -lc "cd '${ROOT}/control-plane' && ${CP_ENV} '${PYTHON_BIN}' -m pytest -q"
 
 run_gate managed-systems bash -lc \
   "${CP_ENV} '${PYTHON_BIN}' -m telegram_control_plane managed-systems --json | '${PYTHON_BIN}' -c \"import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get('status') in ('ok','warn') else 1)\""
