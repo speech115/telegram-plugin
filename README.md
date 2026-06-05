@@ -94,14 +94,28 @@ $EDITOR mcp/.env
 chmod 600 mcp/.env
 ```
 
-2. Install and run the MCP server:
+Required values in `mcp/.env`:
+
+- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from <https://my.telegram.org>.
+- `TELEGRAM_SESSION_PATH` if you want the Telethon session stored outside the
+  default working directory.
+- `TELEGRAM_MCP_AUTH_TOKEN` if you plan to use the HTTP/SSE daemon from a local
+  client. StdIO runs can stay local-only without it, but the default
+  `plugin/.mcp.json` expects a bearer token env var.
+
+2. Install and run the MCP server from the repo-local `mcp/` directory:
 
 ```bash
 cd mcp
 uv venv
 uv pip install -e .
+export TELEGRAM_MCP_AUTH_TOKEN="replace-with-a-local-secret"
 .venv/bin/telegram-mcp
 ```
+
+By default the plugin points at `http://127.0.0.1:8799/mcp` via `plugin/.mcp.json`.
+If you keep the daemon on the default host/port, no extra client-side path setup
+is required beyond exporting the same token in the client environment.
 
 3. In another shell, inspect the control plane:
 
@@ -119,6 +133,15 @@ TELEGRAM_CONTROL_PLANE_ROOT="$PWD" .venv/bin/python -m telegram_control_plane do
 cd mcp
 ./bin/contract-smoke --profile all --check-cache-stats --json
 ```
+
+Quick verification path for a clean machine:
+
+- The MCP daemon shell stays running without import or auth errors.
+- `./bin/contract-smoke --profile all --check-cache-stats --json` returns a
+  successful result.
+- The control-plane doctor command below reports the expected local paths.
+- Your agent client has the same `TELEGRAM_MCP_AUTH_TOKEN` in its environment
+  before it tries to connect to `http://127.0.0.1:8799/mcp`.
 
 5. Materialize the plugin through Codex plugin cache flow (preferred), then use
 manual `.mcp.json` wiring only as a fallback:
