@@ -40,32 +40,14 @@ def test_audit_remediation_policy_owns_order_safety_and_triggers() -> None:
     assert policy.recommended_order([{"id": "fallback"}])[0] == "managed-systems-inventory"
 
 
-def test_build_repair_plan_includes_finding_remediation_map(monkeypatch) -> None:
-    from telegram_control_plane import audits
+def test_build_repair_plan_includes_finding_remediation_map() -> None:
+    registry = {
+        "status": "warn",
+        "summary": {"components": {"telecrawl": "warn"}},
+        "findings": [{"id": "telecrawl_known_gaps", "component": "telecrawl", "severity": "warn"}],
+    }
+    plan = build_repair_plan(registry)
 
-    monkeypatch.setattr(
-        audits,
-        "_collect_components",
-        lambda: {
-            "managed_systems": {"status": "ok", "findings": []},
-            "plugin_drift": {"status": "warn", "findings": []},
-            "docs": {"status": "ok", "findings": []},
-            "mcp_surface": {"status": "ok", "findings": []},
-            "mcp_profiles": {"status": "ok", "findings": []},
-            "source_routing": {"status": "ok", "findings": []},
-            "launchd": {"status": "ok", "findings": []},
-            "sessions": {"status": "ok", "findings": []},
-            "telegram_mirror": {"status": "ok", "findings": []},
-            "runtime_inventory": {"status": "ok", "findings": [], "summary": {}},
-            "telecrawl": {"status": "warn", "findings": [{"id": "telecrawl_known_gaps", "severity": "warn"}]},
-            "mcp_telemetry": {"status": "ok", "findings": []},
-            "fast_read_adapter": {"status": "ok", "findings": []},
-            "agent_docs_sync": {"status": "ok", "findings": []},
-            "release_gates": {"status": "ok", "findings": []},
-            "install_adapters": {"status": "ok", "findings": []},
-        },
-    )
-    plan = build_repair_plan()
     assert "telecrawl_known_gaps" in plan["finding_remediation_map"]
     telecrawl_step = next(step for step in plan["steps"] if step["id"] == "telecrawl-archive-policy")
     assert "telecrawl_known_gaps" in telecrawl_step.get("triggered_by_findings", [])

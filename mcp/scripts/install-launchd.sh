@@ -27,6 +27,10 @@ reject_unsafe_env_value() {
   esac
 }
 
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%OLp' "$1"
+}
+
 load_env_file() {
   local line key value
 
@@ -35,7 +39,8 @@ load_env_file() {
     printf 'Refusing env file not owned by current user: %s\n' "${ENV_FILE}" >&2
     exit 1
   fi
-  if [ "$(stat -f '%OLp' "${ENV_FILE}")" != "600" ] && [ "$(stat -f '%OLp' "${ENV_FILE}")" != "400" ]; then
+  mode="$(file_mode "${ENV_FILE}")"
+  if [ "${mode}" != "600" ] && [ "${mode}" != "400" ]; then
     printf 'Refusing env file with unsafe permissions: %s\n' "${ENV_FILE}" >&2
     exit 1
   fi

@@ -353,7 +353,7 @@ class OpsScriptsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("Running telegram-mcp daemon health via mcporter...", result.stdout)
         self.assertIn("Running telegram-mcp daemon doctor via mcporter...", result.stdout)
-        self.assertIn("Running telegram-mcp daemon facade smoke via direct MCP client...", result.stdout)
+        self.assertIn("Running telegram-mcp daemon facade smoke via mcporter...", result.stdout)
         self.assertIn("Smoke check passed.", result.stdout)
 
     def test_smoke_check_runs_facade_probe_for_daemon_checks(self):
@@ -365,8 +365,8 @@ class OpsScriptsTests(unittest.TestCase):
         result = self._run_script(root, "smoke-check.sh")
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("Running telegram-mcp daemon facade smoke via direct MCP client...", result.stdout)
-        self.assertIn("Facade smoke direct MCP client passed.", result.stdout)
+        self.assertIn("Running telegram-mcp daemon facade smoke via mcporter...", result.stdout)
+        self.assertIn("Facade smoke dialog ref: tg://dialog/user/123", result.stdout)
         self.assertIn("Smoke check passed.", result.stdout)
 
     def test_smoke_check_reports_facade_probe_failure_in_daemon_mode(self):
@@ -379,7 +379,7 @@ class OpsScriptsTests(unittest.TestCase):
         result = self._run_script(root, "smoke-check.sh")
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("direct facade failed", result.stderr)
+        self.assertIn("telegram.collect_dialog_context returned non-zero", result.stderr)
 
     def test_status_script_reports_mcporter_hint_when_missing_in_daemon_mode(self):
         root = self._make_fake_project(include_python=False)
@@ -493,7 +493,7 @@ class OpsScriptsTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        rotate_plist = root / "Library" / "LaunchAgents" / "com.example.telegram-mcp-http-logrotate.plist"
+        rotate_plist = root / "Library" / "LaunchAgents" / "com.sereja.telegram-mcp-http-logrotate.plist"
         payload = plistlib.loads(rotate_plist.read_bytes())
         args = payload["ProgramArguments"]
         self.assertNotIn("-c", args)
