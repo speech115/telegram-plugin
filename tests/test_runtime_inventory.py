@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from telegram_control_plane.runtime_inventory import audit_runtime_inventory
+from telegram_control_plane.runtime_inventory import RuntimeSnapshot, audit_runtime_inventory
 
 
 def test_runtime_inventory_aggregates_child_statuses() -> None:
@@ -27,3 +27,14 @@ def test_runtime_inventory_blocks_when_launchd_fails() -> None:
     )
     assert report["status"] == "fail"
     assert any(item["id"] == "runtime_inventory_child_failed" for item in report["findings"])
+
+
+def test_runtime_snapshot_collects_fixture_reports_without_live_reads() -> None:
+    snapshot = RuntimeSnapshot.collect(
+        launchd_report={"status": "ok", "findings": []},
+        sessions_report={"status": "warn", "findings": [{"id": "session_warn"}]},
+        mirror_report={"status": "ok", "findings": []},
+    )
+
+    assert snapshot.children()["launchd"]["status"] == "ok"
+    assert snapshot.children()["sessions"]["status"] == "warn"

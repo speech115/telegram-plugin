@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import ast
 import copy
-import json
 import plistlib
 import re
 import sqlite3
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +32,7 @@ from .paths import (
     TELECRAWL_DEFAULT_DB,
     plugin_source_version,
 )
-from . import managed_systems, registry_redaction, runtime_inventory, source_routing, surface_contract, telecrawl_gap
+from . import managed_systems, surface_contract, telecrawl_gap
 from .surface_contract import WRITE_OR_DESTRUCTIVE_RE
 from .util import load_json, run_json, status_from_findings
 
@@ -1375,80 +1373,18 @@ def audit_telecrawl() -> dict[str, Any]:
 
 
 def _collect_components() -> dict[str, dict[str, Any]]:
-    launchd = audit_launchd()
-    sessions = audit_sessions()
-    mirror = audit_mirror()
-    return {
-        "managed_systems": audit_managed_systems(),
-        "docs": audit_docs(),
-        "plugin_drift": audit_plugin_drift(),
-        "mcp_telemetry": audit_mcp_telemetry(),
-        "fast_read_adapter": audit_fast_read_adapter(),
-        "golden_read_smoke": audit_golden_read_smoke(),
-        "agent_docs_sync": audit_agent_docs_sync(),
-        "release_gates": audit_release_gates(),
-        "install_adapters": audit_install_adapters(),
-        "mcp_surface": audit_mcp_surface(),
-        "mcp_profiles": audit_mcp_profiles(),
-        "source_routing": source_routing.audit_source_routing(),
-        "launchd": launchd,
-        "sessions": sessions,
-        "telegram_mirror": mirror,
-        "runtime_inventory": runtime_inventory.audit_runtime_inventory(
-            launchd_report=launchd,
-            sessions_report=sessions,
-            mirror_report=mirror,
-        ),
-        "telecrawl": audit_telecrawl(),
-    }
+    from .doctor import ControlPlaneDoctor
+
+    return ControlPlaneDoctor().collect_components()
 
 
 def build_registry() -> dict[str, Any]:
-    raw_components = _collect_components()
-    findings: list[dict[str, Any]] = []
-    for component, report in raw_components.items():
-        for item in report.get("findings", []):
-            enriched = dict(item)
-            enriched.setdefault("component", component)
-            findings.append(enriched)
-    components = {
-        name: registry_redaction.project_registry_component(name, report)
-        for name, report in raw_components.items()
-    }
-    registry = {
-        "schema_version": 1,
-        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "read_only_external_state": True,
-        "status": status_from_findings(findings),
-        "summary": {
-            "components": {name: report.get("status") for name, report in raw_components.items()},
-            "blocking_findings": sum(1 for item in findings if item.get("severity") == "blocking"),
-            "warning_findings": sum(1 for item in findings if item.get("severity") in {"warn", "warning"}),
-        },
-        "findings": findings,
-        "components": components,
-    }
-    registry = registry_redaction.redact_for_persistence(registry)
-    leak_report = registry_redaction.audit_persisted_registry(registry)
-    for item in leak_report.get("findings", []):
-        enriched = dict(item)
-        enriched.setdefault("component", "registry_redaction")
-        findings.append(enriched)
-    if leak_report.get("findings"):
-        registry["findings"] = findings
-        registry["status"] = status_from_findings(findings)
-        registry["summary"]["blocking_findings"] = sum(
-            1 for entry in findings if entry.get("severity") == "blocking"
-        )
-    return registry
+    from .doctor import ControlPlaneDoctor
+
+    return ControlPlaneDoctor(component_collector=_collect_components).build_registry()
 
 
 def write_registry(path: Path, registry: dict[str, Any]) -> None:
-    leak_report = registry_redaction.audit_persisted_registry(registry)
-    if leak_report.get("status") == "fail":
-        raise ValueError(
-            "Refusing to write observed registry with private runtime leaks: "
-            + ", ".join(item.get("pattern", item.get("id", "?")) for item in leak_report.get("findings", []))
-        )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    from .doctor import ControlPlaneDoctor
+
+    ControlPlaneDoctor().write_registry(path, registry)

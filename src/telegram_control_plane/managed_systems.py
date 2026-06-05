@@ -82,35 +82,53 @@ def system_records(*, policy: dict[str, Any] | None = None) -> dict[str, Managed
 
 
 def system_path(system_id: str, *, policy: dict[str, Any] | None = None) -> Path:
-    record = system_records(policy=policy).get(system_id)
-    if record is None:
-        raise KeyError(f"Unknown managed system id: {system_id}")
-    return record.path
+    return ControlPlaneTopology(policy=policy).system_path(system_id)
+
+
+@dataclass(frozen=True)
+class ControlPlaneTopology:
+    policy: dict[str, Any] | None = None
+    home: Path | None = None
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        return self.policy if self.policy is not None else load_managed_systems_policy()
+
+    @property
+    def records(self) -> dict[str, ManagedSystemRecord]:
+        return system_records(policy=self.payload)
+
+    def system_path(self, system_id: str) -> Path:
+        record = self.records.get(system_id)
+        if record is None:
+            raise KeyError(f"Unknown managed system id: {system_id}")
+        return record.path
+
+    def resolve(self) -> dict[str, Path]:
+        home_path = self.home or Path.home()
+        topology = self.payload.get("topology") if isinstance(self.payload.get("topology"), dict) else {}
+        bindings = topology.get("bindings") if isinstance(topology.get("bindings"), dict) else {}
+        derived = topology.get("derived") if isinstance(topology.get("derived"), dict) else {}
+
+        resolved: dict[str, Path] = {}
+        for name, system_id in bindings.items():
+            if not isinstance(name, str) or not isinstance(system_id, str):
+                continue
+            record = self.records.get(system_id)
+            if record is None:
+                raise KeyError(f"Topology binding {name!r} references unknown system {system_id!r}")
+            resolved[name] = record.path
+
+        for name, raw in derived.items():
+            if not isinstance(name, str) or not isinstance(raw, str):
+                continue
+            resolved[name] = _expand_path(raw, home=home_path, resolved=resolved)
+
+        return resolved
 
 
 def resolve_topology(*, policy: dict[str, Any] | None = None, home: Path | None = None) -> dict[str, Path]:
-    payload = policy if policy is not None else load_managed_systems_policy()
-    home_path = home or Path.home()
-    records = system_records(policy=payload)
-    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
-    bindings = topology.get("bindings") if isinstance(topology.get("bindings"), dict) else {}
-    derived = topology.get("derived") if isinstance(topology.get("derived"), dict) else {}
-
-    resolved: dict[str, Path] = {}
-    for name, system_id in bindings.items():
-        if not isinstance(name, str) or not isinstance(system_id, str):
-            continue
-        record = records.get(system_id)
-        if record is None:
-            raise KeyError(f"Topology binding {name!r} references unknown system {system_id!r}")
-        resolved[name] = record.path
-
-    for name, raw in derived.items():
-        if not isinstance(name, str) or not isinstance(raw, str):
-            continue
-        resolved[name] = _expand_path(raw, home=home_path, resolved=resolved)
-
-    return resolved
+    return ControlPlaneTopology(policy=policy, home=home).resolve()
 
 
 def substitute_policy_marker(

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
-from .audits import build_registry
+from .doctor import build_registry
 from .paths import CONTROL_ROOT, MCP_REPO, MIRROR_ROOT, PLUGIN_CACHE, PLUGIN_CACHE_ROOT, PLUGIN_SOURCE, POLICY_DIR
 from .util import load_json
 
@@ -52,18 +53,86 @@ def _component_status(registry: dict[str, Any], component: str) -> str | None:
     return str(value) if value is not None else None
 
 
+@dataclass(frozen=True)
+class RemediationContext:
+    registry: dict[str, Any]
+
+    @property
+    def finding_ids(self) -> set[str]:
+        return _finding_ids(self.registry)
+
+    def finding_by_id(self, finding_id: str) -> dict[str, Any] | None:
+        return _finding_by_id(self.registry, finding_id)
+
+    def findings_for_component(self, component: str) -> list[dict[str, Any]]:
+        return _findings_for_component(self.registry, component)
+
+    def component_status(self, component: str) -> str | None:
+        return _component_status(self.registry, component)
+
+
+class AuditRemediationPolicy:
+    def __init__(self, payload: dict[str, Any] | None = None) -> None:
+        self.payload = payload if payload is not None else load_remediation_policy()
+
+    @property
+    def safety(self) -> dict[str, Any]:
+        safety = self.payload.get("safety")
+        return safety if isinstance(safety, dict) else {}
+
+    @property
+    def auto_apply_ids(self) -> frozenset[str]:
+        auto_apply_ids = self.payload.get("auto_apply_step_ids")
+        if isinstance(auto_apply_ids, list):
+            return frozenset(str(item) for item in auto_apply_ids if isinstance(item, str))
+        return frozenset({"plugin-cache-materialize"})
+
+    def steps_for_findings(self, context: RemediationContext) -> dict[str, list[str]]:
+        mapping = self.payload.get("finding_to_steps")
+        if not isinstance(mapping, dict):
+            return {}
+        result: dict[str, list[str]] = {}
+        for finding_id, step_ids in mapping.items():
+            if finding_id not in context.finding_ids or not isinstance(step_ids, list):
+                continue
+            result[str(finding_id)] = [str(step) for step in step_ids if isinstance(step, str)]
+        return result
+
+    def triggered_findings(self, context: RemediationContext, step_id: str) -> list[str]:
+        finding_steps = self.steps_for_findings(context)
+        return sorted(
+            finding_id
+            for finding_id, step_list in finding_steps.items()
+            if step_id in step_list
+        )
+
+    def recommended_order(self, steps: list[dict[str, Any]]) -> list[str]:
+        recommended_order = self.payload.get("recommended_order")
+        if not isinstance(recommended_order, list):
+            recommended_order = [step["id"] for step in steps]
+        return [str(item) for item in recommended_order if isinstance(item, str)]
+
+    def build_plan(self, registry: dict[str, Any]) -> dict[str, Any]:
+        context = RemediationContext(registry)
+        steps = _build_steps(context, self)
+        return {
+            "schema_version": 1,
+            "status": "ready",
+            "registry_status": registry.get("status"),
+            "known_findings": sorted(context.finding_ids),
+            "finding_remediation_map": self.steps_for_findings(context),
+            "recommended_order": self.recommended_order(steps),
+            "steps": steps,
+            "safety": {
+                **self.safety,
+                "auto_apply_allowed_steps": sorted(self.auto_apply_ids),
+            },
+            "policy_path": str(AUDIT_REMEDIATION_PATH),
+        }
+
+
 def steps_for_findings(registry: dict[str, Any], *, policy: dict[str, Any] | None = None) -> dict[str, list[str]]:
-    payload = policy if policy is not None else load_remediation_policy()
-    mapping = payload.get("finding_to_steps")
-    if not isinstance(mapping, dict):
-        return {}
-    ids = _finding_ids(registry)
-    result: dict[str, list[str]] = {}
-    for finding_id, step_ids in mapping.items():
-        if finding_id not in ids or not isinstance(step_ids, list):
-            continue
-        result[finding_id] = [str(step) for step in step_ids if isinstance(step, str)]
-    return result
+    return AuditRemediationPolicy(policy).steps_for_findings(RemediationContext(registry))
 
 
 def _mcp_surface_repair_reason(registry: dict[str, Any]) -> str:
@@ -112,21 +181,14 @@ def _step(
     return payload
 
 
-def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
-    registry = registry or build_registry()
-    policy = load_remediation_policy()
-    ids = _finding_ids(registry)
-    finding_steps = steps_for_findings(registry, policy=policy)
+def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) -> list[dict[str, Any]]:
+    registry = context.registry
     steps: list[dict[str, Any]] = []
 
     def triggers(step_id: str) -> list[str]:
-        return sorted(
-            finding_id
-            for finding_id, step_list in finding_steps.items()
-            if step_id in step_list
-        )
+        return policy.triggered_findings(context, step_id)
 
-    managed_blocked = _component_status(registry, "managed_systems") == "fail"
+    managed_blocked = context.component_status("managed_systems") == "fail"
     steps.append(
         _step(
             step_id="managed-systems-inventory",
@@ -155,7 +217,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    plugin_blocked = _component_status(registry, "plugin_drift") == "fail"
+    plugin_blocked = context.component_status("plugin_drift") == "fail"
     steps.append(
         _step(
             step_id="plugin-cache-parity",
@@ -193,7 +255,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    materialize_warn = _finding_by_id(registry, "plugin_cache_needs_materialization")
+    materialize_warn = context.finding_by_id("plugin_cache_needs_materialization")
     materialize_cmd = (
         materialize_warn.get("materialize_command") if isinstance(materialize_warn, dict) else None
     )
@@ -229,11 +291,11 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    mcp_surface_blocked = _component_status(registry, "mcp_surface") == "fail"
+    mcp_surface_blocked = context.component_status("mcp_surface") == "fail"
     unexpected_write = next(
         (
             item.get("tools")
-            for item in _findings_for_component(registry, "mcp_surface")
+            for item in context.findings_for_component("mcp_surface")
             if item.get("id") == "unexpected_write_tools"
         ),
         None,
@@ -267,7 +329,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    launchd_blocked = _component_status(registry, "launchd") == "fail"
+    launchd_blocked = context.component_status("launchd") == "fail"
     steps.append(
         _step(
             step_id="launchd-inventory-and-cold-mode",
@@ -298,7 +360,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    sessions_blocked = _component_status(registry, "sessions") == "fail"
+    sessions_blocked = context.component_status("sessions") == "fail"
     steps.append(
         _step(
             step_id="session-registry",
@@ -321,9 +383,10 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    mirror_status = _component_status(registry, "telegram_mirror")
+    registry = context.registry
+    mirror_status = context.component_status("telegram_mirror")
     mirror_blocked = mirror_status == "fail"
-    mirror_exports_missing = bool(ids & {"mirror_runtime_exports_missing", "mirror_runtime_exports_incomplete"})
+    mirror_exports_missing = bool(context.finding_ids & {"mirror_runtime_exports_missing", "mirror_runtime_exports_incomplete"})
     mirror_component = registry.get("components", {}).get("telegram_mirror")
     mirror_summary = (
         mirror_component.get("runtime_state_summary")
@@ -367,7 +430,7 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
         )
     )
 
-    telecrawl_blocked = _component_status(registry, "telecrawl") == "fail"
+    telecrawl_blocked = context.component_status("telecrawl") == "fail"
     steps.append(
         _step(
             step_id="telecrawl-archive-policy",
@@ -389,31 +452,11 @@ def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
             triggered_by_findings=triggers("telecrawl-archive-policy"),
         )
     )
+    return steps
 
-    recommended_order = policy.get("recommended_order")
-    if not isinstance(recommended_order, list):
-        recommended_order = [step["id"] for step in steps]
-    auto_apply_ids = policy.get("auto_apply_step_ids")
-    auto_apply = (
-        frozenset(str(item) for item in auto_apply_ids if isinstance(item, str))
-        if isinstance(auto_apply_ids, list)
-        else frozenset({"plugin-cache-materialize"})
-    )
-    safety = policy.get("safety") if isinstance(policy.get("safety"), dict) else {}
-    return {
-        "schema_version": 1,
-        "status": "ready",
-        "registry_status": registry.get("status"),
-        "known_findings": sorted(ids),
-        "finding_remediation_map": finding_steps,
-        "recommended_order": [str(item) for item in recommended_order if isinstance(item, str)],
-        "steps": steps,
-        "safety": {
-            **safety,
-            "auto_apply_allowed_steps": sorted(auto_apply),
-        },
-        "policy_path": str(AUDIT_REMEDIATION_PATH),
-    }
+
+def build_repair_plan(registry: dict[str, Any] | None = None) -> dict[str, Any]:
+    return AuditRemediationPolicy().build_plan(registry or build_registry())
 
 
 def _run_command(command: list[str], *, timeout: int = 120) -> dict[str, Any]:
@@ -438,13 +481,8 @@ def apply_repair_plan(
     step_ids: Iterable[str] | None = None,
     verify: bool = True,
 ) -> dict[str, Any]:
-    policy = load_remediation_policy()
-    auto_apply_ids = policy.get("auto_apply_step_ids")
-    default_allowed = (
-        frozenset(str(item) for item in auto_apply_ids if isinstance(item, str))
-        if isinstance(auto_apply_ids, list)
-        else frozenset({"plugin-cache-materialize"})
-    )
+    policy = AuditRemediationPolicy()
+    default_allowed = policy.auto_apply_ids
     plan = build_repair_plan(registry)
     allowed = frozenset(step_ids) if step_ids is not None else default_allowed
     by_id = {step["id"]: step for step in plan["steps"]}

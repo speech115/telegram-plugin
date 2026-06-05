@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from telegram_control_plane.audit_remediation import (
+    AuditRemediationPolicy,
+    RemediationContext,
     build_repair_plan,
     load_remediation_policy,
     steps_for_findings,
@@ -21,6 +23,21 @@ def test_steps_for_findings_links_materialize() -> None:
     }
     linked = steps_for_findings(registry)
     assert linked["plugin_cache_needs_materialization"] == ["plugin-cache-materialize"]
+
+
+def test_audit_remediation_policy_owns_order_safety_and_triggers() -> None:
+    registry = {
+        "findings": [
+            {"id": "telecrawl_known_gaps", "component": "telecrawl", "severity": "warn"},
+        ]
+    }
+    context = RemediationContext(registry)
+    policy = AuditRemediationPolicy()
+
+    assert policy.auto_apply_ids == frozenset({"plugin-cache-materialize"})
+    assert policy.safety["default_mode"] == "dry_run_only"
+    assert policy.triggered_findings(context, "telecrawl-archive-policy") == ["telecrawl_known_gaps"]
+    assert policy.recommended_order([{"id": "fallback"}])[0] == "managed-systems-inventory"
 
 
 def test_build_repair_plan_includes_finding_remediation_map(monkeypatch) -> None:

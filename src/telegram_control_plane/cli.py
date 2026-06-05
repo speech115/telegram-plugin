@@ -20,9 +20,8 @@ from .audits import (
     audit_plugin_drift,
     audit_sessions,
     audit_telecrawl,
-    build_registry,
-    write_registry,
 )
+from .doctor import ControlPlaneDoctor
 from .paths import OBSERVED_REGISTRY
 from .audit_remediation import apply_repair_plan, build_repair_plan
 from .runtime_inventory import audit_runtime_inventory
@@ -99,9 +98,10 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parse_args(raw_argv)
     if args.command in {"doctor", "status"}:
-        report = build_registry()
+        doctor = ControlPlaneDoctor()
+        report = doctor.build_registry()
         if not args.no_write_registry:
-            write_registry(OBSERVED_REGISTRY, report)
+            doctor.write_registry(OBSERVED_REGISTRY, report)
     else:
         report = COMMANDS[args.command]()
     if args.json:

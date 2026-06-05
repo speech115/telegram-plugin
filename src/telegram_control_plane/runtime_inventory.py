@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -36,6 +37,42 @@ def _summarize_child(child_id: str, report: dict[str, Any], policy_item: dict[st
     return summary
 
 
+@dataclass(frozen=True)
+class RuntimeSnapshot:
+    launchd: dict[str, Any]
+    sessions: dict[str, Any]
+    mirror_runtime: dict[str, Any]
+
+    @classmethod
+    def collect(
+        cls,
+        *,
+        launchd_report: dict[str, Any] | None = None,
+        sessions_report: dict[str, Any] | None = None,
+        mirror_report: dict[str, Any] | None = None,
+        audit_launchd: Callable[[], dict[str, Any]] | None = None,
+        audit_sessions: Callable[[], dict[str, Any]] | None = None,
+        audit_mirror: Callable[[], dict[str, Any]] | None = None,
+    ) -> "RuntimeSnapshot":
+        from . import audits
+
+        launchd_fn = audit_launchd or audits.audit_launchd
+        sessions_fn = audit_sessions or audits.audit_sessions
+        mirror_fn = audit_mirror or audits.audit_mirror
+        return cls(
+            launchd=launchd_report if launchd_report is not None else launchd_fn(),
+            sessions=sessions_report if sessions_report is not None else sessions_fn(),
+            mirror_runtime=mirror_report if mirror_report is not None else mirror_fn(),
+        )
+
+    def children(self) -> dict[str, dict[str, Any]]:
+        return {
+            "launchd": self.launchd,
+            "sessions": self.sessions,
+            "mirror_runtime": self.mirror_runtime,
+        }
+
+
 def audit_runtime_inventory(
     *,
     launchd_report: dict[str, Any] | None = None,
@@ -45,23 +82,17 @@ def audit_runtime_inventory(
     audit_sessions: Callable[[], dict[str, Any]] | None = None,
     audit_mirror: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    from . import audits
-
-    launchd_fn = audit_launchd or audits.audit_launchd
-    sessions_fn = audit_sessions or audits.audit_sessions
-    mirror_fn = audit_mirror or audits.audit_mirror
-
-    launchd = launchd_report if launchd_report is not None else launchd_fn()
-    sessions = sessions_report if sessions_report is not None else sessions_fn()
-    mirror = mirror_report if mirror_report is not None else mirror_fn()
-
+    snapshot = RuntimeSnapshot.collect(
+        launchd_report=launchd_report,
+        sessions_report=sessions_report,
+        mirror_report=mirror_report,
+        audit_launchd=audit_launchd,
+        audit_sessions=audit_sessions,
+        audit_mirror=audit_mirror,
+    )
     policy = load_runtime_inventory_policy()
     aggregates = policy.get("aggregates") if isinstance(policy.get("aggregates"), list) else []
-    children = {
-        "launchd": launchd,
-        "sessions": sessions,
-        "mirror_runtime": mirror,
-    }
+    children = snapshot.children()
     summaries: dict[str, Any] = {}
     findings: list[dict[str, Any]] = []
 

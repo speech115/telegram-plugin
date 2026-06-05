@@ -57,6 +57,12 @@
     "route_allowlisted_mirror_to": "telegram_mirror",
     "never_route_live_intents_to": ["telecrawl_archive"]
   },
+  "matchers": {
+    "live_intent": "\\b(today|recent|latest|current|live|now|сегодня|новое|последн|сейчас)\\b",
+    "live_task": "\\b(send|reply|media|voice|draft|photo|video|отправ|ответ|голос)\\b",
+    "archive_intent": "\\b(archive|historical|архив|истор|прошл|search-all|coverage)\\b",
+    "mirror_intent": "\\b(mirror|allowlist|зеркал|recovery|preflight)\\b"
+  },
   "claims": {
     "negative_archive_results": "no matches in this archive coverage",
     "never_infer_absence_from_archive_only": true

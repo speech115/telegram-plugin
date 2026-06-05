@@ -3,6 +3,7 @@ from __future__ import annotations
 import telegram_control_plane.managed_systems as managed_systems
 from telegram_control_plane.audits import audit_managed_systems
 from telegram_control_plane.managed_systems import (
+    ControlPlaneTopology,
     MANAGED_SYSTEMS_PATH,
     evaluate_managed_systems,
     load_managed_systems_policy,
@@ -29,6 +30,44 @@ def test_topology_resolves_core_bindings() -> None:
 
 def test_system_path_matches_policy_entry() -> None:
     assert system_path("telegram-mcp") == MCP_REPO
+
+
+def test_control_plane_topology_resolves_derived_paths_with_fixture_home(tmp_path) -> None:
+    control = tmp_path / "control"
+    mcp = tmp_path / "mcp"
+    policy = {
+        "systems": [
+            {"id": "control", "role": "control_plane", "path": str(control)},
+            {"id": "mcp", "role": "live_mcp_backend", "path": str(mcp)},
+        ],
+        "topology": {
+            "bindings": {"control_root": "control", "mcp_repo": "mcp"},
+            "derived": {"generated_dir": "${control_root}/generated", "launchagents_dir": "$HOME/Library/LaunchAgents"},
+        },
+    }
+
+    topology = ControlPlaneTopology(policy=policy, home=tmp_path / "home")
+    resolved = topology.resolve()
+
+    assert topology.system_path("mcp") == mcp
+    assert resolved["generated_dir"] == control / "generated"
+    assert resolved["launchagents_dir"] == tmp_path / "home" / "Library/LaunchAgents"
+
+
+def test_control_plane_topology_blocks_unknown_binding() -> None:
+    topology = ControlPlaneTopology(
+        policy={
+            "systems": [{"id": "control", "path": "/tmp/control"}],
+            "topology": {"bindings": {"missing": "does-not-exist"}, "derived": {}},
+        }
+    )
+
+    try:
+        topology.resolve()
+    except KeyError as exc:
+        assert "unknown system" in str(exc)
+    else:
+        raise AssertionError("expected unknown topology binding to fail")
 
 
 def test_managed_systems_policy_has_topology_bindings() -> None:
