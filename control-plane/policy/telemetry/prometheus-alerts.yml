@@ -1,0 +1,32 @@
+groups:
+  - name: telegram_mcp
+    rules:
+      - alert: TelegramMcpHighToolErrorRate
+        expr: |
+          sum(rate(telegram_mcp_tool_calls_total{status!="ok"}[15m]))
+          /
+          clamp_min(sum(rate(telegram_mcp_tool_calls_total[15m])), 1)
+          > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Telegram MCP tool error rate above 25%
+      - alert: TelegramMcpReadLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(telegram_mcp_tool_duration_ms_bucket{tool="telegram_read"}[15m]))
+          ) > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: telegram_read p95 latency above 5s
+      - alert: TelegramMcpMetricsTargetDown
+        expr: up{job="telegram-mcp-metrics"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Telegram MCP Prometheus scrape target is down

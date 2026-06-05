@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "description": "Regression set for live tg read today (data_source=live_telegram).",
+  "dialogs": [
+    {
+      "id": "saved-messages",
+      "chat": "me",
+      "title": "Saved Messages",
+      "kind": "saved"
+    },
+    {
+      "id": "channel-konspekty",
+      "chat": "-1003850136767",
+      "title": "Конспекты",
+      "kind": "channel"
+    },
+    {
+      "id": "dm-commercialclub",
+      "chat": "@commercialclub",
+      "title": "Илья Кудрис",
+      "kind": "user"
+    },
+    {
+      "id": "dm-andrewbto",
+      "chat": "@AndrewBTO",
+      "title": "Андрей Чуманенко",
+      "kind": "user"
+    },
+    {
+      "id": "dm-brexit-man",
+      "chat": "@brexit_man",
+      "title": "Brexit",
+      "kind": "user"
+    }
+  ]
+}

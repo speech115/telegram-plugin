@@ -1,0 +1,1 @@
+For Telegram: use the telegram skill. For live reads (today/recent/search), run `tg` first — do not require @telegram. Use MCP only for media, sends, or fallback.

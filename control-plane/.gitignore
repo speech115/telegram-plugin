@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .DS_Store
+.cursor/
 backups/
 outputs/
 generated/observed-registry.json

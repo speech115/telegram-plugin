@@ -1,43 +1,40 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
+from .managed_systems import resolve_topology
 
-def _path_from_env(name: str, default: str | Path) -> Path:
-    return Path(os.environ.get(name, str(default))).expanduser()
-
+_TOPOLOGY = resolve_topology()
 
 HOME = Path.home()
-PROJECTS_ROOT = _path_from_env("TELEGRAM_PROJECTS_ROOT", HOME / "Projects")
-CONTROL_ROOT = _path_from_env("TELEGRAM_CONTROL_PLANE_ROOT", Path(__file__).resolve().parents[2])
-MONOREPO_ROOT = CONTROL_ROOT.parent
-MCP_REPO = _path_from_env("TELEGRAM_MCP_REPO", MONOREPO_ROOT / "mcp")
-PLUGIN_SOURCE = _path_from_env("TELEGRAM_PLUGIN_SOURCE", MONOREPO_ROOT / "plugin")
-PLUGIN_PACKAGE = _path_from_env("TELEGRAM_PLUGIN_PACKAGE", PLUGIN_SOURCE)
-PLUGIN_CACHE_ROOT = _path_from_env("TELEGRAM_PLUGIN_CACHE_ROOT", HOME / ".codex/plugins/cache/local/telegram")
-LIVE_SKILL = _path_from_env("TELEGRAM_LIVE_SKILL", HOME / ".agents/skills/telegram")
-MIRROR_ROOT = _path_from_env("TELEGRAM_MIRROR_ROOT", PROJECTS_ROOT / "tools" / "telegram-mirror")
-MIRROR_RUNTIME_ROOT = _path_from_env(
-    "TELEGRAM_MIRROR_RUNTIME_ROOT",
-    PROJECTS_ROOT / "runtime" / "telegram-mirror",
-)
-MIRROR_LEGACY_ALIAS = _path_from_env("TELEGRAM_MIRROR_LEGACY_ALIAS", MIRROR_ROOT)
-TELECRAWL_ARCHIVE = Path(os.environ.get("TELECRAWL_ARCHIVE_BIN", "telecrawl-archive"))
-TELECRAWL_ARTIFACT_ROOT = _path_from_env("TELECRAWL_ARTIFACT_ROOT", PROJECTS_ROOT / ".artifacts" / "telecrawl")
-TELECRAWL_DEFAULT_DB = _path_from_env("TELECRAWL_DEFAULT_DB", TELECRAWL_ARTIFACT_ROOT / "telecrawl-fast.db")
-LAUNCHAGENTS_DIR = HOME / "Library" / "LaunchAgents"
-GENERATED_DIR = CONTROL_ROOT / "generated"
-OBSERVED_REGISTRY = GENERATED_DIR / "observed-registry.json"
-POLICY_DIR = CONTROL_ROOT / "policy"
-FAST_READ_ADAPTER = CONTROL_ROOT / "bin" / "telegram-fast-read-today"
+CONTROL_ROOT = _TOPOLOGY["control_root"]
+MCP_REPO = _TOPOLOGY["mcp_repo"]
+PLUGIN_SOURCE = _TOPOLOGY["plugin_source"]
+PLUGIN_CACHE_ROOT = _TOPOLOGY["plugin_cache_root"]
+LIVE_SKILL = _TOPOLOGY["live_skill"]
+MIRROR_ROOT = _TOPOLOGY["mirror_root"]
+MIRROR_RUNTIME_ROOT = _TOPOLOGY["mirror_runtime_root"]
+MIRROR_LEGACY_ALIAS = _TOPOLOGY["mirror_legacy_alias"]
+TELECRAWL_ARCHIVE = _TOPOLOGY["telecrawl_archive"]
+TELECRAWL_DEFAULT_DB = _TOPOLOGY["telecrawl_default_db"]
+FAST_READ_ADAPTER = _TOPOLOGY["fast_read_adapter"]
+TG_CLI = _TOPOLOGY["tg_cli"]
+LAUNCHAGENTS_DIR = _TOPOLOGY["launchagents_dir"]
+GENERATED_DIR = _TOPOLOGY["generated_dir"]
+PLUGIN_PACKAGE = _TOPOLOGY["plugin_package"]
+OBSERVED_REGISTRY = _TOPOLOGY["observed_registry"]
+POLICY_DIR = _TOPOLOGY["policy_dir"]
+MCP_TELEMETRY_LOG = _TOPOLOGY["mcp_telemetry_log"]
+MCP_TELEMETRY_DIR = _TOPOLOGY["mcp_telemetry_dir"]
+MCP_TELEMETRY_STATS = _TOPOLOGY["mcp_telemetry_stats"]
+TELEMETRY_ALERT_THRESHOLDS = _TOPOLOGY["telemetry_alert_thresholds"]
 
 
 def plugin_source_version() -> str | None:
     manifest = PLUGIN_SOURCE / ".codex-plugin/plugin.json"
     try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data = json.loads(manifest.read_text())
     except (OSError, json.JSONDecodeError):
         return None
     version = data.get("version")

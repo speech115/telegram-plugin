@@ -9,7 +9,7 @@ turning this directory into a monorepo or private-state dump.
 
 ## Execution Order
 
-1. Keep this `control-plane/` tree (or a private operator checkout) as the
+1. Keep `/Users/sereja/Projects/tools/telegram` as the control-plane and
    protection layer.
 2. Keep live/runtime systems in their own homes:
    - live Telegram MCP backend in `telegram-mcp`;

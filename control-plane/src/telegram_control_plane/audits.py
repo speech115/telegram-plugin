@@ -2,23 +2,25 @@ from __future__ import annotations
 
 import ast
 import copy
-import json
-import os
 import plistlib
 import re
 import sqlite3
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .paths import (
     CONTROL_ROOT,
     FAST_READ_ADAPTER,
     HOME,
+    TG_CLI,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
     MCP_REPO,
+    MCP_TELEMETRY_DIR,
+    MCP_TELEMETRY_LOG,
+    MCP_TELEMETRY_STATS,
+    TELEMETRY_ALERT_THRESHOLDS,
     MIRROR_LEGACY_ALIAS,
     MIRROR_ROOT,
     MIRROR_RUNTIME_ROOT,
@@ -27,90 +29,20 @@ from .paths import (
     PLUGIN_CACHE_ROOT,
     PLUGIN_PACKAGE,
     PLUGIN_SOURCE,
-    PROJECTS_ROOT,
     TELECRAWL_ARCHIVE,
-    TELECRAWL_ARTIFACT_ROOT,
     TELECRAWL_DEFAULT_DB,
     plugin_source_version,
 )
-from .policy_paths import _POLICY_PATH_RE, resolve_policy_path
+from . import managed_systems, surface_contract, telecrawl_gap
+from .surface_contract import WRITE_OR_DESTRUCTIVE_RE
 from .util import load_json, run_json, status_from_findings
 
-
-PORTABLE_REQUIRED_SYSTEMS = frozenset(
-    {
-        "telegram-control-plane",
-        "telegram-mcp",
-        "telegram-plugin-source",
-    }
-)
-
-_KNOWN_SYSTEM_PATHS: dict[str, Callable[[], Path]] = {}
-
-
-APPROVED_FACADE_TOOLS = {
-    "doctor_check",
-    "get_me",
-    "resolve_dialog",
-    "find_dialog",
-    "collect_dialog_context",
-    "collect_context",
-    "prepare_dialog_reply",
-    "draft_reply",
-    "prepare_send_message",
-    "prepare_reply_message",
-    "prepare_media_inspection_manifest",
-    "download_media",
-    "download_media_batch",
-    "download_dialog_media",
-    "telegram_inspect_media",
-    "telegram_confirmed_send",
-    "telegram_export_members",
-    "telegram_prepare_reply",
-    "telegram_read",
-    "telegram_search",
-    "search_dialog_messages",
-}
-
-WRITE_OR_DESTRUCTIVE_RE = re.compile(
-    r"^(create|delete|demote|edit|forward|import|invite|leave|mark|promote|reply|send|set|update)_"
-)
-_PATH_HOME = re.escape(str(HOME))
-_PATH_PROJECTS = re.escape(str(PROJECTS_ROOT))
+APPROVED_FACADE_TOOLS = surface_contract.approved_facade_tools()
 PATH_LIKE_RE = re.compile(
-    rf"^({_PATH_PROJECTS}|{_PATH_HOME}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
+    rf"^({re.escape(str(HOME / 'Projects'))}|{re.escape(str(HOME))}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
 )
 
 SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
-PRIVATE_KEYS = {
-    "db_path",
-    "manifest_path",
-    "path",
-    "phone_masked",
-    "telegram_user_id",
-    "tdata_path",
-    "username",
-}
-PRIVATE_PATH_SUBSTRINGS = (
-    ".session",
-    "telegram_user_id",
-    str(HOME / ".telegram-mcp"),
-    str(HOME / ".telegram-mcp-pl"),
-    str(HOME / "Library/Application Support/Telegram Desktop/tdata"),
-    str(TELECRAWL_ARTIFACT_ROOT),
-)
-
-DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS = frozenset(
-    {
-        "ChannelPrivateError",
-        "ChatAdminRequiredError",
-        "UserBannedInChannelError",
-        "UserNotParticipantError",
-        "ChannelInvalidError",
-        "InviteHashExpiredError",
-        "InviteHashInvalidError",
-    }
-)
 
 
 def audit_plugin_drift() -> dict[str, Any]:
@@ -138,6 +70,7 @@ def audit_plugin_drift() -> dict[str, Any]:
                     "before treating cache as current."
                 ),
                 "installer_command": installer_flow.get("command"),
+                "materialize_command": installer_flow.get("materialize_command"),
             }
         )
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
@@ -179,12 +112,189 @@ def audit_plugin_drift() -> dict[str, Any]:
     }
 
 
+def _telemetry_thresholds() -> dict[str, Any]:
+    payload = load_json(TELEMETRY_ALERT_THRESHOLDS) or {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _prometheus_target_status(port: int, *, timeout: float = 2.0) -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    url = f"http://127.0.0.1:{port}/metrics"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            body = response.read(512).decode("utf-8", errors="replace")
+            return {
+                "port": port,
+                "status": "ok" if response.status == 200 else "fail",
+                "http_status": response.status,
+                "sample": body.splitlines()[:3],
+            }
+    except urllib.error.URLError as exc:
+        return {"port": port, "status": "down", "error": str(exc)}
+
+
+def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
+    findings: list[dict[str, Any]] = []
+    python_bin = MCP_REPO / ".venv/bin/python"
+    thresholds = _telemetry_thresholds()
+    effective_window = float(window_hours if window_hours is not None else thresholds.get("window_hours", 24))
+
+    summary: dict[str, Any]
+    if python_bin.exists():
+        summary = run_json(
+            [
+                str(python_bin),
+                "-m",
+                "telegram_mcp.telemetry",
+                "--summarize",
+                "--json",
+                "--log-dir",
+                str(MCP_TELEMETRY_DIR),
+                "--window-hours",
+                str(effective_window),
+            ],
+            timeout=60,
+        )
+    else:
+        summary = {
+            "status": "missing",
+            "log_path": str(MCP_TELEMETRY_DIR),
+            "events_in_window": 0,
+        }
+
+    summary_status = summary.get("status")
+    events_in_window = int(summary.get("events_in_window") or 0)
+    tool_errors = int(summary.get("tool_errors") or 0)
+    min_events = int(thresholds.get("min_events_for_rate_checks", 20))
+    max_tool_errors = int(thresholds.get("max_tool_errors", 10))
+    max_error_rate = float(thresholds.get("max_tool_error_rate", 0.25))
+    max_read_p95 = float(thresholds.get("max_telegram_read_p95_ms", 5000))
+
+    if summary_status == "missing":
+        findings.append(
+            {
+                "id": "telemetry_log_missing",
+                "severity": "warn",
+                "message": (
+                    "MCP telemetry logs are not present yet. Restart HTTP MCP with "
+                    "TELEGRAM_TELEMETRY_ENABLED=true (default) to begin collecting events."
+                ),
+            }
+        )
+    elif summary_status == "ok" and events_in_window == 0:
+        findings.append(
+            {
+                "id": "telemetry_no_recent_events",
+                "severity": "warn",
+                "message": (
+                    f"No telemetry events in the last {effective_window:g}h. "
+                    "Confirm MCP HTTP daemons are running and receiving tool traffic."
+                ),
+            }
+        )
+    elif tool_errors >= max_tool_errors:
+        findings.append(
+            {
+                "id": "telemetry_high_tool_error_count",
+                "severity": "warn",
+                "message": f"MCP telemetry recorded {tool_errors} tool errors in the recent window.",
+            }
+        )
+
+    tool_calls = int(summary.get("event_counts", {}).get("tool_call", 0)) if isinstance(summary.get("event_counts"), dict) else 0
+    if tool_calls >= min_events and tool_errors / tool_calls > max_error_rate:
+        findings.append(
+            {
+                "id": "telemetry_high_tool_error_rate",
+                "severity": "warn",
+                "message": (
+                    f"Tool error rate {tool_errors}/{tool_calls} exceeds "
+                    f"{max_error_rate:.0%} in the telemetry window."
+                ),
+            }
+        )
+
+    tool_latency = summary.get("tool_latency") if isinstance(summary.get("tool_latency"), dict) else {}
+    read_stats = tool_latency.get("telegram_read") if isinstance(tool_latency.get("telegram_read"), dict) else {}
+    read_p95 = read_stats.get("p95_ms")
+    if isinstance(read_p95, int | float) and read_p95 > max_read_p95:
+        findings.append(
+            {
+                "id": "telemetry_slow_telegram_read",
+                "severity": "warn",
+                "message": f"telegram_read p95 {read_p95}ms exceeds {max_read_p95:g}ms threshold.",
+            }
+        )
+
+    agent_preflight = summary.get("agent_preflight") if isinstance(summary.get("agent_preflight"), dict) else {}
+    preflight_violations = agent_preflight.get("preflight_violations")
+    max_preflight = thresholds.get("max_preflight_violations")
+    if (
+        isinstance(preflight_violations, int)
+        and isinstance(max_preflight, int)
+        and preflight_violations > max_preflight
+    ):
+        findings.append(
+            {
+                "id": "telemetry_preflight_violations",
+                "severity": "warn",
+                "message": (
+                    f"Recorded {preflight_violations} preflight violations "
+                    f"(doctor/get_me before first read); threshold is {max_preflight}."
+                ),
+            }
+        )
+
+    prometheus_ports = thresholds.get("prometheus_metrics_ports")
+    metrics_targets: list[dict[str, Any]] = []
+    if isinstance(prometheus_ports, list):
+        for raw_port in prometheus_ports:
+            if isinstance(raw_port, int):
+                metrics_targets.append(_prometheus_target_status(raw_port))
+    metrics_up = [item for item in metrics_targets if item.get("status") == "ok"]
+    if isinstance(prometheus_ports, list) and prometheus_ports and not metrics_up:
+        findings.append(
+            {
+                "id": "telemetry_prometheus_down",
+                "severity": "warn",
+                "message": (
+                    "No Telegram MCP Prometheus /metrics targets responded. "
+                    "Set TELEGRAM_TELEMETRY_METRICS_PORT per LaunchAgent (e.g. 9109, 9110) and restart MCP."
+                ),
+            }
+        )
+
+    cache = summary.get("cache") if isinstance(summary.get("cache"), dict) else {}
+    source_counts = summary.get("source_counts") if isinstance(summary.get("source_counts"), dict) else {}
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "summary": summary,
+        "artifacts": {
+            "telemetry_log": str(MCP_TELEMETRY_LOG),
+            "telemetry_log_dir": str(MCP_TELEMETRY_DIR),
+            "telemetry_stats": str(MCP_TELEMETRY_STATS),
+            "prometheus_scrape": str(CONTROL_ROOT / "policy/telemetry/prometheus-scrape.yml"),
+            "prometheus_alerts": str(CONTROL_ROOT / "policy/telemetry/prometheus-alerts.yml"),
+            "grafana_dashboard": str(CONTROL_ROOT / "policy/telemetry/grafana-dashboard.json"),
+        },
+        "stats_file_present": MCP_TELEMETRY_STATS.exists(),
+        "events_in_window": events_in_window,
+        "tool_errors": tool_errors,
+        "cache_hit_rate": cache.get("hit_rate"),
+        "source_counts": source_counts,
+        "prometheus_targets": metrics_targets,
+    }
+
+
 DOC_AUDIT_PATHS = (
+    CONTROL_ROOT / "AGENTS.md",
     CONTROL_ROOT / "README.md",
     CONTROL_ROOT / "PLAN.md",
 )
 DOC_PLUGIN_VERSION_RE = re.compile(r"plugin version `(\d+\.\d+\.\d+)`")
-DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS = frozenset({"list_chats"})
 
 
 def audit_docs() -> dict[str, Any]:
@@ -221,27 +331,20 @@ def audit_docs() -> dict[str, Any]:
                         "expected_version": plugin_version,
                     }
                 )
-        for tool in sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS):
-            if tool in text:
-                findings.append(
-                    {
-                        "id": "deprecated_default_surface_tool_in_docs",
-                        "severity": "blocking",
-                        "message": (
-                            f"{path.name} documents deprecated default-surface tool {tool!r}; "
-                            "update examples to facade tools."
-                        ),
-                        "path": str(path),
-                        "tool": tool,
-                    }
-                )
+        findings.extend(
+            surface_contract.evaluate_docs_surface_contract(
+                doc_name=path.name,
+                text=text,
+            )
+        )
 
     return {
         "status": status_from_findings(findings),
         "findings": findings,
         "checked_paths": checked,
         "plugin_version": plugin_version,
-        "deprecated_default_surface_tools": sorted(DEPRECATED_DEFAULT_SURFACE_DOC_TOOLS),
+        "surface_contract": surface_contract.contract_summary(),
+        "deprecated_default_surface_tools": sorted(surface_contract.deprecated_doc_tools()),
     }
 
 
@@ -269,68 +372,213 @@ def _raw_tree_file_count(raw: dict[str, Any], key: str) -> int | None:
     return value if isinstance(value, int) else None
 
 
-def audit_fast_read_adapter() -> dict[str, Any]:
-    """Verify the local read-only fast path used before mcporter for simple reads."""
+def audit_golden_read_smoke(*, probe_only: bool = True) -> dict[str, Any]:
+    """Live read smoke against golden dialogs (probe=me only by default)."""
 
-    exists = FAST_READ_ADAPTER.is_file()
-    executable = exists and FAST_READ_ADAPTER.stat().st_mode & 0o111 != 0
-    command = [str(FAST_READ_ADAPTER), "--help"]
-    help_probe: dict[str, Any] = {"ran": False}
+    from .golden_read_smoke import run_golden_read_smoke
+
+    dialog_ids = ["saved-messages"] if probe_only else None
+    raw = run_golden_read_smoke(limit=1, timeout=25.0, dialog_ids=dialog_ids)
     findings: list[dict[str, Any]] = []
-
-    if not exists:
-        findings.append(
-            {
-                "id": "fast_read_adapter_missing",
-                "severity": "blocking",
-                "message": "telegram-fast-read-today adapter is missing.",
-            }
-        )
-    elif not executable:
-        findings.append(
-            {
-                "id": "fast_read_adapter_not_executable",
-                "severity": "blocking",
-                "message": "telegram-fast-read-today adapter exists but is not executable.",
-            }
-        )
-    else:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        help_probe = {
-            "ran": True,
-            "exit_code": completed.returncode,
-            "stdout_contains_usage": "telegram-fast-read-today" in completed.stdout,
-        }
-        if completed.returncode != 0 or "telegram-fast-read-today" not in completed.stdout:
+    if raw.get("status") != "ok":
+        for item in raw.get("findings", []):
+            if not isinstance(item, dict):
+                continue
             findings.append(
                 {
-                    "id": "fast_read_adapter_help_failed",
-                    "severity": "blocking",
-                    "message": "telegram-fast-read-today --help did not return the expected CLI contract.",
+                    "id": "golden_read_smoke_failed",
+                    "severity": "warn" if probe_only else "blocking",
+                    "message": str(item.get("message") or "golden read smoke failed"),
+                    "dialog": item.get("dialog"),
+                }
+            )
+        if not findings:
+            findings.append(
+                {
+                    "id": "golden_read_smoke_failed",
+                    "severity": "warn" if probe_only else "blocking",
+                    "message": "Golden read smoke failed without details.",
                 }
             )
 
     return {
         "status": status_from_findings(findings),
         "findings": findings,
-        "adapter": {
-            "path": str(FAST_READ_ADAPTER),
-            "exists": exists,
-            "executable": bool(executable),
-            "command": command,
-            "help_probe": help_probe,
-        },
+        "probe_only": probe_only,
+        "dialogs": raw.get("dialogs", []),
+        "manifest_path": raw.get("manifest_path"),
+    }
+
+
+def audit_fast_read_adapter() -> dict[str, Any]:
+    """Verify the local read-only fast path used before mcporter for simple reads."""
+
+    import shutil
+
+    findings: list[dict[str, Any]] = []
+    adapters: list[dict[str, Any]] = []
+    tg_on_path = shutil.which("tg")
+    kit_wrapper = CONTROL_ROOT / "bin" / "tg"
+    if not tg_on_path:
+        findings.append(
+            {
+                "id": "tg_not_on_path",
+                "severity": "warn",
+                "message": (
+                    "tg is not on PATH; Codex agents may miss the fast read hot path. "
+                    "Run: ./bin/telegram-kit --local"
+                ),
+            }
+        )
+    elif kit_wrapper.is_file():
+        try:
+            path_tg = Path(tg_on_path).resolve()
+            kit_tg = kit_wrapper.resolve()
+            mcp_tg = Path(TG_CLI).resolve()
+        except OSError:
+            path_tg = kit_tg = mcp_tg = None
+        if path_tg and kit_tg and mcp_tg and path_tg not in {kit_tg, mcp_tg}:
+            findings.append(
+                {
+                    "id": "tg_path_shadows_kit",
+                    "severity": "warn",
+                    "message": (
+                        f"PATH tg ({path_tg}) is not the kit wrapper ({kit_tg}) or MCP tg ({mcp_tg}). "
+                        "Run: ./bin/telegram-kit --local"
+                    ),
+                    "path_tg": str(path_tg),
+                    "kit_tg": str(kit_tg),
+                }
+            )
+
+    for label, path, usage_needle in (
+        ("tg", TG_CLI, "tg"),
+        ("telegram-fast-read-today", FAST_READ_ADAPTER, "telegram-fast-read-today"),
+    ):
+        exists = path.is_file()
+        executable = exists and path.stat().st_mode & 0o111 != 0
+        command = [str(path), "--help"]
+        help_probe: dict[str, Any] = {"ran": False}
+        if not exists:
+            findings.append(
+                {
+                    "id": f"fast_read_adapter_missing_{label}",
+                    "severity": "blocking" if label == "tg" else "warn",
+                    "message": f"{label} adapter is missing.",
+                }
+            )
+        elif not executable:
+            findings.append(
+                {
+                    "id": f"fast_read_adapter_not_executable_{label}",
+                    "severity": "blocking" if label == "tg" else "warn",
+                    "message": f"{label} adapter exists but is not executable.",
+                }
+            )
+        else:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            help_probe = {
+                "ran": True,
+                "exit_code": completed.returncode,
+                "stdout_contains_usage": usage_needle in completed.stdout,
+            }
+            if completed.returncode != 0 or usage_needle not in completed.stdout:
+                findings.append(
+                    {
+                        "id": f"fast_read_adapter_help_failed_{label}",
+                        "severity": "blocking" if label == "tg" else "warn",
+                        "message": f"{label} --help probe failed.",
+                    }
+                )
+        adapters.append(
+            {
+                "label": label,
+                "path": str(path),
+                "exists": exists,
+                "executable": executable,
+                "help_probe": help_probe,
+            }
+        )
+
+    tg_module = MCP_REPO / "src/telegram_mcp/tg_cli.py"
+    tg_source = tg_module.read_text(encoding="utf-8", errors="replace") if tg_module.is_file() else ""
+    if '"telegram_read"' not in tg_source:
+        findings.append(
+            {
+                "id": "tg_cli_stale_tool",
+                "severity": "blocking",
+                "message": "telegram_mcp.tg_cli must call telegram_read on the default MCP surface.",
+            }
+        )
+
+    legacy_source = FAST_READ_ADAPTER.read_text(encoding="utf-8", errors="replace") if FAST_READ_ADAPTER.is_file() else ""
+    if legacy_source and "telegram_mcp.fast_read_today" not in legacy_source:
+        findings.append(
+            {
+                "id": "fast_read_adapter_wrapper_drift",
+                "severity": "warn",
+                "message": "telegram-fast-read-today must delegate to telegram_mcp.fast_read_today.",
+            }
+        )
+
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "adapter": adapters[0] if adapters else {},
+        "adapters": adapters,
+        "tg_on_path": tg_on_path,
         "routing": {
-            "first_path_for": ["simple_today_read"],
+            "first_path_for": ["simple_today_read", "simple_recent_read", "dialog_search"],
+            "cli": "tg",
             "fallback": "live_mcp_facade",
             "never_for": ["send", "reply", "media_inspection", "subscriber_export"],
+            "codex_hot_path_doc": "generated/adapters/codex/telegram-codex-entry.md",
         },
+    }
+
+
+def audit_agent_docs_sync() -> dict[str, Any]:
+    """Ensure MCP docs/agent matches plugin references manifest."""
+
+    command = [
+        str(MCP_REPO / "bin/sync-agent-docs"),
+        "--plugin-dir",
+        str(PLUGIN_PACKAGE),
+        "--check",
+        "--no-restart",
+        "--json",
+    ]
+    raw = run_json(command, timeout=30)
+    findings: list[dict[str, Any]] = []
+    if raw.get("status") == "drift":
+        for item in raw.get("drift", []):
+            findings.append(
+                {
+                    "id": "agent_docs_drift",
+                    "severity": "blocking",
+                    "message": str(item),
+                }
+            )
+    elif raw.get("status") not in {"ok", None}:
+        findings.append(
+            {
+                "id": "agent_docs_sync_failed",
+                "severity": "blocking",
+                "message": f"agent docs sync check status is {raw.get('status')!r}.",
+            }
+        )
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "command": command,
+        "topics": raw.get("topics"),
+        "drift": raw.get("drift"),
     }
 
 
@@ -340,6 +588,8 @@ def audit_release_gates() -> dict[str, Any]:
     command = [
         str(MCP_REPO / "bin/check-release-gates"),
         "--package-dir",
+        str(PLUGIN_PACKAGE),
+        "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--json",
     ]
@@ -428,214 +678,16 @@ def audit_install_adapters() -> dict[str, Any]:
     }
 
 
-def _expected_kind_matches(path: Path, expected_kind: str) -> bool:
-    if expected_kind == "directory":
-        return path.is_dir()
-    if expected_kind == "file":
-        return path.is_file()
-    if expected_kind == "symlink":
-        return path.is_symlink()
-    if expected_kind == "path":
-        return path.exists()
-    return False
-
-
-def _policy_marker(marker: str) -> str:
+def audit_managed_systems() -> dict[str, Any]:
     source_manifest = load_json(PLUGIN_SOURCE / ".codex-plugin/plugin.json") or {}
     source_version = source_manifest.get("version")
     cache_version = PLUGIN_CACHE.name if PLUGIN_CACHE.parent == PLUGIN_CACHE_ROOT else ""
-    version = source_version if isinstance(source_version, str) and source_version else cache_version
-    return marker.replace("{plugin_source_version}", version)
-
-
-def _managed_system_path(system_id: str, raw_path: str) -> Path:
-    text = raw_path.strip()
-    if _POLICY_PATH_RE.match(text):
-        return resolve_policy_path(text)
-    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "enabled",
-    }
-    if portable_ci and system_id in PORTABLE_REQUIRED_SYSTEMS:
-        resolver = _KNOWN_SYSTEM_PATHS.get(system_id)
-        if resolver is not None:
-            return resolver()
-    return Path(text).expanduser()
-
-
-def _init_known_system_paths() -> None:
-    if _KNOWN_SYSTEM_PATHS:
-        return
-    _KNOWN_SYSTEM_PATHS.update(
-        {
-            "telegram-control-plane": lambda: CONTROL_ROOT,
-            "telegram-mcp": lambda: MCP_REPO,
-            "telegram-plugin-source": lambda: PLUGIN_SOURCE,
-            "telegram-plugin-package": lambda: PLUGIN_PACKAGE,
-            "telegram-live-skill": lambda: LIVE_SKILL,
-            "telegram-plugin-cache": lambda: PLUGIN_CACHE_ROOT,
-        }
+    plugin_source_version = source_version if isinstance(source_version, str) and source_version else None
+    plugin_cache_version = cache_version if isinstance(cache_version, str) and cache_version else None
+    return managed_systems.evaluate_managed_systems(
+        plugin_source_version=plugin_source_version,
+        plugin_cache_version=plugin_cache_version,
     )
-
-
-def audit_managed_systems() -> dict[str, Any]:
-    _init_known_system_paths()
-    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "enabled",
-    }
-    policy = load_json(POLICY_DIR / "managed-systems.json") or {}
-    systems_policy = policy.get("systems") if isinstance(policy.get("systems"), list) else []
-    rows: list[dict[str, Any]] = []
-    findings: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
-    seen_paths: set[str] = set()
-
-    for item in systems_policy:
-        if not isinstance(item, dict):
-            findings.append(
-                {
-                    "id": "managed_system_policy_item_invalid",
-                    "severity": "blocking",
-                    "message": "Managed systems policy contains a non-object entry.",
-                }
-            )
-            continue
-        system_id = str(item.get("id") or "")
-        raw_path = str(item.get("path") or "")
-        expected_kind = str(item.get("expected_kind") or "path")
-        deletion_protection = str(item.get("deletion_protection") or "blocking")
-        required_markers = item.get("required_markers") if isinstance(item.get("required_markers"), list) else []
-        expected_resolved = item.get("expected_resolved") if isinstance(item.get("expected_resolved"), str) else None
-        path = _managed_system_path(system_id, raw_path) if raw_path else Path()
-        exists = bool(raw_path) and path.exists()
-        kind_matches = exists and _expected_kind_matches(path, expected_kind)
-        missing_markers = sorted(
-            str(marker)
-            for marker in required_markers
-            if isinstance(marker, str) and not (path / _policy_marker(marker)).exists()
-        )
-        resolved = str(path.resolve(strict=False)) if raw_path else None
-        row = {
-            "id": system_id,
-            "role": item.get("role"),
-            "path": raw_path,
-            "expected_kind": expected_kind,
-            "exists": exists,
-            "kind_matches": kind_matches,
-            "missing_markers": missing_markers,
-            "resolved": resolved,
-            "source_of_truth": bool(item.get("source_of_truth")),
-            "deletion_protection": deletion_protection,
-            "safe_delete": item.get("safe_delete"),
-        }
-        if expected_resolved:
-            row["expected_resolved"] = expected_resolved
-        rows.append(row)
-        if not system_id:
-            findings.append(
-                {
-                    "id": "managed_system_missing_id",
-                    "severity": "blocking",
-                    "message": "Managed systems policy entry is missing id.",
-                }
-            )
-        elif system_id in seen_ids:
-            findings.append(
-                {
-                    "id": "managed_system_duplicate_id",
-                    "severity": "blocking",
-                    "system": system_id,
-                    "message": "Managed systems policy contains a duplicate id.",
-                }
-            )
-        seen_ids.add(system_id)
-        if not raw_path:
-            findings.append(
-                {
-                    "id": "managed_system_missing_path",
-                    "severity": "blocking",
-                    "system": system_id,
-                    "message": "Managed systems policy entry is missing path.",
-                }
-            )
-        elif raw_path in seen_paths:
-            findings.append(
-                {
-                    "id": "managed_system_duplicate_path",
-                    "severity": "blocking",
-                    "system": system_id,
-                    "message": "Managed systems policy contains a duplicate path.",
-                }
-            )
-        seen_paths.add(str(path))
-        if not exists:
-            if portable_ci and system_id not in PORTABLE_REQUIRED_SYSTEMS:
-                continue
-            findings.append(
-                {
-                    "id": "managed_system_missing",
-                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
-                    "system": system_id,
-                    "role": item.get("role"),
-                    "path": raw_path,
-                    "message": "Registered Telegram managed system path is missing.",
-                }
-            )
-        elif not kind_matches:
-            findings.append(
-                {
-                    "id": "managed_system_kind_mismatch",
-                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
-                    "system": system_id,
-                    "path": raw_path,
-                    "expected_kind": expected_kind,
-                    "message": "Registered Telegram managed system path exists with the wrong kind.",
-                }
-            )
-        elif missing_markers:
-            findings.append(
-                {
-                    "id": "managed_system_marker_missing",
-                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
-                    "system": system_id,
-                    "path": raw_path,
-                    "missing_markers": missing_markers,
-                    "message": "Registered Telegram managed system exists but required marker files are missing.",
-                }
-            )
-        elif expected_resolved and resolved != expected_resolved:
-            findings.append(
-                {
-                    "id": "managed_system_resolved_target_mismatch",
-                    "severity": "blocking" if deletion_protection == "blocking" else "warn",
-                    "system": system_id,
-                    "path": raw_path,
-                    "resolved": resolved,
-                    "expected_resolved": expected_resolved,
-                    "message": "Registered Telegram managed system resolves to an unexpected target.",
-                }
-            )
-
-    deletion_policy = policy.get("deletion_policy") if isinstance(policy.get("deletion_policy"), dict) else {}
-    return {
-        "status": status_from_findings(findings),
-        "findings": findings,
-        "systems": rows,
-        "deletion_policy": deletion_policy,
-        "summary": {
-            "registered": len(rows),
-            "existing": sum(1 for row in rows if row.get("exists")),
-            "blocking_protected": sum(1 for row in rows if row.get("deletion_protection") == "blocking"),
-            "missing": sum(1 for row in rows if not row.get("exists")),
-            "kind_mismatches": sum(1 for row in rows if row.get("exists") and not row.get("kind_matches")),
-            "marker_mismatches": sum(1 for row in rows if row.get("missing_markers")),
-        },
-    }
 
 
 def _imported_tool_names(init_py: Path) -> list[str]:
@@ -650,25 +702,6 @@ def _imported_tool_names(init_py: Path) -> list[str]:
                 continue
             names.append(name)
     return sorted(set(names))
-
-
-def _confirmed_write_facade_tools() -> set[str]:
-    policy = load_json(POLICY_DIR / "write-policy.json") or {}
-    default_profile = policy.get("default_mcp_profile")
-    if not isinstance(default_profile, dict):
-        return set()
-    tools = default_profile.get("confirmed_write_facade_tools")
-    if not isinstance(tools, list):
-        return set()
-    return {str(item) for item in tools if isinstance(item, str)}
-
-
-def _is_unexpected_default_surface_tool(name: str, dialog_annotations: dict[str, str]) -> bool:
-    if name in _confirmed_write_facade_tools():
-        return False
-    if WRITE_OR_DESTRUCTIVE_RE.search(name):
-        return True
-    return dialog_annotations.get(name) not in {None, "readonly"}
 
 
 def _dialog_annotation_map(dialog_tools_py: Path) -> dict[str, str]:
@@ -702,12 +735,12 @@ def audit_mcp_surface() -> dict[str, Any]:
     default_surface = sorted(_facade_tool_names(init_py)) if init_py.exists() else []
     effective_default_tools = default_surface or tools
     dialog_annotations = _dialog_annotation_map(dialog_py) if dialog_py.exists() else {}
-    unexpected_write = [
-        name
-        for name in effective_default_tools
-        if _is_unexpected_default_surface_tool(name, dialog_annotations)
-    ]
-    non_facade = [name for name in effective_default_tools if name not in APPROVED_FACADE_TOOLS]
+    surface_eval = surface_contract.evaluate_default_surface_tools(
+        effective_default_tools,
+        dialog_annotations,
+    )
+    unexpected_write = surface_eval["unexpected_write_or_destructive_tools"]
+    non_facade = surface_eval["non_facade_tools"]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
     mcp_servers = plugin_mcp.get("mcpServers") if isinstance(plugin_mcp.get("mcpServers"), dict) else {}
     findings: list[dict[str, Any]] = []
@@ -736,8 +769,7 @@ def audit_mcp_surface() -> dict[str, Any]:
         unsafe_tools = sorted(
             tool
             for tool in allowlist
-            if tool not in APPROVED_FACADE_TOOLS
-            or _is_unexpected_default_surface_tool(tool, dialog_annotations)
+            if surface_contract.is_unsafe_plugin_allowlist_tool(tool, dialog_annotations)
         )
         if unsafe_tools:
             findings.append(
@@ -748,6 +780,20 @@ def audit_mcp_surface() -> dict[str, Any]:
                     "tools": unsafe_tools,
                 }
             )
+        if allowlist is not None:
+            drift = surface_contract.evaluate_plugin_allowlist_contract(set(allowlist))
+            if not drift["matches_contract"]:
+                findings.append(
+                    {
+                        "id": "plugin_allowlist_surface_contract_drift",
+                        "severity": "blocking",
+                        "message": (
+                            f"MCP server {name!r} allowlist does not match surface-contract.json."
+                        ),
+                        "extra_tools": drift["extra_tools"],
+                        "missing_tools": drift["missing_tools"],
+                    }
+                )
     return {
         "status": status_from_findings(findings),
         "findings": findings,
@@ -759,6 +805,7 @@ def audit_mcp_surface() -> dict[str, Any]:
         "non_facade_tools": non_facade,
         "dialog_facade_annotations": dialog_annotations,
         "plugin_mcp_servers": mcp_servers,
+        "surface_contract": surface_contract.contract_summary(),
     }
 
 
@@ -1297,213 +1344,25 @@ def _safe_read_telecrawl_json(args: list[str], *, timeout: int = 90) -> dict[str
     return run_json([str(TELECRAWL_ARCHIVE), *args], timeout=timeout)
 
 
-def _telecrawl_manifest_path(db_path: Path | None = None) -> Path:
-    db_path = db_path or TELECRAWL_DEFAULT_DB
-    return db_path.with_name(f"{db_path.name}.manifest.json")
-
-
-def _telecrawl_non_retryable_error_types(policy: dict[str, Any] | None = None) -> set[str]:
-    configured = policy.get("non_retryable_error_types") if isinstance(policy, dict) else None
-    if not isinstance(configured, list):
-        return set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
-    return {item for item in configured if isinstance(item, str) and item}
-
-
-def _telecrawl_import_gaps(
-    db_path: Path | None = None,
-    *,
-    non_retryable_error_types: set[str] | None = None,
-) -> dict[str, Any]:
-    db_path = db_path or TELECRAWL_DEFAULT_DB
-    non_retryable_error_types = non_retryable_error_types or set(DEFAULT_NON_RETRYABLE_TELECRAWL_ERRORS)
-    if not db_path.exists():
-        return {
-            "has_known_gaps": False,
-            "has_retryable_gaps": False,
-            "has_terminal_gaps": False,
-            "errors": 0,
-            "retryable_errors": 0,
-            "terminal_errors": 0,
-            "error_chats": 0,
-            "error_summary": [],
-            "retryable_error_summary": [],
-            "terminal_error_summary": [],
-            "non_retryable_error_types": sorted(non_retryable_error_types),
-        }
-    try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
-            tables = {
-                row[0]
-                for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            }
-            if "import_errors" not in tables:
-                return {
-                    "has_known_gaps": False,
-                    "has_retryable_gaps": False,
-                    "has_terminal_gaps": False,
-                    "errors": 0,
-                    "retryable_errors": 0,
-                    "terminal_errors": 0,
-                    "error_chats": 0,
-                    "error_summary": [],
-                    "retryable_error_summary": [],
-                    "terminal_error_summary": [],
-                    "non_retryable_error_types": sorted(non_retryable_error_types),
-                }
-            summary = [
-                {"error_type": row[0], "chats": int(row[1] or 0), "attempts": int(row[2] or 0)}
-                for row in conn.execute(
-                    "SELECT error_type, COUNT(DISTINCT chat_jid) AS chats, COUNT(*) AS attempts "
-                    "FROM import_errors GROUP BY error_type ORDER BY attempts DESC"
-                ).fetchall()
-            ]
-            retryable_summary = [row for row in summary if row["error_type"] not in non_retryable_error_types]
-            terminal_summary = [row for row in summary if row["error_type"] in non_retryable_error_types]
-            row = conn.execute(
-                "SELECT COUNT(*) AS errors, COUNT(DISTINCT chat_jid) AS error_chats FROM import_errors"
-            ).fetchone()
-    except sqlite3.Error as exc:
-        return {
-            "has_known_gaps": True,
-            "has_retryable_gaps": True,
-            "has_terminal_gaps": False,
-            "errors": None,
-            "retryable_errors": None,
-            "terminal_errors": None,
-            "error_chats": None,
-            "error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
-            "retryable_error_summary": [{"error_type": "sqlite_error", "chats": None, "attempts": None}],
-            "terminal_error_summary": [],
-            "non_retryable_error_types": sorted(non_retryable_error_types),
-            "read_error": str(exc),
-        }
-    total_errors = int(row[0] or 0) if row else 0
-    terminal_errors = sum(int(item["attempts"] or 0) for item in terminal_summary)
-    retryable_errors = total_errors - terminal_errors
-    return {
-        "has_known_gaps": bool(total_errors),
-        "has_retryable_gaps": retryable_errors > 0,
-        "has_terminal_gaps": terminal_errors > 0,
-        "errors": total_errors,
-        "retryable_errors": retryable_errors,
-        "terminal_errors": terminal_errors,
-        "error_chats": int(row[1] or 0) if row else 0,
-        "error_summary": summary,
-        "retryable_error_summary": retryable_summary,
-        "terminal_error_summary": terminal_summary,
-        "non_retryable_error_types": sorted(non_retryable_error_types),
-        "retry_policy": {
-            "retry_only_when_has_retryable_gaps": True,
-            "do_not_retry_terminal_gaps": True,
-        },
-    }
-
-
-def _telecrawl_default_archive_status(
-    db_path: Path | None = None,
-    *,
-    non_retryable_error_types: set[str] | None = None,
-) -> dict[str, Any]:
-    db_path = db_path or TELECRAWL_DEFAULT_DB
-    manifest = load_json(_telecrawl_manifest_path(db_path)) or {}
-    import_state = manifest.get("import") if isinstance(manifest.get("import"), dict) else {}
-    counts = manifest.get("counts") if isinstance(manifest.get("counts"), dict) else {}
-    gaps = _telecrawl_import_gaps(db_path, non_retryable_error_types=non_retryable_error_types)
-    manifest_status = manifest.get("manifest_status")
-    coverage_claim = manifest.get("coverage_claim", "unknown_archive_snapshot")
-    if gaps.get("has_known_gaps"):
-        coverage_claim = "partial_archive_snapshot_with_known_gaps"
-    return {
-        "ok": True,
-        "source": "telecrawl",
-        "source_kind": manifest.get("source_kind", "archive_snapshot"),
-        "read_strategy": "manifest_plus_import_errors",
-        "coverage_claim": coverage_claim,
-        "manifest_coverage_claim": manifest.get("coverage_claim"),
-        "manifest_status": manifest_status,
-        "archive_ready": db_path.exists() and manifest_status == "complete",
-        "import_gaps": gaps,
-        "last_complete_import_at": import_state.get("last_complete_import_at"),
-        "status": {
-            "chats": counts.get("chats"),
-            "messages": counts.get("messages"),
-            "media_messages": counts.get("media_messages"),
-            "oldest_message": counts.get("oldest_message"),
-            "newest_message": counts.get("newest_message"),
-        },
-        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-    }
-
-
 def audit_telecrawl() -> dict[str, Any]:
-    telecrawl_policy = load_json(POLICY_DIR / "telecrawl.json") or {}
-    non_retryable_error_types = _telecrawl_non_retryable_error_types(telecrawl_policy)
+    telecrawl_policy = telecrawl_gap.load_telecrawl_policy()
+    terminal_types = telecrawl_gap.non_retryable_error_types(telecrawl_policy)
     accounts = _safe_read_telecrawl_json(["accounts"], timeout=30)
-    status = _telecrawl_default_archive_status(non_retryable_error_types=non_retryable_error_types)
-    findings: list[dict[str, Any]] = []
-    account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
-    active_incomplete = [
-        row
-        for row in account_rows
-        if row.get("active") and (not row.get("db_exists") or row.get("manifest_stale_or_missing"))
-    ]
-    if active_incomplete:
-        findings.append(
-            {
-                "id": "telecrawl_active_archives_incomplete",
-                "severity": "warn",
-                "message": "Telecrawl account catalog contains active accounts with missing or stale archives.",
-                "count": len(active_incomplete),
-            }
-        )
-    import_gaps = status.get("import_gaps") if isinstance(status.get("import_gaps"), dict) else {}
-    if import_gaps.get("has_known_gaps"):
-        severity = (
-            "warn"
-            if telecrawl_policy.get("known_gaps_are_blocking_for_archive_search") is False
-            else "blocking"
-        )
-        retryable = import_gaps.get("retryable_error_summary")
-        terminal = import_gaps.get("terminal_error_summary")
-        retryable_count = len(retryable) if isinstance(retryable, list) else 0
-        terminal_count = len(terminal) if isinstance(terminal, list) else 0
-        expected_ids = telecrawl_policy.get("expected_doctor_warning_ids")
-        expected_gap_warning = (
-            isinstance(expected_ids, list)
-            and "telecrawl_known_gaps" in expected_ids
-            and severity == "warn"
-        )
-        findings.append(
-            {
-                "id": "telecrawl_known_gaps",
-                "severity": severity,
-                "message": (
-                    "Telecrawl default archive has known import gaps "
-                    f"({retryable_count} retryable, {terminal_count} terminal); "
-                    "not a control-plane release blocker."
-                    if expected_gap_warning
-                    else "Telecrawl default archive has known import gaps."
-                ),
-                "summary": import_gaps.get("error_summary"),
-                "retryable_summary": retryable,
-                "terminal_summary": terminal,
-                "retry_policy": import_gaps.get("retry_policy"),
-                "expected_operational_warning": expected_gap_warning,
-            }
-        )
-    if status.get("source_kind") != "archive_snapshot":
-        findings.append(
-            {
-                "id": "telecrawl_source_kind_unexpected",
-                "severity": "warn",
-                "message": "Telecrawl status did not report archive_snapshot source kind.",
-            }
-        )
+    status = telecrawl_gap.default_archive_status(
+        TELECRAWL_DEFAULT_DB,
+        non_retryable_error_types=terminal_types,
+    )
+    readiness = telecrawl_gap.evaluate_archive_readiness(
+        accounts=accounts,
+        archive_status=status,
+        policy=telecrawl_policy,
+    )
     return {
-        "status": status_from_findings(findings),
-        "findings": findings,
+        "status": readiness["status"],
+        "findings": readiness["findings"],
         "wrapper": str(TELECRAWL_ARCHIVE),
         "policy": telecrawl_policy,
+        "gap_policy": readiness.get("gap_policy"),
         "accounts": accounts,
         "default_archive_status": status,
         "freshness": {
@@ -1517,181 +1376,18 @@ def audit_telecrawl() -> dict[str, Any]:
 
 
 def _collect_components() -> dict[str, dict[str, Any]]:
-    return {
-        "managed_systems": audit_managed_systems(),
-        "docs": audit_docs(),
-        "plugin_drift": audit_plugin_drift(),
-        "fast_read_adapter": audit_fast_read_adapter(),
-        "release_gates": audit_release_gates(),
-        "install_adapters": audit_install_adapters(),
-        "mcp_surface": audit_mcp_surface(),
-        "mcp_profiles": audit_mcp_profiles(),
-        "launchd": audit_launchd(),
-        "sessions": audit_sessions(),
-        "telegram_mirror": audit_mirror(),
-        "telecrawl": audit_telecrawl(),
-    }
+    from .doctor import ControlPlaneDoctor
+
+    return ControlPlaneDoctor().collect_components()
 
 
 def build_registry() -> dict[str, Any]:
-    raw_components = _collect_components()
-    findings: list[dict[str, Any]] = []
-    for component, report in raw_components.items():
-        for item in report.get("findings", []):
-            enriched = dict(item)
-            enriched.setdefault("component", component)
-            findings.append(enriched)
-    components = {
-        name: _project_registry_component(name, report)
-        for name, report in raw_components.items()
-    }
-    registry = {
-        "schema_version": 1,
-        "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "read_only_external_state": True,
-        "status": status_from_findings(findings),
-        "summary": {
-            "components": {name: report.get("status") for name, report in raw_components.items()},
-            "blocking_findings": sum(1 for item in findings if item.get("severity") == "blocking"),
-            "warning_findings": sum(1 for item in findings if item.get("severity") in {"warn", "warning"}),
-        },
-        "findings": findings,
-        "components": components,
-    }
-    return _redact_private_runtime_details(registry)
+    from .doctor import ControlPlaneDoctor
+
+    return ControlPlaneDoctor(component_collector=_collect_components).build_registry()
 
 
 def write_registry(path: Path, registry: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    from .doctor import ControlPlaneDoctor
 
-
-def _project_registry_component(name: str, report: dict[str, Any]) -> dict[str, Any]:
-    enriched = _registry_component_enriched(name, report)
-    schema = load_json(POLICY_DIR / "registry-schema.json") or {}
-    fields_by_component = schema.get("component_fields") if isinstance(schema.get("component_fields"), dict) else {}
-    fields = fields_by_component.get(name)
-    if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
-        fields = ["status", "findings"]
-    return {field: enriched[field] for field in fields if field in enriched}
-
-
-def _registry_component_enriched(name: str, report: dict[str, Any]) -> dict[str, Any]:
-    if name == "sessions":
-        sessions = report.get("sessions") if isinstance(report.get("sessions"), list) else []
-        policy = report.get("policy") if isinstance(report.get("policy"), dict) else {}
-        registered_policy = policy.get("sessions") if isinstance(policy.get("sessions"), list) else []
-        return {
-            "status": report.get("status"),
-            "findings": report.get("findings", []),
-            "summary": {
-                "discovered": len(sessions),
-                "existing": sum(1 for item in sessions if isinstance(item, dict) and item.get("exists")),
-                "registered": sum(1 for item in sessions if isinstance(item, dict) and item.get("registered")),
-                "runtime_allowed": sum(
-                    1 for item in sessions if isinstance(item, dict) and item.get("runtime_allowed")
-                ),
-                "schema_checked": sum(1 for item in sessions if isinstance(item, dict) and item.get("schema_checked")),
-                "lease_checked": sum(1 for item in sessions if isinstance(item, dict) and item.get("lease_checked")),
-            },
-            "policy_summary": {
-                "registered": len(registered_policy),
-                "runtime_allowed": sum(
-                    1 for item in registered_policy if isinstance(item, dict) and item.get("runtime_allowed")
-                ),
-                "recovery_runtime_allowed": sum(
-                    1
-                    for item in registered_policy
-                    if isinstance(item, dict)
-                    and str(item.get("owner", "")).startswith("telegram-mirror")
-                    and item.get("runtime_allowed")
-                ),
-            },
-        }
-    if name == "telegram_mirror":
-        runtime_state = report.get("runtime_state") if isinstance(report.get("runtime_state"), dict) else {}
-        sessions = runtime_state.get("sessions") if isinstance(runtime_state.get("sessions"), list) else []
-        recovery_sessions = (
-            runtime_state.get("recovery_sessions") if isinstance(runtime_state.get("recovery_sessions"), list) else []
-        )
-        ledgers = runtime_state.get("ledgers") if isinstance(runtime_state.get("ledgers"), list) else []
-        export_coverage = (
-            runtime_state.get("export_coverage") if isinstance(runtime_state.get("export_coverage"), dict) else {}
-        )
-        return {
-            **report,
-            "runtime_state_summary": {
-                "session_count": len(sessions),
-                "recovery_session_count": len(recovery_sessions),
-                "ledger_count": len(ledgers),
-                "runtime_root_exists": bool(runtime_state.get("runtime_root_exists")),
-                "runtime_exports_exists": bool(runtime_state.get("runtime_exports_exists")),
-                "export_expected_count": export_coverage.get("expected_count"),
-                "export_ready_count": export_coverage.get("ready_count"),
-                "export_missing_count": export_coverage.get("missing_count"),
-            },
-        }
-    if name == "telecrawl":
-        accounts_payload = report.get("accounts") if isinstance(report.get("accounts"), dict) else {}
-        accounts = accounts_payload.get("accounts") if isinstance(accounts_payload.get("accounts"), list) else []
-        archive = report.get("default_archive_status") if isinstance(report.get("default_archive_status"), dict) else {}
-        return {
-            **report,
-            "account_summary": {
-                "total": len(accounts),
-                "active": sum(1 for item in accounts if isinstance(item, dict) and item.get("active")),
-                "inactive": sum(1 for item in accounts if isinstance(item, dict) and not item.get("active")),
-                "archive_ready": bool(archive.get("archive_ready")),
-                "known_gap_count": (
-                    archive.get("import_gaps", {}).get("errors")
-                    if isinstance(archive.get("import_gaps"), dict)
-                    else None
-                ),
-            },
-        }
-    if name == "mcp_profiles":
-        profiles = report.get("profiles") if isinstance(report.get("profiles"), list) else []
-        safe_profiles = []
-        for profile in profiles:
-            if not isinstance(profile, dict):
-                continue
-            safe_profiles.append(
-                {
-                    "label": profile.get("label"),
-                    "port": profile.get("port"),
-                    "loaded": profile.get("loaded"),
-                    "write_policy": profile.get("write_policy"),
-                }
-            )
-        return {**report, "profiles": safe_profiles}
-    return dict(report)
-
-
-def _redact_private_runtime_details(value: Any) -> Any:
-    if isinstance(value, dict):
-        result: dict[str, Any] = {}
-        for key, item in value.items():
-            if key in PRIVATE_KEYS:
-                if key == "path" and isinstance(item, str) and not any(
-                    marker in item for marker in PRIVATE_PATH_SUBSTRINGS
-                ):
-                    result[key] = item
-                continue
-            else:
-                result[key] = _redact_private_runtime_details(item)
-        return result
-    if isinstance(value, list):
-        return [_redact_private_runtime_details(item) for item in value]
-    if isinstance(value, str) and any(marker in value for marker in PRIVATE_PATH_SUBSTRINGS):
-        return "<redacted>"
-    if isinstance(value, str) and (value.startswith("tg:") or value.startswith("Telegram @")):
-        return "<redacted>"
-    return copy.deepcopy(value)
-
-
-def _redacted_private_value(key: str, value: Any) -> Any:
-    if key == "path" and isinstance(value, str) and not any(marker in value for marker in PRIVATE_PATH_SUBSTRINGS):
-        return value
-    if isinstance(value, bool) or value is None:
-        return value
-    return "<redacted>"
+    ControlPlaneDoctor().write_registry(path, registry)

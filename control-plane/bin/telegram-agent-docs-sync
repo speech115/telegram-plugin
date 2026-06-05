@@ -4,12 +4,13 @@ set -euo pipefail
 # shellcheck source=telegram-env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
 
+PLUGIN_DIR="${TELEGRAM_CONTROL_ROOT}/generated/telegram-plugin-package"
 PYTHON="${TELEGRAM_MCP_REPO}/.venv/bin/python"
 
 if [ ! -x "${PYTHON}" ]; then
-  printf 'telegram-fast-read-today: missing MCP venv python: %s\n' "${PYTHON}" >&2
+  printf 'telegram-agent-docs-sync: missing MCP venv python: %s\n' "${PYTHON}" >&2
   exit 2
 fi
 
 export PYTHONPATH="${TELEGRAM_MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
-exec "${PYTHON}" -m telegram_mcp.fast_read_today "$@"
+exec "${PYTHON}" -m telegram_mcp.agent_doc_sync --plugin-dir "${PLUGIN_DIR}" "$@"

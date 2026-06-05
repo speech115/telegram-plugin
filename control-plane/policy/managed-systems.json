@@ -3,7 +3,7 @@
     {
       "id": "telegram-control-plane",
       "role": "control_plane",
-      "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}",
+      "path": "/Users/sereja/Projects/tools/telegram",
       "expected_kind": "directory",
       "required_markers": ["AGENTS.md", "README.md", "bin/telegram-doctor", "policy/managed-systems.json"],
       "source_of_truth": true,
@@ -13,7 +13,7 @@
     {
       "id": "telegram-mcp",
       "role": "live_mcp_backend",
-      "path": "${TELEGRAM_MCP_REPO:-./mcp}",
+      "path": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp",
       "expected_kind": "directory",
       "required_markers": ["AGENTS.md", "README.md", "bin/check-plugin-drift", "scripts/launchd-run.sh"],
       "source_of_truth": true,
@@ -21,19 +21,30 @@
       "safe_delete": "never_without_explicit_plan"
     },
     {
-      "id": "telegram-plugin-source",
-      "role": "user_facing_plugin_source",
-      "path": "${TELEGRAM_PLUGIN_SOURCE:-./plugin}",
+      "id": "telegram-plugin-package",
+      "role": "canonical_portable_plugin_package",
+      "path": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
       "expected_kind": "directory",
       "required_markers": [".codex-plugin/plugin.json", ".mcp.json", "skills/telegram/SKILL.md"],
       "source_of_truth": true,
       "deletion_protection": "blocking",
-      "safe_delete": "never_without_explicit_plan"
+      "safe_delete": "only_after_rebuild_or_replacement_package_verified"
+    },
+    {
+      "id": "telegram-plugin-source",
+      "role": "local_marketplace_plugin_alias",
+      "path": "/Users/sereja/plugins/telegram",
+      "expected_kind": "symlink",
+      "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package",
+      "required_markers": [".codex-plugin/plugin.json", ".mcp.json", "skills/telegram/SKILL.md"],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "only_after_marketplace_source_repointed"
     },
     {
       "id": "telegram-plugin-cache",
       "role": "installed_plugin_cache",
-      "path": "${TELEGRAM_PLUGIN_CACHE_ROOT:-~/.codex/plugins/cache/sereja-local/telegram}",
+      "path": "/Users/sereja/.codex/plugins/cache/sereja-local/telegram",
       "expected_kind": "directory",
       "required_markers": [
         "{plugin_source_version}/.codex-plugin/plugin.json",
@@ -46,8 +57,9 @@
     {
       "id": "telegram-live-skill",
       "role": "runtime_skill_facade",
-      "path": "${TELEGRAM_LIVE_SKILL:-~/.agents/skills/telegram}",
-      "expected_kind": "directory",
+      "path": "/Users/sereja/.agents/skills/telegram",
+      "expected_kind": "symlink",
+      "expected_resolved": "/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package/skills/telegram",
       "required_markers": ["SKILL.md", "references/source-evidence-broker.md"],
       "source_of_truth": false,
       "deletion_protection": "blocking",
@@ -56,7 +68,7 @@
     {
       "id": "telegram-local-mirror-skill",
       "role": "archive_mirror_routing_skill",
-      "path": "${TELEGRAM_LOCAL_MIRROR_SKILL:-~/Projects/.codex/skills/telegram-local-mirror}",
+      "path": "/Users/sereja/Projects/.codex/skills/telegram-local-mirror",
       "expected_kind": "directory",
       "required_markers": ["SKILL.md"],
       "source_of_truth": true,
@@ -66,7 +78,7 @@
     {
       "id": "telegram-mirror",
       "role": "mirror_recovery_candidate",
-      "path": "${TELEGRAM_CONTROL_PLANE_ROOT:-./control-plane}-mirror",
+      "path": "/Users/sereja/Projects/tools/telegram-mirror",
       "expected_kind": "directory",
       "required_markers": ["AGENTS.md", "README.md", "RECOVERY.md", "PROVENANCE.md", "scripts/telegram_mirror_allowlist_report.py"],
       "source_of_truth": true,
@@ -76,7 +88,7 @@
     {
       "id": "telegram-mirror-compat-alias",
       "role": "legacy_compatibility_alias",
-      "path": "${TELEGRAM_MIRROR_LEGACY_ALIAS:-~/Projects/tools/telegram-mirror}",
+      "path": "/Users/sereja/Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror",
       "expected_kind": "symlink",
       "required_markers": ["AGENTS.md", "scripts/telegram_mirror_allowlist_report.py"],
       "source_of_truth": false,
@@ -86,7 +98,7 @@
     {
       "id": "telecrawl-archive-data",
       "role": "archive_data",
-      "path": "${TELECRAWL_ARTIFACT_ROOT:-~/Projects/.artifacts/telecrawl}",
+      "path": "/Users/sereja/Projects/.artifacts/telecrawl",
       "expected_kind": "directory",
       "required_markers": ["telecrawl-accounts.db"],
       "source_of_truth": false,
@@ -96,7 +108,7 @@
     {
       "id": "telecrawl-user-state",
       "role": "local_telecrawl_runtime_state",
-      "path": "${TELECRAWL_HOME:-~/.telecrawl}",
+      "path": "/Users/sereja/.telecrawl",
       "expected_kind": "directory",
       "required_markers": ["telecrawl.db"],
       "source_of_truth": false,
@@ -106,7 +118,7 @@
     {
       "id": "telecrawl-archive-wrapper",
       "role": "archive_cli_wrapper",
-      "path": "${TELECRAWL_ARCHIVE_BIN:-telecrawl-archive}",
+      "path": "/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-archive",
       "expected_kind": "file",
       "required_markers": [],
       "source_of_truth": true,
@@ -116,14 +128,62 @@
     {
       "id": "telecrawl-fast-binary",
       "role": "patched_archive_import_binary",
-      "path": "${TELECRAWL_FAST_BIN:-telecrawl-fast}",
+      "path": "/Users/sereja/Projects/tools/agent-tooling/bin/telecrawl-fast",
       "expected_kind": "file",
       "required_markers": [],
       "source_of_truth": false,
       "deletion_protection": "warn",
       "safe_delete": "only_after_rebuild_path_verified"
+    },
+    {
+      "id": "telegram-mirror-runtime",
+      "role": "mirror_runtime_state",
+      "path": "/Users/sereja/Projects/runtime/telegram-mirror",
+      "expected_kind": "directory",
+      "required_markers": [],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_explicit_plan"
+    },
+    {
+      "id": "telecrawl-fast-db",
+      "role": "patched_archive_database",
+      "path": "/Users/sereja/Projects/.artifacts/telecrawl/telecrawl-fast.db",
+      "expected_kind": "file",
+      "required_markers": [],
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_backup_and_explicit_plan"
     }
   ],
+  "topology": {
+    "bindings": {
+      "control_root": "telegram-control-plane",
+      "mcp_repo": "telegram-mcp",
+      "plugin_package": "telegram-plugin-package",
+      "plugin_source": "telegram-plugin-source",
+      "plugin_cache_root": "telegram-plugin-cache",
+      "live_skill": "telegram-live-skill",
+      "local_mirror_skill": "telegram-local-mirror-skill",
+      "mirror_root": "telegram-mirror",
+      "mirror_runtime_root": "telegram-mirror-runtime",
+      "mirror_legacy_alias": "telegram-mirror-compat-alias",
+      "telecrawl_archive": "telecrawl-archive-wrapper",
+      "telecrawl_default_db": "telecrawl-fast-db"
+    },
+    "derived": {
+      "generated_dir": "${control_root}/generated",
+      "policy_dir": "${control_root}/policy",
+      "fast_read_adapter": "${control_root}/bin/telegram-fast-read-today",
+      "tg_cli": "${mcp_repo}/bin/tg",
+      "observed_registry": "${control_root}/generated/observed-registry.json",
+      "launchagents_dir": "$HOME/Library/LaunchAgents",
+      "mcp_telemetry_log": "$HOME/telegram-mcp/telemetry.jsonl",
+      "mcp_telemetry_dir": "$HOME/telegram-mcp/telemetry",
+      "mcp_telemetry_stats": "$HOME/telegram-mcp/telemetry-stats.json",
+      "telemetry_alert_thresholds": "${control_root}/policy/telemetry/alert-thresholds.json"
+    }
+  },
   "deletion_policy": {
     "default": "deny",
     "telegram_related_paths_require": [

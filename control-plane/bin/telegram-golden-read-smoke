@@ -3,4 +3,4 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
-exec python3 -m telegram_control_plane.release_gate "$@"
+exec python3 -m telegram_control_plane.golden_read_smoke "$@"
