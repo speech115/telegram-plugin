@@ -9,10 +9,17 @@ desired policy.
 ## Quick Start
 
 ```bash
+./bin/tgc next --json       # doctor triage as prioritized actions with exact commands
+./bin/tgc commands --json   # machine-readable registry of every command
 ./bin/telegram-status --json
 ./bin/telegram-doctor --json
 ./bin/telegram-maintenance-doctor --json
 ```
+
+`tgc` is the agent entrypoint: `next` answers "what should I do right now",
+`commands` lists every public command with purpose, level
+(daily/live/mirror/drilldown/maintenance/release), and safety class. The
+registry is unit-tested against `bin/`, so it cannot drift.
 
 Use `telegram-status`/`telegram-doctor` for quick local health. They run the
 single-user core profile by default. For low-stakes current reads, use the live

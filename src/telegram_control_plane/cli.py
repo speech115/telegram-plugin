@@ -25,6 +25,8 @@ from .doctor import ControlPlaneDoctor
 from .paths import OBSERVED_REGISTRY
 from .audit_remediation import apply_repair_plan, build_repair_plan
 from .doctor_profiles import PROFILE_COMPONENTS
+from .command_registry import registry_report
+from .next_actions import build_next_actions, render_next_actions
 from .runtime_inventory import audit_runtime_inventory
 from .source_routing import audit_source_routing, recommend_route
 
@@ -55,7 +57,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read-only Telegram control-plane")
     parser.add_argument(
         "command",
-        choices=["doctor", "status", "route", *COMMANDS],
+        choices=["doctor", "status", "route", "commands", "next", *COMMANDS],
         help="Audit command",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON")
@@ -104,6 +106,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     args = parse_args(raw_argv)
+    if args.command == "commands":
+        report = registry_report()
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            for entry in report["commands"]:
+                print(
+                    f"{entry['name']:<32} {entry['level']:<12} {entry['safety']:<10} "
+                    f"{entry['purpose']}"
+                )
+        return 0
+    if args.command == "next":
+        doctor = ControlPlaneDoctor(profile=args.profile)
+        report = build_next_actions(doctor.build_registry())
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        else:
+            print(render_next_actions(report))
+        return 1 if report.get("status") == "fail" else 0
     if args.command in {"doctor", "status"}:
         doctor = ControlPlaneDoctor(profile=args.profile)
         report = doctor.build_registry()
