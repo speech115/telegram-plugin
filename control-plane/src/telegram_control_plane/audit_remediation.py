@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
-from .doctor import build_registry
+from .doctor import ControlPlaneDoctor
 from .paths import CONTROL_ROOT, MCP_REPO, MIRROR_ROOT, PLUGIN_CACHE, PLUGIN_CACHE_ROOT, PLUGIN_SOURCE, POLICY_DIR
 from .util import load_json
 
@@ -31,6 +31,10 @@ DEFAULT_FINDING_TO_STEPS: dict[str, list[str]] = {
 @lru_cache(maxsize=4)
 def load_remediation_policy(path: str = str(AUDIT_REMEDIATION_PATH)) -> dict[str, Any]:
     return load_json(Path(path)) or {}
+
+
+def build_registry() -> dict[str, Any]:
+    return ControlPlaneDoctor(profile="maintenance").build_registry()
 
 
 def clear_policy_cache() -> None:

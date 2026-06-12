@@ -44,25 +44,28 @@ Roadmap milestones 1–7 are implemented in code and gates:
 
 ## Verification
 
-Run these before calling the control-plane healthy:
+For day-to-day health, use:
 
 ```bash
-./bin/telegram-release-gate
+./bin/telegram-status
 ./bin/telegram-doctor --json
-python3 -m pytest -q -m integration
+./bin/telegram-mirror-fast status --json
 ```
 
 Expected current shape:
 
-- `telegram-release-gate`: exit `0`
-- `telegram-managed-systems`: `ok`
-- `telegram-mcp-surface`: `ok`
-- `telegram-docs-audit`: `ok`
-- `telegram-doctor`: `warn` with `0` blocking findings
-- known warnings only for `telegram-mirror` recovery state and telecrawl archive
-  gaps
+- `telegram-doctor`: fast core profile only
+- core covers live Telegram routing/surface safety, fast read, minimal live
+  runtime state, and lightweight mirror status
+- mirror fast path reads existing local exports with
+  `telegram-mirror-fast read/search`; it does not start watchers or backfills
+- release/archive/telemetry/plugin/mirror-promotion checks are not core
+
+For release/maintenance work, run `./bin/telegram-maintenance-doctor --json` or
+`./bin/telegram-release-gate`. Use component audits such as
+`telegram-mcp-surface`, `telegram-docs-audit`, or `telegram-telemetry-status`
+only as drill-down from doctor findings.
 
 ## karpathy-kb
 
 Canonical entity: `research/karpathy-kb/wiki/entities/telegram-control-plane.md`
-

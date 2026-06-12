@@ -29,7 +29,7 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   python3 -m venv "${ROOT}/mcp/.venv"
 fi
 "${PYTHON_BIN}" -m pip install -q --upgrade pip
-"${PYTHON_BIN}" -m pip install -q -e "${ROOT}/mcp" pytest
+"${PYTHON_BIN}" -m pip install -q -e "${ROOT}/mcp" pytest pyyaml
 
 find "${ROOT}/mcp/src" "${ROOT}/control-plane/src" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
 

@@ -483,13 +483,16 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                 }
             )
         else:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                completed = subprocess.CompletedProcess(command, 124, "", "help probe timed out")
             help_probe = {
                 "ran": True,
                 "exit_code": completed.returncode,
@@ -1211,6 +1214,32 @@ def audit_mirror() -> dict[str, Any]:
     }
 
 
+def audit_mirror_fast_status() -> dict[str, Any]:
+    mirror_policy = load_json(POLICY_DIR / "mirror.json") or {}
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
+    ledgers_root = MIRROR_RUNTIME_ROOT / "data/telegram_sync"
+    ledgers = sorted(ledgers_root.glob("*.json")) if ledgers_root.exists() else []
+    findings: list[dict[str, Any]] = []
+    if not MIRROR_RUNTIME_ROOT.exists():
+        findings.append(
+            {
+                "id": "mirror_runtime_root_missing",
+                "severity": "warn",
+                "message": "Mirror runtime root is missing.",
+            }
+        )
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "classification": mirror_policy.get("classification") or "mirror-recovery",
+        "runtime_root_exists": MIRROR_RUNTIME_ROOT.exists(),
+        "runtime_exports_exists": runtime_exports.exists(),
+        "ledger_count": len(ledgers),
+        "fast_command": "telegram-mirror-fast status",
+        "maintenance_command": "telegram-mirror-audit",
+    }
+
+
 def _mirror_export_coverage(export_root: Path) -> dict[str, Any]:
     allowlist_report = run_json(
         ["python3", str(MIRROR_ROOT / "scripts/telegram_mirror_allowlist_report.py"), "--json"],
@@ -1393,7 +1422,7 @@ def audit_telecrawl() -> dict[str, Any]:
 def _collect_components() -> dict[str, dict[str, Any]]:
     from .doctor import ControlPlaneDoctor
 
-    return ControlPlaneDoctor().collect_components()
+    return ControlPlaneDoctor(profile="maintenance").collect_components()
 
 
 def build_registry() -> dict[str, Any]:
