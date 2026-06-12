@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .doctor_profiles import collect_profile_components, doctor_profile
 from . import registry_redaction, runtime_inventory, source_routing
 from .util import status_from_findings
 
@@ -15,8 +16,14 @@ ComponentReports = dict[str, dict[str, Any]]
 class ControlPlaneDoctor:
     """Build and persist the read-only Telegram control-plane registry."""
 
-    def __init__(self, component_collector: Callable[[], ComponentReports] | None = None) -> None:
+    def __init__(
+        self,
+        component_collector: Callable[[], ComponentReports] | None = None,
+        *,
+        profile: str = "core",
+    ) -> None:
         self._component_collector = component_collector
+        self.profile = doctor_profile(profile)
 
     def collect_components(self) -> ComponentReports:
         if self._component_collector is not None:
@@ -24,32 +31,51 @@ class ControlPlaneDoctor:
 
         from . import audits
 
-        launchd = audits.audit_launchd()
-        sessions = audits.audit_sessions()
-        mirror = audits.audit_mirror()
-        return {
-            "managed_systems": audits.audit_managed_systems(),
-            "docs": audits.audit_docs(),
-            "plugin_drift": audits.audit_plugin_drift(),
-            "mcp_telemetry": audits.audit_mcp_telemetry(),
-            "fast_read_adapter": audits.audit_fast_read_adapter(),
-            "golden_read_smoke": audits.audit_golden_read_smoke(),
-            "agent_docs_sync": audits.audit_agent_docs_sync(),
-            "release_gates": audits.audit_release_gates(),
-            "install_adapters": audits.audit_install_adapters(),
-            "mcp_surface": audits.audit_mcp_surface(),
-            "mcp_profiles": audits.audit_mcp_profiles(),
-            "source_routing": source_routing.audit_source_routing(),
+        cached: dict[str, dict[str, Any]] = {}
+
+        def launchd() -> dict[str, Any]:
+            if "launchd" not in cached:
+                cached["launchd"] = audits.audit_launchd()
+            return cached["launchd"]
+
+        def sessions() -> dict[str, Any]:
+            if "sessions" not in cached:
+                cached["sessions"] = audits.audit_sessions()
+            return cached["sessions"]
+
+        def mirror() -> dict[str, Any]:
+            if "telegram_mirror" not in cached:
+                cached["telegram_mirror"] = audits.audit_mirror()
+            return cached["telegram_mirror"]
+
+        def runtime_inventory_report() -> dict[str, Any]:
+            return runtime_inventory.audit_runtime_inventory(
+                launchd_report=launchd(),
+                sessions_report=sessions(),
+                mirror_report=mirror(),
+            )
+
+        collectors = {
+            "managed_systems": audits.audit_managed_systems,
+            "docs": audits.audit_docs,
+            "plugin_drift": audits.audit_plugin_drift,
+            "mcp_telemetry": audits.audit_mcp_telemetry,
+            "fast_read_adapter": audits.audit_fast_read_adapter,
+            "golden_read_smoke": audits.audit_golden_read_smoke,
+            "agent_docs_sync": audits.audit_agent_docs_sync,
+            "release_gates": audits.audit_release_gates,
+            "install_adapters": audits.audit_install_adapters,
+            "mcp_surface": audits.audit_mcp_surface,
+            "mcp_profiles": audits.audit_mcp_profiles,
+            "source_routing": source_routing.audit_source_routing,
             "launchd": launchd,
             "sessions": sessions,
             "telegram_mirror": mirror,
-            "runtime_inventory": runtime_inventory.audit_runtime_inventory(
-                launchd_report=launchd,
-                sessions_report=sessions,
-                mirror_report=mirror,
-            ),
-            "telecrawl": audits.audit_telecrawl(),
+            "mirror_fast_status": audits.audit_mirror_fast_status,
+            "runtime_inventory": runtime_inventory_report,
+            "telecrawl": audits.audit_telecrawl,
         }
+        return collect_profile_components(collectors, profile_name=self.profile.name)
 
     def build_registry(self, raw_components: ComponentReports | None = None) -> dict[str, Any]:
         components_input = raw_components if raw_components is not None else self.collect_components()
@@ -67,6 +93,7 @@ class ControlPlaneDoctor:
         registry = {
             "schema_version": 1,
             "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "profile": self.profile.name,
             "read_only_external_state": True,
             "status": status_from_findings(findings),
             "summary": {

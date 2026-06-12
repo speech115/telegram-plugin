@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .paths import CONTROL_ROOT, POLICY_DIR, TELECRAWL_ARCHIVE
-from . import telecrawl_gap
+from . import source_evidence, telecrawl_gap
 from .util import load_json, status_from_findings
 
 SOURCE_ROUTING_PATH = POLICY_DIR / "source-routing.json"
@@ -125,6 +125,10 @@ class SourceRoutingPolicy:
         archive_score = scores.get("telecrawl_archive", 0)
         mirror_score = scores.get("telegram_mirror", 0)
 
+        evidence_rules = source_evidence.source_evidence_rules(
+            source_routing_policy=self.payload,
+            telecrawl_policy=telecrawl_gap.load_telecrawl_policy(),
+        )
         if live_score > 0 and (live_score >= archive_score and live_score >= mirror_score):
             primary = "live_mcp"
         elif archive_score > mirror_score and archive_score > 0:
@@ -132,21 +136,18 @@ class SourceRoutingPolicy:
         elif mirror_score > 0:
             primary = "telegram_mirror"
         else:
-            primary = str(self.rules.get("route_current_latest_today_send_reply_media_to") or "live_mcp")
+            primary = evidence_rules.live_route_target
 
         blocked: list[str] = []
         warnings: list[str] = []
         if primary == "live_mcp":
-            never = self.rules.get("never_route_live_intents_to")
-            if isinstance(never, list):
-                blocked.extend(str(item) for item in never if isinstance(item, str))
+            blocked.extend(evidence_rules.live_blocked_sources)
         if primary == "telecrawl_archive":
             if archive_ready is False:
                 warnings.append("archive_not_ready")
             if archive_has_gaps is True:
                 warnings.append("archive_has_known_gaps")
-            telecrawl_policy = telecrawl_gap.load_telecrawl_policy()
-            if telecrawl_policy.get("known_gaps_are_blocking_for_current_claims"):
+            if evidence_rules.telecrawl_blocks_current_claims:
                 warnings.append("do_not_use_for_current_claims")
         if primary == "telegram_mirror" and mirror_preflight_ok is False:
             warnings.append("mirror_preflight_required")
@@ -163,43 +164,17 @@ class SourceRoutingPolicy:
             "backend": primary_cfg.get("backend"),
             "description": primary_cfg.get("description"),
             "fallback_live_tools": live_cfg.get("tools_first") if isinstance(live_cfg.get("tools_first"), list) else [],
-            "negative_archive_claim": self.claims.get("negative_archive_results"),
+            "negative_archive_claim": evidence_rules.negative_archive_claim,
             "policy_path": str(SOURCE_ROUTING_PATH),
         }
 
     def audit(self) -> dict[str, Any]:
         telecrawl_policy = telecrawl_gap.load_telecrawl_policy()
-        findings: list[dict[str, Any]] = []
-        live_route = self.rules.get("route_current_latest_today_send_reply_media_to")
-        telecrawl_route = telecrawl_policy.get("route_current_latest_today_send_reply_media_to")
-        if live_route and telecrawl_route and live_route != telecrawl_route:
-            findings.append(
-                {
-                    "id": "source_routing_live_route_mismatch",
-                    "severity": "blocking",
-                    "message": "source-routing and telecrawl policies disagree on live route target.",
-                    "source_routing": live_route,
-                    "telecrawl": telecrawl_route,
-                }
-            )
-        if telecrawl_policy.get("negative_results_claim") != self.claims.get("negative_archive_results"):
-            findings.append(
-                {
-                    "id": "source_routing_negative_claim_mismatch",
-                    "severity": "warn",
-                    "message": "Archive negative-results claim differs between source-routing and telecrawl policy.",
-                }
-            )
-        for source_id in ("live_mcp", "telecrawl_archive", "telegram_mirror"):
-            if source_id not in self.sources:
-                findings.append(
-                    {
-                        "id": "source_routing_missing_source",
-                        "severity": "blocking",
-                        "source": source_id,
-                        "message": "Source routing policy is missing a required source definition.",
-                    }
-                )
+        evidence_rules = source_evidence.source_evidence_rules(
+            source_routing_policy=self.payload,
+            telecrawl_policy=telecrawl_policy,
+        )
+        findings: list[dict[str, Any]] = evidence_rules.audit_findings()
         for phrase in (
             "что нового за сегодня в чате",
             "прочитай переписку за сегодня",
