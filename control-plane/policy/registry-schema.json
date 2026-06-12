@@ -47,6 +47,16 @@
     "runtime_inventory": ["status", "findings", "summary", "children"],
     "launchd": ["status", "findings", "jobs", "loaded_jobs", "policy"],
     "sessions": ["status", "findings", "summary", "policy_summary"],
+    "mirror_fast_status": [
+      "status",
+      "findings",
+      "classification",
+      "runtime_root_exists",
+      "runtime_exports_exists",
+      "ledger_count",
+      "fast_command",
+      "maintenance_command"
+    ],
     "telegram_mirror": ["status", "classification", "findings", "policy", "runtime_state_summary"],
     "telecrawl": ["status", "findings", "wrapper", "gap_policy", "account_summary", "freshness"]
   }

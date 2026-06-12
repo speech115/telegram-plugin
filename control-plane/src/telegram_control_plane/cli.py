@@ -24,6 +24,7 @@ from .audits import (
 from .doctor import ControlPlaneDoctor
 from .paths import OBSERVED_REGISTRY
 from .audit_remediation import apply_repair_plan, build_repair_plan
+from .doctor_profiles import PROFILE_COMPONENTS
 from .runtime_inventory import audit_runtime_inventory
 from .source_routing import audit_source_routing, recommend_route
 
@@ -63,6 +64,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Do not write generated/observed-registry.json for doctor/status",
     )
+    parser.add_argument(
+        "--profile",
+        choices=sorted(PROFILE_COMPONENTS),
+        default="core",
+        help="Doctor/status component profile (default: core)",
+    )
     return parser.parse_args(argv)
 
 
@@ -98,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parse_args(raw_argv)
     if args.command in {"doctor", "status"}:
-        doctor = ControlPlaneDoctor()
+        doctor = ControlPlaneDoctor(profile=args.profile)
         report = doctor.build_registry()
         if not args.no_write_registry:
             doctor.write_registry(OBSERVED_REGISTRY, report)

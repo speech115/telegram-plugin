@@ -13,9 +13,10 @@
 
 Do **not** load the full telegram skill for «что нового / прочитай чат за сегодня».
 
-1. `telegram://docs/routing` **or** `tg read today <chat> --limit 30 --json`
-2. Fallback: `bin/telegram-fast-read-today` → MCP `telegram_read` `mode="fast"`
-3. Forbidden until read fails: mcporter, tool_search, plugin README, doctor, launchd
+1. `tg read today <chat> --limit 30 --json`
+2. Fallback only if that fails: MCP `telegram_read` with `mode="fast"`.
+3. If intent/routing is unclear, read `telegram://docs/routing`.
+4. Forbidden until read fails: mcporter, tool_search, plugin README, doctor, launchd.
 
 `tg` on PATH: `./bin/telegram-kit --local`
 
@@ -33,7 +34,7 @@ calls or browse `telegram-mcp` unless debugging.
 
 1. Classify: current/today/recent → **live only** (never mirror/archive).
 2. On this host, run first:
-   `tg read today <chat> --limit 30 --json` (or `bin/telegram-fast-read-today` alias).
+   `tg read today <chat> --limit 30 --json`.
 3. If that fails, call MCP `telegram_read` with `mode="fast"`, not legacy
    `read_today_dialog` (not on default allowlist).
 4. Skip `mcporter list`, doctor, launchd, and plugin README until a real failure.
@@ -59,6 +60,54 @@ Only these are exposed to agents via plugin allowlist: `telegram_read`,
 `get_me`, `doctor_check`. Legacy aliases (`read_today_dialog`, `prepare_dialog_reply`,
 `draft_reply`, `search_dialog_messages`, …) and raw `send_dialog_message` /
 `reply_in_dialog` are **not** on the default surface (full/admin profile only).
+
+If `telegram-mcp-surface --json` reports a larger backend `tool_count`, do not
+treat that alone as drift. The default profile is healthy when
+`default_surface_tools` matches these 16 approved tools and
+`unexpected_write_or_destructive_tools` is empty.
+
+### Doctor warn triage
+
+Use doctor for control-plane health, not for ordinary live reads. Interpret
+`./bin/telegram-doctor --json` by severity, not by the top-level word alone.
+`telegram-doctor` is the fast core profile by default; use
+`./bin/telegram-maintenance-doctor --json` or
+`./bin/telegram-doctor --profile maintenance --json` only for broad
+release/archive/recovery checks:
+
+1. `status=ok`: control-plane checks are clean.
+2. `status=warn` with `summary.blocking_findings=0`: operational warning, not a
+   release blocker. Read `findings[].component` before acting.
+3. `status=fail` or any blocking finding: stop and use
+   `./bin/telegram-repair-plan --json` before proposing changes.
+
+Common non-blocking maintenance warnings:
+
+- `mcp_telemetry`: recent MCP tool errors or high error rate. Check
+  `./bin/telegram-telemetry-status --json`; do not rewrite runtime routing from
+  this signal alone.
+- `telecrawl_known_gaps`: archive import backlog or terminal archive gaps.
+  Telecrawl is archive evidence, not live/current Telegram truth.
+- `plugin_cache_needs_materialization`: plugin/cache install lag. This is
+  distinct from default MCP surface health.
+
+Surface health and maintenance health are separate layers: a green
+`telegram-mcp-surface --json` can coexist with maintenance `warn`, and plugin
+drift can be green while another runtime layer warns.
+
+### Operator command levels
+
+- Daily health: `./bin/telegram-status` for a human summary, or
+  `./bin/telegram-doctor --json` for machine-readable core output.
+- Mirror fast path: use `./bin/telegram-mirror-fast status/read/search` first
+  when the task explicitly asks for mirror; it reads local export/ledger files
+  only. Mirror promotion/preflight is maintenance, not daily mirror use.
+- Drill-down: run `telegram-mcp-surface`, `telegram-docs-audit`,
+  `telegram-telemetry-status`, `telegram-telecrawl-status`, or other component
+  checks only after doctor points at that component.
+- Maintenance/release: `telegram-maintenance-doctor`, `telegram-release-gate`,
+  plugin cache materialization, adapter installs, and docs sync require an
+  explicit maintenance/release task.
 
 ### Doc sync (skill ↔ MCP resources)
 
@@ -86,15 +135,14 @@ Restarts local MCP HTTP daemons automatically after sync. CI uses `--check --no-
 ### Verification on this host
 
 ```bash
-./bin/telegram-fast-read-today me --limit 1
-./bin/telegram-golden-read-smoke --json
-./bin/telegram-mcp-surface --json
+tg read today me --limit 1 --json
+./bin/telegram-status
 ./bin/telegram-doctor --json
-./bin/telegram-telemetry-status --json
 ```
 
 Fast read must return `payload.data_source == "live_telegram"`, not
-`Unknown tool`. Golden smoke covers five dialogs in `policy/golden-dialogs.json`
+`Unknown tool`. Use `./bin/telegram-golden-read-smoke --json` only for release
+or live-smoke verification; it covers five dialogs in `policy/golden-dialogs.json`
 (me, Конспекты, three DMs). Use `TELEGRAM_GOLDEN_READ_SKIP=1` only in CI/offline.
 
 ### Runtime locations
