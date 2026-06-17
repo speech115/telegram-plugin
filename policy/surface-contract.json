@@ -1,4 +1,39 @@
 {
+  "active_profile": "owner_local_full_mcp",
+  "owner_local_full_mcp": {
+    "description": "Single-owner local Telegram MCP mode. The default agent surface intentionally exposes the full local MCP tool set on explicit main/pl accounts.",
+    "plugin_allowlists_allowed": false,
+    "direct_write_tools_allowed": true,
+    "live_probe_accounts": ["main", "pl"],
+    "required_tools": [
+      "delete_messages",
+      "edit_message",
+      "forward_messages",
+      "list_chats",
+      "list_contacts",
+      "send_file",
+      "send_message",
+      "send_reaction",
+      "set_message_pinned",
+      "telegram_read",
+      "telegram_send"
+    ],
+    "direct_write_tools": [
+      "delete_messages",
+      "edit_message",
+      "forward_messages",
+      "mark_as_read",
+      "reply_in_dialog",
+      "reply_message",
+      "send_dialog_message",
+      "send_file",
+      "send_message",
+      "send_reaction",
+      "set_message_pinned",
+      "telegram_send"
+    ],
+    "legacy_facade_profile": "default_profile"
+  },
   "default_profile": {
     "approved_facade_tools": [
       "collect_context",
@@ -32,9 +67,19 @@
       "search_dialog_messages": "telegram_search"
     },
     "full_profile_additive_tools": [
+      "delete_messages",
+      "edit_message",
+      "forward_messages",
+      "list_contacts",
+      "mark_as_read",
       "reply_in_dialog",
       "reply_message",
-      "send_dialog_message"
+      "send_dialog_message",
+      "send_file",
+      "send_message",
+      "send_reaction",
+      "set_message_pinned",
+      "telegram_send"
     ],
     "full_profile_legacy_facade_tools": [
       "draft_reply",

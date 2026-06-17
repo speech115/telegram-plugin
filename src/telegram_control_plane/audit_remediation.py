@@ -142,7 +142,7 @@ def steps_for_findings(registry: dict[str, Any], *, policy: dict[str, Any] | Non
 def _mcp_surface_repair_reason(registry: dict[str, Any]) -> str:
     findings = _findings_for_component(registry, "mcp_surface")
     if not findings:
-        return "Default MCP surface gate is clean."
+        return "Owner-local full MCP surface gate is clean."
     parts: list[str] = []
     for item in findings:
         finding_id = item.get("id")
@@ -296,40 +296,30 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
     )
 
     mcp_surface_blocked = context.component_status("mcp_surface") == "fail"
-    unexpected_write = next(
-        (
-            item.get("tools")
-            for item in context.findings_for_component("mcp_surface")
-            if item.get("id") == "unexpected_write_tools"
-        ),
-        None,
-    )
-    mcp_apply_commands: list[list[str]] = []
-    if mcp_surface_blocked and isinstance(unexpected_write, list) and "send_file" in unexpected_write:
-        mcp_apply_commands = [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
     steps.append(
         _step(
-            step_id="mcp-surface-allowlist",
-            title="Restore read-only default Telegram MCP facade surface",
-            status="blocked_by_current_surface" if mcp_surface_blocked else "already_clean",
+            step_id="mcp-surface-contract",
+            title="Diagnose owner-local Telegram MCP surface contract",
+            status="needs_surface_contract_diagnosis" if mcp_surface_blocked else "already_clean",
             reason=_mcp_surface_repair_reason(registry),
             touched_paths=[
+                str(CONTROL_ROOT / "policy/surface-contract.json"),
                 str(MCP_REPO / "src/telegram_mcp/tools/__init__.py"),
-                str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py"),
+                str(MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py"),
                 str(PLUGIN_SOURCE / ".mcp.json"),
             ],
             dry_run_commands=[[str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"]],
-            apply_commands=mcp_apply_commands,
+            apply_commands=[],
             rollback=[
-                "Revert FACADE_TOOL_NAMES and media_tools.register_facade() in telegram-mcp.",
-                "Keep plugin .mcp.json on the prior endpoint until the server-side allowlist is verified.",
+                "This step is diagnostic only; no files or live Telegram state are modified.",
+                "Fix the specific failed contract separately, then rerun the dry-run command.",
             ],
             verifies=[
                 [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
                 [str(MCP_REPO / "bin/contract-smoke"), "--json"],
                 ["python3", "-m", "pytest", "-q", str(CONTROL_ROOT)],
             ],
-            triggered_by_findings=triggers("mcp-surface-allowlist"),
+            triggered_by_findings=triggers("mcp-surface-contract"),
         )
     )
 

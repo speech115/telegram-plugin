@@ -25,6 +25,18 @@ def test_steps_for_findings_links_materialize() -> None:
     assert linked["plugin_cache_needs_materialization"] == ["plugin-cache-materialize"]
 
 
+def test_steps_for_findings_links_current_mcp_surface_findings() -> None:
+    registry = {
+        "findings": [
+            {"id": "missing_full_mcp_tools", "component": "mcp_surface", "severity": "blocking"},
+            {"id": "mcp_account_unhealthy", "component": "mcp_surface", "severity": "blocking"},
+        ]
+    }
+    linked = steps_for_findings(registry)
+    assert linked["missing_full_mcp_tools"] == ["mcp-surface-contract"]
+    assert linked["mcp_account_unhealthy"] == ["mcp-surface-contract"]
+
+
 def test_audit_remediation_policy_owns_order_safety_and_triggers() -> None:
     registry = {
         "findings": [
@@ -35,7 +47,8 @@ def test_audit_remediation_policy_owns_order_safety_and_triggers() -> None:
     policy = AuditRemediationPolicy()
 
     assert policy.auto_apply_ids == frozenset({"plugin-cache-materialize"})
-    assert policy.safety["default_mode"] == "dry_run_only"
+    assert policy.safety["default_mode"] == "dry-run"
+    assert policy.safety["stateful_apply_requires_explicit_step"] is True
     assert policy.triggered_findings(context, "telecrawl-archive-policy") == ["telecrawl_known_gaps"]
     assert policy.recommended_order([{"id": "fallback"}])[0] == "managed-systems-inventory"
 

@@ -29,7 +29,7 @@ def test_topology_resolves_core_bindings() -> None:
 
 
 def test_system_path_matches_policy_entry() -> None:
-    assert system_path("telegram-mcp") == MCP_REPO
+    assert system_path("telegram-mcp-env") == MCP_REPO / ".env"
 
 
 def test_control_plane_topology_resolves_derived_paths_with_fixture_home(tmp_path) -> None:
@@ -72,9 +72,30 @@ def test_control_plane_topology_blocks_unknown_binding() -> None:
 
 def test_managed_systems_policy_has_topology_bindings() -> None:
     policy = load_managed_systems_policy(str(MANAGED_SYSTEMS_PATH))
-    bindings = policy["topology"]["bindings"]
-    assert bindings["mcp_repo"] == "telegram-mcp"
-    assert len(bindings) >= 10
+    assert set(policy["topology"]["bindings"]) >= {
+        "control_root",
+        "mcp_repo",
+        "plugin_source",
+        "mirror_runtime_root",
+        "telecrawl_default_db",
+    }
+    assert {item["id"] for item in policy["systems"]} >= {
+        "telegram-control-plane",
+        "telegram-mcp",
+        "telegram-plugin-package",
+        "telegram-plugin-source",
+        "telegram-plugin-cache",
+        "telegram-live-skill",
+        "telegram-local-mirror-skill",
+        "telegram-mirror",
+        "telegram-mirror-runtime",
+        "telegram-mirror-compat-alias",
+        "telecrawl-archive-wrapper",
+        "telecrawl-fast-db",
+        "telegram-main-session-dir",
+        "telegram-pl-session-dir",
+        "telegram-mcp-env",
+    }
 
 
 def test_evaluate_managed_systems_reports_missing_path(monkeypatch) -> None:
@@ -127,3 +148,9 @@ def test_shell_exports_include_mcp_repo() -> None:
     exports = managed_systems.shell_exports()
     assert 'export TELEGRAM_MCP_REPO="' in exports
     assert str(MCP_REPO) in exports
+
+
+def test_hot_path_shell_exports_are_policy_backed_snapshot() -> None:
+    shell = (MANAGED_SYSTEMS_PATH.parents[1] / "bin/telegram-env.sh").read_text(encoding="utf-8")
+    for name in resolve_topology():
+        assert f"TELEGRAM_{name.upper()}" in shell

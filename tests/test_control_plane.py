@@ -45,14 +45,17 @@ def test_dialog_annotation_map_reads_facade_registration(tmp_path: Path) -> None
     }
 
 
-def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
+def test_mcp_surface_is_clean_for_owner_local_full_surface() -> None:
     report = audit_mcp_surface()
     assert report["status"] == "ok"
-    assert "create_channel" not in report["default_surface_tools"]
-    assert "send_dialog_message" not in report["default_surface_tools"]
-    assert "send_file" not in report["default_surface_tools"]
+    assert report["surface_mode"] == "owner_local_full_mcp"
+    assert "create_channel" in report["default_surface_tools"]
+    assert "send_dialog_message" in report["default_surface_tools"]
+    assert "send_file" in report["default_surface_tools"]
+    assert "telegram_send" in report["default_surface_tools"]
     assert "telegram_confirmed_send" in report["default_surface_tools"]
     assert not report["unexpected_write_or_destructive_tools"]
+    assert "send_file" in report["legacy_default_surface_evaluation"]["unexpected_write_or_destructive_tools"]
 
 
 def test_docs_audit_passes_for_current_control_plane_docs() -> None:
@@ -342,7 +345,7 @@ def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
     report = audit_mcp_surface()
 
     assert report["status"] == "fail"
-    assert any(item["id"] == "mcp_endpoint_unsafe_allowlist_tool" for item in report["findings"])
+    assert any(item["id"] == "mcp_endpoint_has_legacy_allowlist" for item in report["findings"])
 
 
 def test_plugin_package_has_no_private_runtime_artifacts() -> None:
@@ -781,7 +784,7 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
     }.issubset(registry["components"])
 
 
-def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
+def test_repair_plan_surfaces_mcp_contract_diagnostics(monkeypatch) -> None:
     monkeypatch.setattr(
         remediation,
         "build_registry",
@@ -791,10 +794,10 @@ def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
             "findings": [
                 {
                     "component": "mcp_surface",
-                    "id": "unexpected_write_tools",
+                    "id": "missing_full_mcp_tools",
                     "severity": "blocking",
-                    "message": "Default MCP endpoint exposes write/destructive tools outside the approved facade.",
-                    "tools": ["send_file"],
+                    "message": "Telegram MCP source does not expose required full-surface agent tools.",
+                    "tools": ["telegram_send"],
                 }
             ],
             "components": {},
@@ -802,14 +805,16 @@ def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
     )
 
     plan = build_repair_plan()
-    step = {item["id"]: item for item in plan["steps"]}["mcp-surface-allowlist"]
+    step = {item["id"]: item for item in plan["steps"]}["mcp-surface-contract"]
 
-    assert step["status"] == "blocked_by_current_surface"
-    assert "send_file" in step["reason"]
-    assert step["apply_commands"] == [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
+    assert step["status"] == "needs_surface_contract_diagnosis"
+    assert "telegram_send" in step["reason"]
+    assert step["apply_commands"] == []
+    assert step["auto_apply_allowed"] is False
+    assert step["triggered_by_findings"] == ["missing_full_mcp_tools"]
     from telegram_control_plane.paths import MCP_REPO
 
-    assert str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py") in step["touched_paths"]
+    assert str(MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py") in step["touched_paths"]
 
 
 def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
@@ -836,7 +841,8 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
 
     plan = build_repair_plan()
     assert plan["status"] == "ready"
-    assert plan["safety"]["default_mode"] == "dry_run_only"
+    assert plan["safety"]["default_mode"] == "dry-run"
+    assert plan["safety"]["stateful_apply_requires_explicit_step"] is True
     assert plan["recommended_order"][0] == "managed-systems-inventory"
     by_id = {step["id"]: step for step in plan["steps"]}
     assert by_id["managed-systems-inventory"]["apply_commands"] == []

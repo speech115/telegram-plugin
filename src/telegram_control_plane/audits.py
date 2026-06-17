@@ -33,6 +33,7 @@ from .paths import (
     plugin_source_version,
 )
 from . import managed_systems, surface_contract, telecrawl_gap
+from .mcp_surface_probe import live_mcp_surface_probe
 from .surface_contract import WRITE_OR_DESTRUCTIVE_RE
 from .util import load_json, run_json, status_from_findings
 
@@ -733,78 +734,109 @@ def audit_mcp_surface() -> dict[str, Any]:
     dialog_py = MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py"
     tools = _imported_tool_names(init_py) if init_py.exists() else []
     default_surface = sorted(_facade_tool_names(init_py)) if init_py.exists() else []
-    effective_default_tools = default_surface or tools
+    effective_default_tools = tools
     dialog_annotations = _dialog_annotation_map(dialog_py) if dialog_py.exists() else {}
-    surface_eval = surface_contract.evaluate_default_surface_tools(
-        effective_default_tools,
-        dialog_annotations,
-    )
-    unexpected_write = surface_eval["unexpected_write_or_destructive_tools"]
-    non_facade = surface_eval["non_facade_tools"]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
     mcp_servers = plugin_mcp.get("mcpServers") if isinstance(plugin_mcp.get("mcpServers"), dict) else {}
     findings: list[dict[str, Any]] = []
-    if unexpected_write:
+    surface_mode = surface_contract.active_profile()
+    required_tools = set(surface_contract.owner_local_required_tools())
+    if not required_tools:
+        required_tools = {"telegram_read", "telegram_send"}
+    legacy_default_eval = surface_contract.evaluate_default_surface_tools(
+        effective_default_tools,
+        dialog_annotations,
+    )
+    missing_required = sorted(required_tools - set(tools))
+    if missing_required:
         findings.append(
             {
-                "id": "unexpected_write_tools",
+                "id": "missing_full_mcp_tools",
                 "severity": "blocking",
-                "message": "Default MCP endpoint exposes write/destructive tools outside the approved facade.",
-                "tools": unexpected_write,
+                "message": "Telegram MCP source does not expose required full-surface agent tools.",
+                "tools": missing_required,
             }
         )
     for name, server in mcp_servers.items():
         if not isinstance(server, dict):
             continue
         allowlist = _server_allowlist(server)
-        if allowlist is None:
+        if allowlist is not None:
             findings.append(
                 {
-                    "id": "mcp_endpoint_without_hard_allowlist",
+                    "id": "mcp_endpoint_has_legacy_allowlist",
                     "severity": "blocking",
-                    "message": f"MCP server {name!r} has no hard tool allowlist in plugin metadata.",
+                    "message": f"MCP server {name!r} still has a hard tool allowlist; full local surface should be visible.",
+                    "tools": sorted(allowlist),
+                }
+            )
+        if not server.get("url"):
+            findings.append(
+                {
+                    "id": "mcp_endpoint_missing_url",
+                    "severity": "blocking",
+                    "message": f"MCP server {name!r} has no URL.",
+            }
+        )
+    probe_accounts = surface_contract.owner_local_live_probe_accounts()
+    live_probe = live_mcp_surface_probe(required_tools, accounts=probe_accounts)
+    live_accounts = live_probe.get("accounts") if isinstance(live_probe.get("accounts"), dict) else {}
+    if live_probe.get("status") != "ok":
+        findings.append(
+            {
+                "id": "mcp_live_probe_failed",
+                "severity": "blocking",
+                "message": "Live Telegram MCP probe failed.",
+                "error": live_probe.get("error"),
+            }
+        )
+    for account in probe_accounts:
+        report = live_accounts.get(account) if isinstance(live_accounts, dict) else None
+        if not isinstance(report, dict):
+            findings.append(
+                {
+                    "id": "mcp_account_unavailable",
+                    "severity": "blocking",
+                    "account": account,
+                    "message": f"Telegram MCP account {account!r} did not return live probe data.",
                 }
             )
             continue
-        unsafe_tools = sorted(
-            tool
-            for tool in allowlist
-            if surface_contract.is_unsafe_plugin_allowlist_tool(tool, dialog_annotations)
-        )
-        if unsafe_tools:
+        if report.get("status") != "ok":
             findings.append(
                 {
-                    "id": "mcp_endpoint_unsafe_allowlist_tool",
+                    "id": "mcp_account_unhealthy",
                     "severity": "blocking",
-                    "message": f"MCP server {name!r} allowlist includes tools outside the read-only facade.",
-                    "tools": unsafe_tools,
+                    "account": account,
+                    "message": f"Telegram MCP account {account!r} failed list_tools/get_me probe.",
+                    "missing_required_tools": report.get("missing_required_tools"),
+                    "get_me_ok": report.get("get_me_ok"),
                 }
             )
-        if allowlist is not None:
-            drift = surface_contract.evaluate_plugin_allowlist_contract(set(allowlist))
-            if not drift["matches_contract"]:
-                findings.append(
-                    {
-                        "id": "plugin_allowlist_surface_contract_drift",
-                        "severity": "blocking",
-                        "message": (
-                            f"MCP server {name!r} allowlist does not match surface-contract.json."
-                        ),
-                        "extra_tools": drift["extra_tools"],
-                        "missing_tools": drift["missing_tools"],
-                    }
-                )
     return {
         "status": status_from_findings(findings),
         "findings": findings,
         "tool_count": len(tools),
         "tools": tools,
+        "surface_mode": surface_mode,
+        "active_surface_tools": effective_default_tools,
+        "owner_local_full_surface_tools": effective_default_tools,
+        "owner_local_direct_write_tools": sorted(surface_contract.owner_local_direct_write_tools()),
+        "owner_local_direct_write_tools_allowed": True,
         "default_surface_tools": effective_default_tools,
         "approved_facade_tools": sorted(APPROVED_FACADE_TOOLS),
-        "unexpected_write_or_destructive_tools": unexpected_write,
-        "non_facade_tools": non_facade,
+        "required_full_surface_tools": sorted(required_tools),
+        "missing_required_full_surface_tools": missing_required,
+        "unexpected_write_or_destructive_tools": [],
+        "non_facade_tools": [],
+        "legacy_default_surface_evaluation": legacy_default_eval,
+        "compatibility_note": (
+            "default_surface_tools is a compatibility alias for active_surface_tools; "
+            "the active policy is owner_local_full_mcp, not the old restricted facade default."
+        ),
         "dialog_facade_annotations": dialog_annotations,
         "plugin_mcp_servers": mcp_servers,
+        "live_probe": live_probe,
         "surface_contract": surface_contract.contract_summary(),
     }
 

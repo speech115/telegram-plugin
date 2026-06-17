@@ -375,5 +375,4 @@ def topology_summary() -> dict[str, str]:
 def shell_exports() -> str:
     topology = resolve_topology()
     lines = [f'export TELEGRAM_{name.upper()}="{path}"' for name, path in topology.items()]
-    lines.append(f'export TELEGRAM_POLICY_DIR="{topology["policy_dir"]}"')
     return "\n".join(lines)

@@ -4,21 +4,24 @@
     "managed-systems-inventory",
     "plugin-cache-parity",
     "plugin-cache-materialize",
-    "mcp-surface-allowlist",
+    "mcp-surface-contract",
     "launchd-inventory-and-cold-mode",
     "session-registry",
     "mirror-runtime-promotion-policy",
     "telecrawl-archive-policy"
   ],
-  "auto_apply_step_ids": ["plugin-cache-materialize"],
+  "auto_apply_step_ids": [
+    "plugin-cache-materialize"
+  ],
   "safety": {
-    "default_mode": "dry_run_only",
+    "default_mode": "dry-run",
     "stateful_apply_requires_explicit_step": true,
     "do_not_do_first": [
       "move repos",
       "delete Telegram-related paths without managed-systems inventory",
       "rewrite LaunchAgents",
       "refresh plugin cache without dry-run evidence",
+      "apply repair steps without inspecting dry-run evidence",
       "sync skill-index before plugin cache parity",
       "start mirror watchers/backfills/sync",
       "copy sessions"
@@ -29,8 +32,12 @@
     "managed_system_kind_mismatch": ["managed-systems-inventory"],
     "managed_system_marker_missing": ["managed-systems-inventory"],
     "plugin_cache_needs_materialization": ["plugin-cache-materialize"],
-    "unexpected_write_tools": ["mcp-surface-allowlist"],
-    "non_facade_tools": ["mcp-surface-allowlist"],
+    "missing_full_mcp_tools": ["mcp-surface-contract"],
+    "mcp_endpoint_has_legacy_allowlist": ["mcp-surface-contract"],
+    "mcp_endpoint_missing_url": ["mcp-surface-contract"],
+    "mcp_live_probe_failed": ["mcp-surface-contract"],
+    "mcp_account_unavailable": ["mcp-surface-contract"],
+    "mcp_account_unhealthy": ["mcp-surface-contract"],
     "launchd_path_outside_allowed_roots": ["launchd-inventory-and-cold-mode"],
     "mirror_runtime_exports_missing": ["mirror-runtime-promotion-policy"],
     "mirror_runtime_exports_incomplete": ["mirror-runtime-promotion-policy"],

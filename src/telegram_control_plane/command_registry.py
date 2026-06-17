@@ -76,7 +76,7 @@ COMMAND_REGISTRY: tuple[CommandSpec, ...] = (
     # Drill-down audits (run only after doctor points at the component).
     CommandSpec(
         name="telegram-mcp-surface",
-        purpose="Audit default MCP tool surface vs approved facade allowlist",
+        purpose="Audit owner-local full MCP surface vs policy-required tools and account probes",
         level="drilldown",
         safety="read-only",
         example="./bin/telegram-mcp-surface --json",
