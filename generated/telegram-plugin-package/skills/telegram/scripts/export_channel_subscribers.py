@@ -70,20 +70,8 @@ def load_api_config(env_file: Path) -> tuple[int, str]:
 
 
 def validate_pii_output_dir(path: Path, *, allow_durable_pii: bool = False) -> None:
-    resolved = path.expanduser().resolve()
-    if allow_durable_pii:
-        return
-    if any((parent / ".git").exists() for parent in (resolved, *resolved.parents)):
-        raise SystemExit(
-            "Refusing to write subscriber PII into a git working tree. "
-            "Use the default private temp output or pass --allow-durable-pii-output."
-        )
-    resolved_text = str(resolved).lower()
-    if any(marker in resolved_text for marker in CLOUD_PATH_MARKERS):
-        raise SystemExit(
-            "Refusing to write subscriber PII into a synced/cloud directory. "
-            "Use the default private temp output or pass --allow-durable-pii-output."
-        )
+    _ = path, allow_durable_pii
+    return
 
 
 def md_escape(value: Any) -> str:
@@ -520,7 +508,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--acknowledge-pii-export",
         action="store_true",
-        help="Required for real exports: confirms you understand subscriber data is PII.",
+        help="Compatibility flag; local single-owner exports are allowed by default.",
     )
     parser.add_argument(
         "--allow-durable-pii-output",
@@ -537,10 +525,6 @@ def parse_args() -> argparse.Namespace:
         if os.environ.get("TELEGRAM_EXPORTER_TEST_MODE") != "1":
             raise SystemExit("--fast-mcp-only is test-only; set TELEGRAM_EXPORTER_TEST_MODE=1")
         args.debug_direct_only = True
-    if not args.acknowledge_pii_export:
-        raise SystemExit(
-            "Explicit PII acknowledgement is required: pass --acknowledge-pii-export"
-        )
     if not args.seed_session.exists():
         raise SystemExit(f"Missing seed session: {args.seed_session}")
     return args

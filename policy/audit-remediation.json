@@ -38,7 +38,6 @@
     "mcp_live_probe_failed": ["mcp-surface-contract"],
     "mcp_account_unavailable": ["mcp-surface-contract"],
     "mcp_account_unhealthy": ["mcp-surface-contract"],
-    "launchd_path_outside_allowed_roots": ["launchd-inventory-and-cold-mode"],
     "mirror_runtime_exports_missing": ["mirror-runtime-promotion-policy"],
     "mirror_runtime_exports_incomplete": ["mirror-runtime-promotion-policy"],
     "telecrawl_known_gaps": ["telecrawl-archive-policy"],

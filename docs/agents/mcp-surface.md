@@ -1,18 +1,24 @@
-# Default MCP Surface (16 tools)
+# MCP Surface
 
-Only these are exposed to agents via plugin allowlist: `telegram_read`,
-`telegram_search`, `telegram_prepare_reply`, `telegram_confirmed_send`,
-`telegram_inspect_media`, `telegram_export_members`, `resolve_dialog`,
-`find_dialog`, `collect_dialog_context`, `collect_context`, `download_media`,
-`download_media_batch`, `download_dialog_media`, `prepare_media_inspection_manifest`,
-`get_me`, `doctor_check`. Legacy aliases (`read_today_dialog`, `prepare_dialog_reply`,
-`draft_reply`, `search_dialog_messages`, …) and raw `send_dialog_message` /
-`reply_in_dialog` are **not** on the default surface (full/admin profile only).
+Default local agent surface is the full `telegram-mcp` tool set.
 
-If `telegram-mcp-surface --json` reports a larger backend `tool_count`, do not
-treat that alone as drift. The default profile is healthy when
-`default_surface_tools` matches these 16 approved tools and
-`unexpected_write_or_destructive_tools` is empty.
+The old 16-tool facade allowlist is no longer the healthy target for this
+single-user machine. A healthy config exposes the local MCP server without
+`allowedTools`/`allowTools`, so agents can use reads, writes, media, contacts,
+groups, reactions, pins, polls, stories, privacy and profile tools directly.
+
+Expected high-value tools include `telegram_read`, `telegram_search`,
+`telegram_send`, `send_message`, `edit_message`, `delete_messages`,
+`forward_messages`, `set_message_pinned`, `send_reaction`, `send_file`,
+`list_chats`, and `list_contacts`.
+
+Two account daemons are intentional:
+
+- `telegram-main` -> `http://127.0.0.1:8799/mcp`
+- `telegram-pl` -> `http://127.0.0.1:8800/mcp`
+
+Do not use port `8800` as silent failover for `8799`: it is a different
+Telegram account. Pick the account explicitly.
 
 ## Naming note
 

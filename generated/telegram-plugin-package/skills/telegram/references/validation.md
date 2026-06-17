@@ -1,7 +1,7 @@
 # Validation
 
 Do not use this file before ordinary live reads. Ordinary current-state reads
-should call the exposed Telegram facade directly and report a live-tool gap only
+should call the exposed full Telegram MCP directly and report a live-tool gap only
 after the needed read path fails.
 
 Use these gates for install, materialization, cache refresh, release packaging,
@@ -29,12 +29,11 @@ needed for the task:
 ```bash
 <telegram-control-plane>/bin/telegram-fast-read-today me --limit 1
 <telegram-control-plane>/bin/telegram-golden-read-smoke --json
-mcporter list telegram --json
 ```
 
 Use `telegram-fast-read-today` as the host-local simple-read smoke. It is not a
-replacement for `mcporter list` or contract smoke when validating the full
-facade surface.
+replacement for listing MCP tools or contract smoke when validating the full
+surface.
 
 Golden regression set (live Telegram, local release gate `tg-read-smoke`):
 
@@ -42,8 +41,7 @@ Golden regression set (live Telegram, local release gate `tg-read-smoke`):
 - Runner: `telegram-golden-read-smoke` (expects `data_source=live_telegram` per dialog)
 - Offline/CI: `TELEGRAM_GOLDEN_READ_SKIP=1` or `--skip-live`
 
-Expected default-read facade names, when the host exposes the Telegram MCP
-facade:
+Expected full-MCP names when the host exposes Telegram MCP:
 
 - `telegram_read`
 - `telegram_search`
@@ -59,20 +57,26 @@ facade:
 - `download_media_batch`
 - `download_dialog_media`
 - `telegram_confirmed_send`
+- `telegram_send`
+- `send_message`
+- `reply_to_message`
+- `edit_message`
+- `delete_messages`
+- `forward_messages`
+- `set_message_pinned`
+- `send_reaction`
+- `mark_as_read`
+- `send_file`
+- `list_chats`
+- `list_contacts`
 - `get_me`
 - `doctor_check`
 
 Legacy prepare/read/search aliases (`prepare_dialog_reply`, `draft_reply`,
-`search_dialog_messages`, `read_today_dialog`, …) and `transcribe_voice` are
-full-profile only.
+`search_dialog_messages`, `read_today_dialog`, …) and `transcribe_voice` may
+also be exposed.
 
-Power/write names beyond confirmed send are expected only when an explicit local
-Power/Write Mode is enabled:
-
-- `send_dialog_message`
-- `reply_in_dialog`
-
-If a live/current task needs a missing facade, report the live-tool gap and do
+If a live/current task needs a missing MCP tool, report the live-tool gap and do
 not substitute mirror/archive evidence. If only app-style aliases are exposed,
 route through the aliases described in `facade-routing.md`.
 

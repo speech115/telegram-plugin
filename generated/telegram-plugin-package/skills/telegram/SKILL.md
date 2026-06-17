@@ -13,7 +13,7 @@ For «прочитай чат / что нового за сегодня» on **C
 2. Fallback: `telegram-fast-read-today` → MCP `telegram_read` `mode="fast"`
 3. **Stop** if step 1–2 fails; then report live gap (never mirror/archive for today)
 
-**Forbidden before a successful read:** mcporter, tool_search, plugin README, doctor_check, launchd.
+Avoid before a real failure: mcporter, plugin README, broad doctor checks, launchd inspection.
 
 Details: [references/facade-routing.md](references/facade-routing.md) (Codex entry card).
 
@@ -26,18 +26,16 @@ a symlink to this package's `skills/telegram` tree. If package, live skill, and
 installed cache differ, repair parity before install, materialization, or cache
 refresh.
 
-Unified user path: facade tools in Default Mode are the standard route. Use
-Power Mode only for explicit write/admin intent. Direct Telethon calls are
-operator/debug-only and not a normal user workflow.
+Unified user path: full local MCP tools are the standard route. Use direct MCP
+for reads, writes, media and admin operations when the user asks for them.
+Direct raw Telethon calls are operator/debug-only and not a normal user
+workflow.
 
 ## Non-Negotiables
 
-- **No accidental writes:** never call `send_dialog_message` or
-  `reply_in_dialog` in default mode. Use `prepare_send_message`,
-  `prepare_reply_message`, or `telegram_prepare_reply` first, then open
-  `human_approval_url` in the browser and click **Approve**, then
-  `telegram_confirmed_send` with the returned `confirmation_token` and the exact
-  preview text.
+- **Writes are direct but explicit:** send only when the user has given a stable
+  target and exact text. Prefer `telegram_send`/`send_message` for a one-call
+  send. Use preview/confirmed tools only when the user asks to preview first.
 - **Stable identity before writes:** aliases, first names, pronouns, and "the
   last chat" are not enough. Resolve and carry forward the canonical
   `dialog_ref`; ask for a stable identifier when resolution is fuzzy.
@@ -60,14 +58,12 @@ operator/debug-only and not a normal user workflow.
 Before a live task, prefer MCP resources over loading this full skill:
 
 - `telegram://docs/routing` — fast defaults and tool choice
-- `telegram://docs/tools` — default facade surface
+- `telegram://docs/tools` — local full MCP surface
 - `telegram://docs/sources` — live vs mirror vs archive
 - `telegram://docs/writes` / `telegram://docs/media` — when relevant
 - `telegram://docs/index` — catalog
 
-Confirm the current host exposes Telegram MCP facade tools or aliases. Prefer
-canonical facade names, but use app-style aliases when they are the only exposed
-option. For simple low-stakes local reads such as
+Confirm the current host exposes Telegram MCP tools. For simple low-stakes local reads such as
 "прочитай переписку с @user за сегодня", if the host has the local `tg` CLI on
 PATH, run it first (live only, no `@telegram`, no plugin bootstrap):
 
@@ -80,7 +76,7 @@ tg search <chat> "<query>" --limit 20 --json
 Fallback: `telegram-fast-read-today` or MCP `telegram_read` with `mode="fast"`.
 This portable plugin package intentionally does not hardcode machine-local adapter paths.
 
-If both the exposed facade path and the local shortcut are unavailable, stop and
+If both the exposed MCP path and the local shortcut are unavailable, stop and
 report the live-tool gap; do not route a current-state task to mirror/archive.
 Do not use `mcporter`, plugin README reads, launchd inspection, or broad status
 checks before the fast read unless the fast read fails.
@@ -89,36 +85,33 @@ For install, materialization, cache refresh, or source repair, follow
 [validation.md](references/validation.md) rather than this lightweight runtime
 preflight.
 
-## Live Facade
+## Live MCP
 
-Prefer the task-shaped facade tools exposed by Telegram MCP:
+Prefer the task-shaped and direct tools exposed by Telegram MCP:
 
 - `telegram_read` — default first read path (fast, no pinned/voice unless requested)
 - `telegram_search`
 - `telegram_prepare_reply`
-- `telegram_confirmed_send`
+- `telegram_send`
+- `send_message`
+- `reply_to_message`
+- `edit_message`
+- `delete_messages`
+- `forward_messages`
+- `set_message_pinned`
+- `send_reaction`
+- `mark_as_read`
 - `telegram_inspect_media`
-- `telegram_export_members` — only with `pii_acknowledged=true`
+- `send_file`
+- `telegram_export_members`
 - `resolve_dialog` / `find_dialog`
 - `collect_context` / `collect_dialog_context`
 - `prepare_media_inspection_manifest`
 - `download_media` / `download_media_batch` / `download_dialog_media`
 
-Avoid default use of legacy aliases (`read_today_dialog`, `prepare_dialog_reply`,
-`draft_reply`, `search_dialog_messages`, `prepare_send_message`, …), low-level read
-aliases, and `transcribe_voice` unless the host only exposes those names (full profile).
-
-Use `telegram_confirmed_send` only with a fresh `confirmation_token` returned
-by the matching preview. Raw `send_dialog_message` / `reply_in_dialog` are
-Power/Write Mode only.
-
-When exposed on full/admin profile, legacy preview aliases exist; on default surface
-use `telegram_prepare_reply` and `prepare_media_inspection_manifest` before writes
-or media-heavy work.
-
-Use lower-level Telegram tools only when the current host exposes them and the
-facade cannot express the request. Do not default users to direct Telethon
-calls.
+Preview aliases (`prepare_send_message`, `prepare_reply_message`,
+`telegram_confirmed_send`) remain available when a preview workflow is useful,
+but they are no longer required for normal local sends.
 
 ## Decision Preflight
 
@@ -128,7 +121,7 @@ Before tool calls, classify the request:
 2. Explicit historical recall -> use `telegram_mirror` only for allowlisted targets, or `telecrawl_archive` with coverage caveats.
 3. Write intent -> require explicit target, explicit text, and stable identity resolution before sending.
 4. Visual/media question -> collect candidate message ids, download selected files, then inspect actual files.
-5. Complete-context request -> page until the facade says the requested window is complete, or report the remaining truncation.
+5. Complete-context request -> page until MCP says the requested window is complete, or report the remaining truncation.
 
 ## Intent Matrix
 
@@ -177,7 +170,7 @@ telecrawl, and source-label details.
 - Exact or complete "прочитай за сегодня", "что именно он сказал", "ничего не пропусти" -> `telegram_read` with `mode="full"` or `collect_dialog_context(date_from=..., date_to=..., mode="full")`, include voice transcription, and page while completeness requires it.
 - "найди сообщение про X" in a known dialog -> `telegram_search` first, then fetch surrounding context only for important matches.
 - "подготовь ответ", "что ответить" -> `telegram_prepare_reply` first; fetch more context only when warnings or evidence gaps require it.
-- "отправь", "reply/send" -> use preview helpers when useful, then write only with explicit user write intent and unambiguous target/content.
+- "отправь", "reply/send" -> use `telegram_send` / `send_message` directly when the target and exact text are explicit; use preview helpers only when useful or requested.
 - "что на фото/стикерах/видео" -> collect scoped message ids, use media manifest if available, then download and inspect actual files.
 - "список подписчиков", "всех подписчиков", "members/subscribers канала" -> run the subscriber exporter; do not stop at MCP `get_participants`.
 
@@ -186,18 +179,20 @@ fast-path defaults, paging rules, and double-work avoidance.
 
 ## Hard Stops
 
-- **Writes:** `send_dialog_message` and `reply_in_dialog` require explicit user write intent, unambiguous dialog target, unambiguous message text or reply id, and a fresh `confirmation_token` from the matching preview tool.
+- **Writes:** direct send/edit/delete/forward/pin/react tools require explicit user write intent, unambiguous dialog target, and unambiguous message text or ids. A preview token is optional and only needed when the user chose a preview workflow.
 - **Identity resolution:** Pronouns, first names, aliases, or "the last chat" are not enough for a write. Resolve the dialog, carry forward the canonical `dialog_ref`, and only send when the resolved target still matches the user's intent.
 - **Fuzzy targets:** If dialog resolution returns multiple candidates, fuzzy display-name matches, homographs, or no stable username/peer id, do not send. Ask for an exact `@username`, phone/contact, numeric peer id, or another stable identifier.
 - **Previews:** `telegram_prepare_reply` (and legacy prepare aliases on full profile) never send and do not create permission to send later. A separate explicit user instruction is still required before a write call.
 - **Preview-to-send:** "Send it" after a preview is valid only in the same turn
   and only if the resolved target, `dialog_ref` or peer id, reply id when
   relevant, and exact message text are unchanged. If the preview result exposes
-  a `confirmation_token`, pass it with the unchanged send/reply arguments. If
-  new context changed the draft or target, prepare a new preview or ask.
+  a `confirmation_token`, pass it with the unchanged send/reply arguments when
+  using the legacy confirmed-send path. Otherwise use `telegram_send` /
+  `send_message` directly. If new context changed the draft or target, prepare
+  a new preview or ask.
 - **Media:** Do not answer what is in a photo, sticker, image, or video from `has_media`, `media_type`, captions, or manifest metadata. Download the selected media and inspect the local file.
 - **Voice:** Use Telegram MCP/Telethon built-in transcription (`voice_transcription` or `transcribe_voice`) where available. Do not send Telegram voice notes or media to external APIs/services without explicit user approval. Do not download Telegram voice notes and run local CPU Whisper by default.
-- **Completeness:** If `has_more_before=true`, `truncated=true`, or an equivalent flag appears and the user asked for complete context, page with the same facade before summarizing.
+- **Completeness:** If `has_more_before=true`, `truncated=true`, or an equivalent flag appears and the user asked for complete context, page with the same MCP tool before summarizing.
 - **Subscriber export:** Never answer "all subscribers/members" from a single `get_participants` response. A result around `200` is usually a Telegram API slice cap, not the full list.
 - **Counts:** Distinguish `visible_count` from `exported_count`. If they differ, call the result API-visible, not exact.
 - **Archive negatives:** Telecrawl no-match means "no matches in this archive coverage", not "not found in Telegram".
@@ -208,14 +203,14 @@ fast-path defaults, paging rules, and double-work avoidance.
 For all channel/group subscribers or members, run the bundled exporter:
 
 ```bash
-python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
+python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume
 ```
 
 If the plugin bundle is unavailable but the live standalone skill is installed,
 the equivalent live fallback path is:
 
 ```bash
-python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume --acknowledge-pii-export
+python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume
 ```
 
 If only `get_participants` is available, label the result incomplete/probe-only.

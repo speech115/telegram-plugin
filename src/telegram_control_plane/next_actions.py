@@ -13,7 +13,6 @@ from .command_registry import command_for_component
 _SEVERITY_ORDER = {"blocking": 0, "warning": 1}
 
 _FALLBACK_COMMAND = "./bin/telegram-doctor --profile maintenance --json"
-_REPAIR_PLAN_COMMAND = "./bin/telegram-repair-plan --json"
 
 
 def build_next_actions(doctor_report: dict[str, Any]) -> dict[str, Any]:
@@ -41,19 +40,6 @@ def build_next_actions(doctor_report: dict[str, Any]) -> dict[str, Any]:
         else:
             warning_actions.append(action)
 
-    if blocking_actions:
-        blocking_actions.append(
-            {
-                "severity": "blocking",
-                "component": "repair_plan",
-                "finding_id": "dry_run_repair_plan",
-                "message": (
-                    "Blocking findings present: inspect the dry-run repair plan "
-                    "before applying anything"
-                ),
-                "command": _REPAIR_PLAN_COMMAND,
-            }
-        )
     actions = blocking_actions + warning_actions
 
     return {

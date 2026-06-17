@@ -1,1 +1,1 @@
-For Telegram tasks: use the `telegram` skill. For live reads (today/recent/search), run `tg` first — do not require `@telegram`. Use MCP only for media, sends, or fallback. For sends: open `human_approval_url` and Approve before `telegram_confirmed_send`.
+For Telegram tasks: use the `telegram` skill. For live reads (today/recent/search), run `tg` first — do not require `@telegram`. Use direct full MCP for media, sends, and fallback. For sends with explicit target and exact text, prefer `telegram_send` / `send_message`; preview/confirmed tools are optional.

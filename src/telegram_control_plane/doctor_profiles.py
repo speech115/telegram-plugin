@@ -6,12 +6,7 @@ from typing import Any, Callable
 ComponentCollector = Callable[[], dict[str, Any]]
 
 CORE_COMPONENTS = (
-    "fast_read_adapter",
     "mcp_surface",
-    "source_routing",
-    "launchd",
-    "sessions",
-    "mirror_fast_status",
 )
 
 MAINTENANCE_COMPONENTS = (

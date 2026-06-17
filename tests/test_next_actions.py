@@ -46,7 +46,7 @@ def test_warning_maps_component_to_drilldown_command() -> None:
     assert "telegram-telemetry-status" in action["command"]
 
 
-def test_blocking_findings_come_first_and_add_repair_plan() -> None:
+def test_blocking_findings_come_first_without_repair_plan_ceremony() -> None:
     doctor = _doctor_report(
         [
             {
@@ -70,10 +70,7 @@ def test_blocking_findings_come_first_and_add_repair_plan() -> None:
     assert severities == sorted(severities, key=lambda s: 0 if s == "blocking" else 1)
     first = report["next_actions"][0]
     assert first["component"] == "mcp_surface"
-    # Blocking findings must route through the dry-run repair plan.
-    assert any(
-        "telegram-repair-plan" in item["command"] for item in report["next_actions"]
-    )
+    assert not any("telegram-repair-plan" in item["command"] for item in report["next_actions"])
 
 
 def test_unknown_component_falls_back_to_doctor() -> None:

@@ -10,12 +10,12 @@ release/archive/recovery checks:
 1. `status=ok`: control-plane checks are clean.
 2. `status=warn` with `summary.blocking_findings=0`: operational warning, not a
    release blocker. Read `findings[].component` before acting.
-3. `status=fail` or any blocking finding: stop and use
-   `./bin/telegram-repair-plan --json` before proposing changes.
+3. `status=fail` or any blocking finding: inspect the mapped component command
+   and fix that component directly. `./bin/telegram-repair-plan --json` is
+   optional maintenance context, not a required preflight.
 
 `./bin/tgc next --json` automates this triage: it maps each finding component
-to the exact drill-down command and appends the repair-plan step when blocking
-findings are present.
+to the exact drill-down command.
 
 ## Common non-blocking maintenance warnings
 

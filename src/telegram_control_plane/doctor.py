@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .doctor_profiles import collect_profile_components, doctor_profile
-from . import registry_redaction, runtime_inventory, source_routing
+from . import runtime_inventory, source_routing
 from .util import status_from_findings
 
 ComponentReports = dict[str, dict[str, Any]]
@@ -86,10 +86,7 @@ class ControlPlaneDoctor:
                 enriched.setdefault("component", component)
                 findings.append(enriched)
 
-        components = {
-            name: registry_redaction.project_registry_component(name, report)
-            for name, report in components_input.items()
-        }
+        components = components_input
         registry = {
             "schema_version": 1,
             "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -104,27 +101,9 @@ class ControlPlaneDoctor:
             "findings": findings,
             "components": components,
         }
-        registry = registry_redaction.redact_for_persistence(registry)
-        leak_report = registry_redaction.audit_persisted_registry(registry)
-        for item in leak_report.get("findings", []):
-            enriched = dict(item)
-            enriched.setdefault("component", "registry_redaction")
-            findings.append(enriched)
-        if leak_report.get("findings"):
-            registry["findings"] = findings
-            registry["status"] = status_from_findings(findings)
-            registry["summary"]["blocking_findings"] = sum(
-                1 for entry in findings if entry.get("severity") == "blocking"
-            )
         return registry
 
     def write_registry(self, path: Path, registry: dict[str, Any]) -> None:
-        leak_report = registry_redaction.audit_persisted_registry(registry)
-        if leak_report.get("status") == "fail":
-            raise ValueError(
-                "Refusing to write observed registry with private runtime leaks: "
-                + ", ".join(item.get("pattern", item.get("id", "?")) for item in leak_report.get("findings", []))
-            )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(registry, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

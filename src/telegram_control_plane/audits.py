@@ -890,26 +890,6 @@ def _launchctl_labels() -> dict[str, dict[str, Any]]:
     return labels
 
 
-def _allowed_roots() -> tuple[list[Path], list[Path]]:
-    policy = load_json(POLICY_DIR / "allowed-roots.json") or {}
-    allowed = [
-        Path(str(item.get("path"))).resolve(strict=False)
-        for item in policy.get("allowed_roots", [])
-        if isinstance(item, dict) and item.get("path")
-    ]
-    aliases = [
-        Path(str(item.get("path"))).resolve(strict=False)
-        for item in policy.get("temporary_compatibility_aliases", [])
-        if isinstance(item, dict) and item.get("path")
-    ]
-    return allowed, aliases
-
-
-def _path_within(path: Path, roots: list[Path]) -> bool:
-    resolved = path.resolve(strict=False)
-    return any(resolved == root or root in resolved.parents for root in roots)
-
-
 def _launchd_path_values(data: dict[str, Any]) -> list[str]:
     env = data.get("EnvironmentVariables") if isinstance(data.get("EnvironmentVariables"), dict) else {}
     args = data.get("ProgramArguments") if isinstance(data.get("ProgramArguments"), list) else []
@@ -930,7 +910,6 @@ def _extract_absolute_paths(value: str) -> list[Path]:
 
 def audit_launchd() -> dict[str, Any]:
     launchd_policy = load_json(POLICY_DIR / "launchd-jobs.json") or {}
-    allowed_roots, temporary_aliases = _allowed_roots()
     launchctl_only = {
         str(item.get("label"))
         for item in launchd_policy.get("launchctl_only_labels", [])
@@ -963,14 +942,6 @@ def audit_launchd() -> dict[str, Any]:
         path_values = _launchd_path_values(data)
         uses_legacy_alias = any(str(MIRROR_LEGACY_ALIAS) in value for value in path_values)
         has_secret_env = any(key in env for key in SECRET_ENV_KEYS)
-        outside_allowed_roots = sorted(
-            str(candidate)
-            for value in path_values
-            for candidate in _extract_absolute_paths(value)
-            if not _path_within(candidate, allowed_roots)
-            and not _path_within(candidate, temporary_aliases)
-            and not str(candidate).startswith(("/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"))
-        )
         loaded_state = loaded.get(label, {})
         row = {
             "label": label,
@@ -987,19 +958,8 @@ def audit_launchd() -> dict[str, Any]:
             "start_interval": data.get("StartInterval"),
             "uses_legacy_mirror_alias": uses_legacy_alias,
             "has_secret_env": has_secret_env,
-            "outside_allowed_roots": outside_allowed_roots,
         }
         rows.append(row)
-        if outside_allowed_roots:
-            findings.append(
-                {
-                    "id": "launchd_path_outside_allowed_roots",
-                    "severity": "blocking",
-                    "label": label,
-                    "message": "LaunchAgent references paths outside policy/allowed-roots.json.",
-                    "paths": outside_allowed_roots,
-                }
-            )
         if uses_legacy_alias:
             findings.append(
                 {

@@ -438,7 +438,7 @@ def test_launchd_blocks_nonzero_launchctl(monkeypatch, tmp_path: Path) -> None:
     assert any(item["id"] == "launchctl_list_failed" for item in report["findings"])
 
 
-def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path) -> None:
+def test_launchd_does_not_enforce_allowed_roots(monkeypatch, tmp_path: Path) -> None:
     plist = tmp_path / "com.sereja.telegram-evil.plist"
     plist.write_text(
         """<?xml version="1.0" encoding="UTF-8"?>
@@ -458,8 +458,8 @@ def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path)
 
     report = audits.audit_launchd()
 
-    assert report["status"] == "fail"
-    assert any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
+    assert report["status"] == "ok"
+    assert not any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
 
 
 def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
@@ -586,7 +586,7 @@ def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path:
     assert any(item["id"] == "managed_system_resolved_target_mismatch" for item in report["findings"])
 
 
-def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:
+def test_registry_persisted_snapshot_keeps_local_runtime_details(monkeypatch) -> None:
     private_components = {
         "plugin_drift": {"status": "ok", "findings": []},
         "mcp_surface": {"status": "ok", "findings": []},
@@ -673,16 +673,16 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
 
     encoded = json.dumps(registry, ensure_ascii=False)
 
-    assert "/Users/sereja/.telegram-mcp/session.session" not in encoded
-    assert "telegram_user_id" not in encoded
-    assert "tdata_path" not in encoded
-    assert "db_path" not in encoded
-    assert "manifest_path" not in encoded
-    assert "Telegram @" not in encoded
-    assert "tg:7091037467" not in encoded
+    assert "/Users/sereja/.telegram-mcp/session.session" in encoded
+    assert "telegram_user_id" in encoded
+    assert "tdata_path" in encoded
+    assert "db_path" in encoded
+    assert "manifest_path" in encoded
+    assert "Telegram @" in encoded
+    assert "tg:7091037467" in encoded
 
 
-def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
+def test_registry_uses_full_local_component_schema(monkeypatch) -> None:
     monkeypatch.setattr(audits, "_collect_components", lambda: {
         "managed_systems": {
             "status": "ok",
@@ -727,12 +727,11 @@ def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
 
     registry = build_registry()
 
-    assert set(registry["components"]["sessions"]) == {"status", "findings", "summary", "policy_summary"}
-    assert "sessions" not in registry["components"]["sessions"]
-    assert "accounts" not in registry["components"]["telecrawl"]
-    assert "default_archive_status" not in registry["components"]["telecrawl"]
+    assert {"status", "findings", "sessions", "policy"} <= set(registry["components"]["sessions"])
+    assert "accounts" in registry["components"]["telecrawl"]
+    assert "default_archive_status" in registry["components"]["telecrawl"]
     assert "gap_policy" in registry["components"]["telecrawl"]
-    assert "runtime_state" not in registry["components"]["telegram_mirror"]
+    assert "runtime_state" in registry["components"]["telegram_mirror"]
     assert "managed_systems" in registry["components"]
 
 

@@ -1,11 +1,14 @@
 # Telegram Control-Plane Rules
 
 This directory is the local Telegram control-plane, not a Telegram runtime repo.
-Default operation is read-only toward external Telegram components.
+Default operation is direct full-surface local MCP for the owner's Telegram accounts.
 
-## First calls (agents start here)
+## First calls
 
-- `./bin/tgc next --json` — doctor triage as prioritized actions with exact commands.
+- Use the native MCP tools first. `telegram-main` is the main account on port
+  `8799`; `telegram-pl` is the second account on port `8800`.
+- Run `./bin/telegram-status` or `./bin/telegram-doctor --json` only when MCP
+  calls fail or you are doing maintenance.
 - `./bin/tgc commands --json` — machine-readable registry of every command
   (purpose, level, safety, example). Same data as `tests/test_command_registry.py`
   enforces, so it cannot drift from `bin/`.
@@ -18,7 +21,8 @@ Default operation is read-only toward external Telegram components.
 | Keyword in dialog | MCP `telegram_search` | Then fetch context only for hits |
 | Full today, nothing missed | MCP `telegram_read` `mode="full"` + page | Report `truncated` / `has_more_before` |
 | Draft reply | MCP `telegram_prepare_reply` | No send without explicit user text |
-| Send | MCP `telegram_confirmed_send` | Fresh `confirmation_token` from preview |
+| Send | MCP `telegram_send` or `send_message` | Direct one-call send on the selected local account |
+| Edit/delete/forward/react/pin | MCP `edit_message`, `delete_messages`, `forward_messages`, `send_reaction`, `set_message_pinned` | Use exact chat/message ids |
 | Photos/video | MCP `telegram_inspect_media` / downloads | Never answer from captions only |
 | Historical (allowlist) | `telegram-local-mirror` skill | Not for today/latest |
 | Mirror status/read/search | `./bin/telegram-mirror-fast …` | Local exports only; promotion is maintenance |
@@ -26,28 +30,26 @@ Default operation is read-only toward external Telegram components.
 | Low-stakes today smoke | `./bin/telegram-fast-read-today me --limit 1` | Read-only fast path |
 | Anything else | `./bin/tgc commands` | Pick by level/safety from the registry |
 
-Forbidden until a read actually fails: mcporter, tool_search, plugin README,
-doctor, launchd. `tg` on PATH: `./bin/telegram-kit --local`. For live Telegram
-work read MCP resources first (`telegram://docs/routing`, `telegram://docs/tools`,
-`telegram://docs/sources`); full skill: `$HOME/.agents/skills/telegram`. Do not
-improvise Telethon calls or browse `telegram-mcp` unless debugging.
+Avoid `mcporter` and broad doctor checks on the hot path. `tg` on PATH:
+`./bin/telegram-kit --local`. Do not improvise raw Telethon calls unless
+debugging the MCP server itself.
 
 ## Hard rules
 
 - Do not move repos, refresh plugin cache, sync skill-index, rewrite LaunchAgents,
   start mirror jobs, or copy sessions from here without an explicit later plan.
 - `generated/` may be rewritten by local doctor/status commands.
-- Blocking doctor findings: stop and run `./bin/telegram-repair-plan --json`
-  (dry-run) before proposing changes.
-- Maintenance/release actions (`telegram-maintenance-doctor`,
-  `telegram-release-gate`, `telegram-repair-plan-apply`, plugin cache
-  materialization, adapter installs, docs sync) require an explicit
-  maintenance/release task.
+- Blocking doctor findings mean the selected MCP account is not healthy. Fix
+  the failing component directly; `telegram-repair-plan` is optional
+  maintenance context, not a required preflight.
+- Maintenance/release commands (`telegram-maintenance-doctor`,
+  `telegram-release-gate`, plugin cache materialization, adapter installs,
+  docs sync) are outside the normal agent hot path.
 
 ## Deep docs (read on demand)
 
 - Doctor warn triage and command levels: `docs/agents/doctor-triage.md`
-- Default MCP surface (16 tools) and release-gate naming: `docs/agents/mcp-surface.md`
+- Full MCP surface and release-gate naming: `docs/agents/mcp-surface.md`
 - Telemetry locations and thresholds: `docs/agents/telemetry.md`
 - Doc sync skill ↔ MCP resources: `docs/agents/doc-sync.md`
 - Human map: `MAP.md`; roadmap: `TELEGRAM_AGENT_KIT_ROADMAP.md`

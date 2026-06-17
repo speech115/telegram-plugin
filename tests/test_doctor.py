@@ -34,11 +34,14 @@ def test_control_plane_doctor_builds_registry_from_component_reports() -> None:
     ]
 
 
-def test_control_plane_doctor_write_registry_fails_closed_on_private_leak(tmp_path) -> None:
+def test_control_plane_doctor_write_registry_writes_local_registry(tmp_path) -> None:
     doctor = ControlPlaneDoctor()
+    path = tmp_path / "observed-registry.json"
 
-    with pytest.raises(ValueError, match="private runtime leaks"):
-        doctor.write_registry(tmp_path / "observed-registry.json", {"note": "Telegram @example"})
+    doctor.write_registry(path, {"note": "Telegram @example"})
+
+    assert path.exists()
+    assert "Telegram @example" in path.read_text(encoding="utf-8")
 
 
 def test_core_doctor_collects_only_core_components(monkeypatch) -> None:
@@ -90,6 +93,7 @@ def test_core_doctor_collects_only_core_components(monkeypatch) -> None:
     assert registry["profile"] == "core"
     assert set(registry["summary"]["components"]) == set(CORE_COMPONENTS)
     assert set(calls) == set(CORE_COMPONENTS)
+    assert calls == ["mcp_surface"]
 
 
 def test_maintenance_doctor_collects_maintenance_components(monkeypatch) -> None:

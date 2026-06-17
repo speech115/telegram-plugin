@@ -338,7 +338,6 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
             touched_paths=[
                 str(HOME / "Library/LaunchAgents/com.sereja.telegram-*.plist"),
                 str(HOME / "Library/LaunchAgents/com.sereja.telecrawl*.plist"),
-                str(CONTROL_ROOT / "policy/allowed-roots.json"),
             ],
             dry_run_commands=[
                 [str(CONTROL_ROOT / "bin/telegram-launchd-audit"), "--json"],

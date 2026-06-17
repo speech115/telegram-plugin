@@ -22,6 +22,8 @@ Optional: MCP resource `telegram://docs/routing` (5 lines). Not this file on eve
 
 ## After read
 
-Reuse `chat.dialog_ref`. Sends: telegram_prepare_reply → Approve in browser → telegram_confirmed_send.
+Reuse `chat.dialog_ref`. Sends are direct when the user gave an explicit target
+and exact text: prefer `telegram_send` / `send_message`. Use preview/confirmed
+tools only when the user asks to preview first.
 
 Install tg: tools/telegram/bin/telegram-kit --local
