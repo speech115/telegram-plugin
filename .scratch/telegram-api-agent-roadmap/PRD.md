@@ -24,6 +24,8 @@ Should add:
 Out of scope for this phase:
 - Pyrogram migration.
 - Full TDLib rewrite.
+- TDLib sidecar/default runtime unless an isolated read-only POC passes the ADR
+  gate in `docs/adr/2026-06-21-tdlib-is-not-default-runtime.md`.
 - Stars, gifts, paid media writes.
 - Business write-actions without a separate permission model.
 - Mini Apps UI.
