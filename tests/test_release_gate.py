@@ -54,6 +54,19 @@ def test_release_gate_local_includes_golden_read_smoke() -> None:
     assert "telegram-golden-read-smoke" in spec["argv"][0]
 
 
+def test_release_gate_local_includes_runtime_contract_smoke() -> None:
+    manifest = load_release_gate_manifest()
+    assert "runtime-contract-smoke" in manifest["modes"]["local"]
+    assert "runtime-app-media-smoke" in manifest["modes"]["local"]
+    assert "runtime-contract-smoke" in manifest["gates"]
+    assert "runtime-app-media-smoke" in manifest["gates"]
+    assert "contract-smoke" in manifest["gates"]["runtime-contract-smoke"]["argv"][0]
+    assert manifest["gates"]["runtime-app-media-smoke"]["argv"][1:3] == [
+        "--profile",
+        "app-media",
+    ]
+
+
 def test_release_gate_policy_file_is_valid_json() -> None:
     payload = json.loads(RELEASE_GATES_PATH.read_text(encoding="utf-8"))
     assert payload["gates"]["mcp-surface"]["argv"][0].endswith("telegram-mcp-surface")

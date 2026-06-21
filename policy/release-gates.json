@@ -8,6 +8,8 @@
       "install-adapters",
       "docs-audit",
       "write-safety-smoke",
+      "runtime-contract-smoke",
+      "runtime-app-media-smoke",
       "pytest",
       "tg-read-smoke"
     ],
@@ -51,6 +53,12 @@
     },
     "write-safety-smoke": {
       "argv": ["{mcp_repo}/bin/telegram-write-safety-smoke", "--json"]
+    },
+    "runtime-contract-smoke": {
+      "argv": ["{mcp_repo}/bin/contract-smoke", "--json"]
+    },
+    "runtime-app-media-smoke": {
+      "argv": ["{mcp_repo}/bin/contract-smoke", "--profile", "app-media", "--json"]
     },
     "pytest": {
       "argv": ["python3", "-m", "pytest", "-q"],

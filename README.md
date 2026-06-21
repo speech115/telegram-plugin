@@ -122,17 +122,16 @@ into Grafana and include `policy/telemetry/prometheus-scrape.yml` in Prometheus.
 
 ## Surface Contract
 
-The default Telegram MCP endpoint is read-mostly toward external Telegram state.
-It may resolve, read, search, collect context, prepare send/reply previews, and
-perform confirmed sends through `telegram_confirmed_send` after a fresh preview
-token. It must not expose raw send/reply, edit, delete, mark, create, invite,
-promote, or other direct mutation tools.
+The healthy local surface is `owner_local_full_mcp`. This single-owner machine
+intentionally exposes the full Telegram MCP runtime on explicit owner account
+daemons (`telegram-main`/`telegram-crwddy`, `telegram-recklessou`,
+`telegram-teamsyncsage`, and `telegram-vermassov`). Direct write tools are
+allowed on that owner-local surface; external or restricted environments must
+use their own facade policy.
 
-Write-capable tools such as `send_dialog_message`, `reply_in_dialog`, and
-`reply_message` are allowed only in an explicit `full` or `admin` tool profile.
-The control-plane treats any raw write-capable tool in the default profile or
-plugin allowlist as a blocking defect. `telegram_confirmed_send` is the approved
-confirmed-write facade tool.
+The legacy 16-tool facade remains documented only for compatibility and
+restricted-profile installs. It is no longer the healthy default target for this
+host.
 
 For simple low-stakes "read today" tasks, `bin/telegram-fast-read-today` is the
 supported first path on this host. It talks directly to the local MCP HTTP daemon

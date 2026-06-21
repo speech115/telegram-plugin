@@ -69,6 +69,7 @@ def test_registry_report_shape() -> None:
         ("managed_systems", "telegram-managed-systems"),
         ("telegram_mirror", "telegram-mirror-audit"),
         ("runtime_inventory", "telegram-runtime-inventory"),
+        ("api_gap_audit", "telegram-api-gap-audit"),
         ("mirror_fast_status", "telegram-mirror-fast"),
         ("golden_read_smoke", "telegram-golden-read-smoke"),
         ("release_gates", "telegram-release-gates"),

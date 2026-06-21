@@ -184,6 +184,14 @@ COMMAND_REGISTRY: tuple[CommandSpec, ...] = (
         example="./bin/telegram-runtime-inventory --json",
         component="runtime_inventory",
     ),
+    CommandSpec(
+        name="telegram-api-gap-audit",
+        purpose="Audit Telegram API/Bot API capability gaps without enabling writes",
+        level="drilldown",
+        safety="read-only",
+        example="./bin/telegram-api-gap-audit --json",
+        component="api_gap_audit",
+    ),
     # Maintenance / release.
     CommandSpec(
         name="telegram-maintenance-doctor",

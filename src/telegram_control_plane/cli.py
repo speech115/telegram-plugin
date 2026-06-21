@@ -25,6 +25,7 @@ from .doctor import ControlPlaneDoctor
 from .insights import build_insights
 from .paths import OBSERVED_REGISTRY
 from .audit_remediation import apply_repair_plan, build_repair_plan
+from .api_gap_audit import audit_api_gaps
 from .doctor_profiles import PROFILE_COMPONENTS
 from .command_registry import registry_report
 from .next_actions import build_next_actions, render_next_actions
@@ -50,6 +51,7 @@ COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "telecrawl-status": audit_telecrawl,
     "source-routing": audit_source_routing,
     "runtime-inventory": audit_runtime_inventory,
+    "api-gap-audit": audit_api_gaps,
     "repair-plan": build_repair_plan,
     "repair-plan-apply": apply_repair_plan,
 }

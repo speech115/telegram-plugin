@@ -66,9 +66,9 @@ Run: `uv run --with pytest --with-editable . pytest tests/test_registration.py t
 - Add docs-gap audit command in control-plane.
 
 - [x] **Step 1: Promote story analytics docs and contract entries**
-- [ ] **Step 2: Add read-only business audit**
-- [ ] **Step 3: Add docs-gap audit**
-- [ ] **Step 4: Run control-plane doctor and command registry tests**
+- [x] **Step 2: Add read-only business audit**
+- [x] **Step 3: Add docs-gap audit**
+- [x] **Step 4: Run control-plane command registry tests**
 
 ### Task 5: Verification
 
@@ -84,6 +84,6 @@ Run: `pytest tests/test_command_registry.py tests/test_doctor.py tests/test_cont
 
 Run: `./bin/telegram-mcp-surface --json`
 
-- [ ] **Step 4: Update final operator summary**
+- [x] **Step 4: Update final operator summary**
 
 Summarize added tools, safety classification, and any remaining gaps.
