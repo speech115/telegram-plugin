@@ -14,7 +14,10 @@ quickly through MCP.
 
 For normal current/live tasks, use MCP first:
 
-- read/search: `telegram_read`, `telegram_search`, `list_chats`, `list_contacts`
+- read/search: `telegram_read`, `telegram_search`, `global_search`,
+  `sent_media_search`, `list_forum_topics`, `get_thread_replies`,
+  `get_discussion_message`, `get_message_reactions`, `get_unread_reactions`,
+  `list_chats`, `list_contacts`
 - send: `telegram_send` or `send_message`
 - mutate: `edit_message`, `delete_messages`, `forward_messages`,
   `set_message_pinned`, `send_reaction`

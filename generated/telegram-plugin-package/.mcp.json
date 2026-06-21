@@ -4,13 +4,37 @@
       "type": "http",
       "url": "http://127.0.0.1:8799/mcp",
       "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
-      "note": "Main local Telegram account with full telegram-mcp tool surface."
+      "note": "Main local Telegram account (@CrwDdy) with full telegram-mcp tool surface."
+    },
+    "telegram-crwddy": {
+      "type": "http",
+      "url": "http://127.0.0.1:8799/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
+      "note": "Owner Telegram account @CrwDdy with full telegram-mcp tool surface."
     },
     "telegram-pl": {
       "type": "http",
       "url": "http://127.0.0.1:8800/mcp",
       "bearer_token_env_var": "TELEGRAM_MCP_PL_AUTH_TOKEN",
       "note": "Second local Telegram account with full telegram-mcp tool surface."
+    },
+    "telegram-recklessou": {
+      "type": "http",
+      "url": "http://127.0.0.1:8801/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
+      "note": "Owner Telegram account @RecklessOU with full telegram-mcp tool surface."
+    },
+    "telegram-teamsyncsage": {
+      "type": "http",
+      "url": "http://127.0.0.1:8802/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
+      "note": "Owner Telegram account @TeamSyncSage with full telegram-mcp tool surface."
+    },
+    "telegram-vermassov": {
+      "type": "http",
+      "url": "http://127.0.0.1:8803/mcp",
+      "bearer_token_env_var": "TELEGRAM_MCP_AUTH_TOKEN",
+      "note": "Owner Telegram account @vermassov with full telegram-mcp tool surface."
     }
   }
 }

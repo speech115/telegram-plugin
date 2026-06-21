@@ -142,6 +142,33 @@
       "safe_delete": "never_without_explicit_user_approval"
     },
     {
+      "id": "telegram-recklessou-session-dir",
+      "role": "owner_account_session_runtime",
+      "path": "/Users/sereja/.telegram-mcp-recklessou",
+      "expected_kind": "directory",
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_explicit_user_approval"
+    },
+    {
+      "id": "telegram-teamsyncsage-session-dir",
+      "role": "owner_account_session_runtime",
+      "path": "/Users/sereja/.telegram-mcp-teamsyncsage",
+      "expected_kind": "directory",
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_explicit_user_approval"
+    },
+    {
+      "id": "telegram-vermassov-session-dir",
+      "role": "owner_account_session_runtime",
+      "path": "/Users/sereja/.telegram-mcp-vermassov",
+      "expected_kind": "directory",
+      "source_of_truth": false,
+      "deletion_protection": "blocking",
+      "safe_delete": "never_without_explicit_user_approval"
+    },
+    {
       "id": "telegram-mcp-env",
       "role": "local_mcp_secret_env",
       "path": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/.env",

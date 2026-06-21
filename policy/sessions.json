@@ -15,6 +15,27 @@
       "runtime_allowed": true
     },
     {
+      "path": "/Users/sereja/.telegram-mcp-recklessou/session.session",
+      "account_key": "telegram-mcp-recklessou",
+      "owner": "com.sereja.telegram-mcp-http-recklessou",
+      "allowed_consumers": ["telegram_mcp_recklessou"],
+      "runtime_allowed": true
+    },
+    {
+      "path": "/Users/sereja/.telegram-mcp-teamsyncsage/session.session",
+      "account_key": "telegram-mcp-teamsyncsage",
+      "owner": "com.sereja.telegram-mcp-http-teamsyncsage",
+      "allowed_consumers": ["telegram_mcp_teamsyncsage"],
+      "runtime_allowed": true
+    },
+    {
+      "path": "/Users/sereja/.telegram-mcp-vermassov/session.session",
+      "account_key": "telegram-mcp-vermassov",
+      "owner": "com.sereja.telegram-mcp-http-vermassov",
+      "allowed_consumers": ["telegram_mcp_vermassov"],
+      "runtime_allowed": true
+    },
+    {
       "path": "/Users/sereja/Projects/tools/telegram-mirror/data/telegram_mirror_watch_prime.session",
       "account_key": "prime-mirror-recovery",
       "owner": "telegram-mirror-recovery",

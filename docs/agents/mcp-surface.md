@@ -8,17 +8,27 @@ single-user machine. A healthy config exposes the local MCP server without
 groups, reactions, pins, polls, stories, privacy and profile tools directly.
 
 Expected high-value tools include `telegram_read`, `telegram_search`,
-`telegram_send`, `send_message`, `edit_message`, `delete_messages`,
-`forward_messages`, `set_message_pinned`, `send_reaction`, `send_file`,
-`list_chats`, and `list_contacts`.
+`global_search`, `sent_media_search`, `list_forum_topics`,
+`get_forum_topics_by_id`, `get_discussion_message`, `get_thread_replies`,
+`get_message_reactions`, `get_unread_reactions`, `telegram_send`,
+`send_message`, `edit_message`, `delete_messages`, `forward_messages`,
+`set_message_pinned`, `send_reaction`, `send_file`, `list_chats`, and
+`list_contacts`.
 
-Two account daemons are intentional:
+`sent_media_search` is intentionally bounded by recent dialogs via `max_dialogs`.
+This keeps the tool fast and avoids Telegram API sent-media filters that are not
+accepted consistently for user accounts.
 
-- `telegram-main` -> `http://127.0.0.1:8799/mcp`
-- `telegram-pl` -> `http://127.0.0.1:8800/mcp`
+Owner account daemons are intentional:
 
-Do not use port `8800` as silent failover for `8799`: it is a different
-Telegram account. Pick the account explicitly.
+- `telegram-main` / `telegram-crwddy` -> `http://127.0.0.1:8799/mcp`
+- `telegram-recklessou` -> `http://127.0.0.1:8801/mcp`
+- `telegram-teamsyncsage` -> `http://127.0.0.1:8802/mcp`
+- `telegram-vermassov` -> `http://127.0.0.1:8803/mcp`
+
+The legacy `telegram-pl` daemon on `8800` may also exist. Do not use any account
+port as silent failover for another: each port is a different Telegram account.
+Pick the account explicitly.
 
 ## Naming note
 

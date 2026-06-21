@@ -202,13 +202,15 @@ component.
 - Portable plugin package, marketplace alias, live skill, and installed cache are
   aligned at local Telegram plugin version `0.1.10`.
 - The active MCP tool profile is `owner_local_full_mcp`: this single-owner local
-  setup intentionally exposes the full local MCP surface on explicit
-  `telegram-main` and `telegram-pl` accounts.
+  setup intentionally exposes the full local MCP surface on explicit owner
+  account daemons: `telegram-main`/`telegram-crwddy`, `telegram-recklessou`,
+  `telegram-teamsyncsage`, and `telegram-vermassov`. The legacy `telegram-pl`
+  daemon may also exist, but it is not one of the four owner aliases.
 - `telegram-mcp-surface --json` is healthy when `surface_mode` is
-  `owner_local_full_mcp`, both accounts pass the live probe, the plugin config
-  has no hard `allowedTools`/`allowTools`, and the policy-required full-surface
-  tools are present. The old 16-tool facade list remains only as a legacy
-  reference, not as the active default target.
+  `owner_local_full_mcp`, the four owner account aliases pass the live probe,
+  the plugin config has no hard `allowedTools`/`allowTools`, and the
+  policy-required full-surface tools are present. The old 16-tool facade list
+  remains only as a legacy reference, not as the active default target.
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they
   load credentials through `TELEGRAM_MCP_ENV_FILE` pointing at private `0600`
   env files under the MCP session directories.
