@@ -207,6 +207,13 @@ COMMAND_REGISTRY: tuple[CommandSpec, ...] = (
         example="./bin/telegram-mirror-preflight --json",
     ),
     CommandSpec(
+        name="telegram-music-autoclean",
+        purpose="Dry-run classifier for the personal music channel post-cleanup watcher",
+        level="maintenance",
+        safety="read-only",
+        example="./bin/telegram-music-autoclean --json",
+    ),
+    CommandSpec(
         name="telegram-golden-read-smoke",
         purpose="Live read smoke over golden dialogs; release/live-smoke only",
         level="release",

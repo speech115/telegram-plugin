@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sereja.telegram-music-autoclean</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT_ROOT__/bin/telegram-music-autoclean</string>
+    <string>--chat</string>
+    <string>-1003717342967</string>
+    <string>--limit</string>
+    <string>50</string>
+    <string>--session</string>
+    <string>__RUNTIME_ROOT__/session/music_autoclean</string>
+    <string>--state-dir</string>
+    <string>__RUNTIME_ROOT__/state</string>
+    <string>--max-process</string>
+    <string>3</string>
+    <string>--apply</string>
+    <string>--i-understand-this-deletes-source</string>
+    <string>--json</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>__HOME__</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PYTHONPATH</key>
+    <string>__PROJECT_ROOT__/src</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_ROOT__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>60</integer>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>__RUNTIME_ROOT__/logs/music_autoclean_launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__RUNTIME_ROOT__/logs/music_autoclean_launchd.log</string>
+</dict>
+</plist>
