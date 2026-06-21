@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import pytest
 
 import telegram_control_plane.audits as audits
@@ -7,7 +9,11 @@ import telegram_control_plane.cli as cli
 import telegram_control_plane.runtime_inventory as runtime_inventory
 import telegram_control_plane.source_routing as source_routing
 from telegram_control_plane.doctor import ControlPlaneDoctor
-from telegram_control_plane.doctor_profiles import CORE_COMPONENTS, MAINTENANCE_COMPONENTS
+from telegram_control_plane.doctor_profiles import (
+    CORE_COMPONENTS,
+    MAINTENANCE_COMPONENTS,
+    collect_profile_components,
+)
 
 
 def test_control_plane_doctor_builds_registry_from_component_reports() -> None:
@@ -132,6 +138,74 @@ def test_maintenance_doctor_collects_maintenance_components(monkeypatch) -> None
     assert "telecrawl" in registry["summary"]["components"]
     assert "release_gates" in registry["summary"]["components"]
     assert "runtime_inventory" in registry["summary"]["components"]
+
+
+def test_maintenance_profile_components_can_collect_in_parallel() -> None:
+    calls: list[str] = []
+
+    def report(name: str):
+        def collect() -> dict[str, object]:
+            time.sleep(0.05)
+            calls.append(name)
+            return {"status": "ok", "findings": [], "name": name}
+
+        return collect
+
+    collectors = {name: report(name) for name in MAINTENANCE_COMPONENTS}
+
+    started = time.perf_counter()
+    reports = collect_profile_components(
+        collectors,
+        profile_name="maintenance",
+        parallel=True,
+        max_workers=8,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert list(reports) == list(MAINTENANCE_COMPONENTS)
+    assert set(calls) == set(MAINTENANCE_COMPONENTS)
+    assert elapsed < 0.4
+
+
+def test_maintenance_doctor_does_not_repeat_failed_shared_collectors(monkeypatch) -> None:
+    calls = {"launchd": 0}
+
+    def fail_launchd() -> dict[str, object]:
+        calls["launchd"] += 1
+        raise RuntimeError("launchd failed")
+
+    def ok_report(name: str):
+        def collect(*args, **kwargs) -> dict[str, object]:
+            return {"status": "ok", "findings": [], "name": name}
+
+        return collect
+
+    for name in (
+        "audit_managed_systems",
+        "audit_docs",
+        "audit_plugin_drift",
+        "audit_mcp_telemetry",
+        "audit_fast_read_adapter",
+        "audit_golden_read_smoke",
+        "audit_agent_docs_sync",
+        "audit_release_gates",
+        "audit_install_adapters",
+        "audit_mcp_surface",
+        "audit_mcp_profiles",
+        "audit_sessions",
+        "audit_mirror",
+        "audit_mirror_fast_status",
+        "audit_telecrawl",
+    ):
+        monkeypatch.setattr(audits, name, ok_report(name.removeprefix("audit_")))
+    monkeypatch.setattr(audits, "audit_launchd", fail_launchd)
+    monkeypatch.setattr(source_routing, "audit_source_routing", ok_report("source_routing"))
+    monkeypatch.setattr(runtime_inventory, "audit_runtime_inventory", ok_report("runtime_inventory"))
+
+    with pytest.raises(RuntimeError, match="launchd failed"):
+        ControlPlaneDoctor(profile="maintenance").collect_components()
+
+    assert calls["launchd"] == 1
 
 
 def test_control_plane_doctor_rejects_unknown_profile() -> None:

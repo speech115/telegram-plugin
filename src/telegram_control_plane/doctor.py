@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,21 +33,30 @@ class ControlPlaneDoctor:
         from . import audits
 
         cached: dict[str, dict[str, Any]] = {}
+        cached_errors: dict[str, BaseException] = {}
+        cached_lock = threading.Lock()
+
+        def shared_report(key: str, collect: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+            with cached_lock:
+                if key in cached:
+                    return cached[key]
+                if key in cached_errors:
+                    raise cached_errors[key]
+                try:
+                    cached[key] = collect()
+                except BaseException as exc:
+                    cached_errors[key] = exc
+                    raise
+                return cached[key]
 
         def launchd() -> dict[str, Any]:
-            if "launchd" not in cached:
-                cached["launchd"] = audits.audit_launchd()
-            return cached["launchd"]
+            return shared_report("launchd", audits.audit_launchd)
 
         def sessions() -> dict[str, Any]:
-            if "sessions" not in cached:
-                cached["sessions"] = audits.audit_sessions()
-            return cached["sessions"]
+            return shared_report("sessions", audits.audit_sessions)
 
         def mirror() -> dict[str, Any]:
-            if "telegram_mirror" not in cached:
-                cached["telegram_mirror"] = audits.audit_mirror()
-            return cached["telegram_mirror"]
+            return shared_report("telegram_mirror", audits.audit_mirror)
 
         def runtime_inventory_report() -> dict[str, Any]:
             return runtime_inventory.audit_runtime_inventory(
@@ -75,7 +85,11 @@ class ControlPlaneDoctor:
             "runtime_inventory": runtime_inventory_report,
             "telecrawl": audits.audit_telecrawl,
         }
-        return collect_profile_components(collectors, profile_name=self.profile.name)
+        return collect_profile_components(
+            collectors,
+            profile_name=self.profile.name,
+            parallel=self.profile.name == "maintenance",
+        )
 
     def build_registry(self, raw_components: ComponentReports | None = None) -> dict[str, Any]:
         components_input = raw_components if raw_components is not None else self.collect_components()
