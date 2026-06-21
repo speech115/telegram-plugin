@@ -22,6 +22,7 @@ from .audits import (
     audit_telecrawl,
 )
 from .doctor import ControlPlaneDoctor
+from .insights import build_insights
 from .paths import OBSERVED_REGISTRY
 from .audit_remediation import apply_repair_plan, build_repair_plan
 from .doctor_profiles import PROFILE_COMPONENTS
@@ -35,6 +36,7 @@ COMMANDS: dict[str, Callable[[], dict[str, Any]]] = {
     "managed-systems": audit_managed_systems,
     "plugin-drift": audit_plugin_drift,
     "telemetry-status": audit_mcp_telemetry,
+    "insights": build_insights,
     "docs-audit": audit_docs,
     "fast-read-adapter": audit_fast_read_adapter,
     "release-gates": audit_release_gates,
@@ -87,6 +89,8 @@ def render_text(report: dict[str, Any]) -> str:
                 lines.append(f"{name}: {status}")
     for item in report.get("findings", [])[:20]:
         lines.append(f"- [{item.get('severity')}] {item.get('component', '?')}/{item.get('id')}: {item.get('message')}")
+    for item in report.get("recommendations", [])[:20]:
+        lines.append(f"- [{item.get('kind')}] {item.get('subject')}: {item.get('recommendation')}")
     return "\n".join(lines)
 
 

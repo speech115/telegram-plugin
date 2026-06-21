@@ -76,6 +76,205 @@ def test_docs_audit_flags_stale_plugin_version(monkeypatch, tmp_path: Path) -> N
     assert any(item["id"] == "stale_plugin_version_in_docs" for item in report["findings"])
 
 
+def test_mcp_telemetry_surfaces_error_buckets_and_write_summary(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "_telemetry_thresholds", lambda: {"window_hours": 1})
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 4,
+            "event_counts": {"tool_call": 2},
+            "tool_errors": 1,
+            "cache": {"hit_rate": 0.5},
+            "source_counts": {"mcp_tool": 2},
+            "tool_error_buckets": [
+                {
+                    "tool": "telegram_read",
+                    "error_type": "ToolContractError",
+                    "error_code": "dialog_not_found",
+                    "port": 8799,
+                    "count": 1,
+                }
+            ],
+            "write_operations": {
+                "count": 2,
+                "errors": 1,
+                "by_operation": {"send_message": {"count": 2, "errors": 1}},
+                "latency": {"send_message": {"p95_ms": 40.0}},
+            },
+            "tool_latency": {
+                "telegram_read": {"count": 2, "p95_ms": 10.0},
+                "send_file": {"count": 1, "p95_ms": 9000.0},
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert report["top_tool_error_buckets"] == [
+        {
+            "tool": "telegram_read",
+            "error_type": "ToolContractError",
+            "error_code": "dialog_not_found",
+            "port": 8799,
+            "count": 1,
+        }
+    ]
+    assert report["write_operations"]["errors"] == 1
+    assert report["top_slow_tools"][0]["tool"] == "send_file"
+    assert report["top_slow_tools"][0]["p95_ms"] == 9000.0
+
+
+def test_mcp_telemetry_warns_on_stale_stats_snapshot(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    stats = tmp_path / "telemetry-stats.json"
+    stats.write_text('{"ts":"2020-01-01T00:00:00Z","runtime_stats":{},"scheduler":{}}\n', encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "MCP_TELEMETRY_STATS", stats)
+    monkeypatch.setattr(audits, "_telemetry_thresholds", lambda: {"window_hours": 1, "max_stats_age_seconds": 60})
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 1,
+            "event_counts": {"tool_call": 0},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert report["stats_file_present"] is True
+    assert report["stats_file_age_seconds"] > 60
+    assert any(item["id"] == "telemetry_stats_snapshot_stale" for item in report["findings"])
+
+
+def test_mcp_telemetry_warns_on_low_cache_hit_rate(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {
+            "window_hours": 1,
+            "min_events_for_rate_checks": 1,
+            "min_cache_hit_rate_when_cache_tracked": 0.25,
+        },
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 10},
+            "tool_errors": 0,
+            "cache": {"hit_rate": 0.1, "hits": 1, "misses": 9, "total": 10},
+            "source_counts": {},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert any(item["id"] == "telemetry_low_cache_hit_rate" for item in report["findings"])
+
+
+def test_mcp_telemetry_warns_on_prewarm_failures(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_prewarm_failure_rate": 0.2},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 1},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "prewarm": {"count": 10, "failed": 3, "failure_rate": 0.3},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert any(item["id"] == "telemetry_high_prewarm_failure_rate" for item in report["findings"])
+
+
+def test_mcp_telemetry_warns_on_floodwait_and_rate_limited_lanes(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    stats = tmp_path / "telemetry-stats.json"
+    stats.write_text(
+        json.dumps(
+            {
+                "ts": "2099-01-01T00:00:00Z",
+                "runtime_stats": {
+                    "lanes": {
+                        "read": {"count": 8, "rate_limited": 2, "last_flood_wait_seconds": 11},
+                        "write": {"count": 3, "rate_limited": 0},
+                    }
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "MCP_TELEMETRY_STATS", stats)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_read_floodwait_events": 0, "max_lane_rate_limited": 1},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 5},
+            "tool_errors": 1,
+            "cache": {},
+            "source_counts": {},
+            "tool_error_buckets": [
+                {"tool": "telegram_search", "error_type": "FloodWaitError", "count": 1}
+            ],
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    finding_ids = {item["id"] for item in report["findings"]}
+    assert "telemetry_read_floodwait" in finding_ids
+    assert "telemetry_lane_rate_limited" in finding_ids
+
+
 def test_docs_audit_flags_deprecated_default_surface_tool(monkeypatch, tmp_path: Path) -> None:
     readme = tmp_path / "README.md"
     readme.write_text("Use list_chats for smoke.\n", encoding="utf-8")

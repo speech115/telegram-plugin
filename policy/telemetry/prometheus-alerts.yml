@@ -23,6 +23,17 @@ groups:
           severity: warning
         annotations:
           summary: telegram_read p95 latency above 5s
+      - alert: TelegramMcpWriteErrorRateHigh
+        expr: |
+          sum(rate(telegram_mcp_write_operations_total{status=~"error|failed|timed_out|timeout|rate_limited"}[15m]))
+          /
+          clamp_min(sum(rate(telegram_mcp_write_operations_total[15m])), 1)
+          > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Telegram MCP write operation error rate above 10%
       - alert: TelegramMcpMetricsTargetDown
         expr: up{job="telegram-mcp-metrics"} == 0
         for: 5m

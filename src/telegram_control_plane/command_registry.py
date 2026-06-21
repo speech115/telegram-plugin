@@ -138,6 +138,13 @@ COMMAND_REGISTRY: tuple[CommandSpec, ...] = (
         component="mcp_telemetry",
     ),
     CommandSpec(
+        name="telegram-insights",
+        purpose="Summarize actionable Telegram telemetry insights",
+        level="drilldown",
+        safety="read-only",
+        example="./bin/telegram-insights --json",
+    ),
+    CommandSpec(
         name="telegram-telecrawl-status",
         purpose="Audit telecrawl archive gaps (archive evidence, not live truth)",
         level="drilldown",
