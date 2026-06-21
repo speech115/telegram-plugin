@@ -178,6 +178,39 @@ def test_mcp_telemetry_warns_on_stale_stats_snapshot(monkeypatch, tmp_path: Path
     assert any(item["id"] == "telemetry_stats_snapshot_stale" for item in report["findings"])
 
 
+def test_mcp_telemetry_ignores_synthetic_preflight_for_agent_warning(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_preflight_violations": 10},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 50,
+            "event_counts": {"tool_call": 20},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "agent_preflight": {
+                "preflight_violations": 0,
+                "synthetic_probe_violations": 500,
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert not any(item["id"] == "telemetry_preflight_violations" for item in report["findings"])
+
+
 def test_mcp_telemetry_warns_on_low_cache_hit_rate(monkeypatch, tmp_path: Path) -> None:
     mcp_repo = tmp_path / "mcp"
     python_bin = mcp_repo / ".venv/bin/python"
