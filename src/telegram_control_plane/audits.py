@@ -938,7 +938,7 @@ def _facade_tool_names(init_py: Path) -> set[str]:
     return set()
 
 
-def audit_mcp_surface() -> dict[str, Any]:
+def audit_mcp_surface(*, include_live_probe: bool = True) -> dict[str, Any]:
     init_py = MCP_REPO / "src/telegram_mcp/tools/__init__.py"
     dialog_py = MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py"
     tools = _imported_tool_names(init_py) if init_py.exists() else []
@@ -988,9 +988,11 @@ def audit_mcp_surface() -> dict[str, Any]:
             }
         )
     probe_accounts = surface_contract.owner_local_live_probe_accounts()
-    live_probe = live_mcp_surface_probe(required_tools, accounts=probe_accounts)
+    live_probe: dict[str, Any] = {"status": "skipped", "accounts": {}}
+    if include_live_probe:
+        live_probe = live_mcp_surface_probe(required_tools, accounts=probe_accounts)
     live_accounts = live_probe.get("accounts") if isinstance(live_probe.get("accounts"), dict) else {}
-    if live_probe.get("status") != "ok":
+    if include_live_probe and live_probe.get("status") != "ok":
         findings.append(
             {
                 "id": "mcp_live_probe_failed",
@@ -999,7 +1001,7 @@ def audit_mcp_surface() -> dict[str, Any]:
                 "error": live_probe.get("error"),
             }
         )
-    for account in probe_accounts:
+    for account in probe_accounts if include_live_probe else ():
         report = live_accounts.get(account) if isinstance(live_accounts, dict) else None
         if not isinstance(report, dict):
             findings.append(

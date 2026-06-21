@@ -33,6 +33,12 @@ def test_every_bin_wrapper_is_registered() -> None:
     assert bin_wrapper_names() == registered
 
 
+def test_every_bin_wrapper_is_executable() -> None:
+    for name in bin_wrapper_names():
+        mode = (BIN_DIR / name).stat().st_mode
+        assert mode & 0o111, name
+
+
 def test_registry_entries_are_valid() -> None:
     seen: set[str] = set()
     for spec in COMMAND_REGISTRY:

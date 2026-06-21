@@ -46,7 +46,7 @@ def test_dialog_annotation_map_reads_facade_registration(tmp_path: Path) -> None
 
 
 def test_mcp_surface_is_clean_for_owner_local_full_surface() -> None:
-    report = audit_mcp_surface()
+    report = audit_mcp_surface(include_live_probe=False)
     assert report["status"] == "ok"
     assert report["surface_mode"] == "owner_local_full_mcp"
     assert "create_channel" in report["default_surface_tools"]
@@ -56,6 +56,23 @@ def test_mcp_surface_is_clean_for_owner_local_full_surface() -> None:
     assert "telegram_confirmed_send" in report["default_surface_tools"]
     assert not report["unexpected_write_or_destructive_tools"]
     assert "send_file" in report["legacy_default_surface_evaluation"]["unexpected_write_or_destructive_tools"]
+
+
+def test_mcp_surface_live_probe_failure_is_blocking(monkeypatch) -> None:
+    monkeypatch.setattr(
+        audits,
+        "live_mcp_surface_probe",
+        lambda *_args, **_kwargs: {
+            "status": "fail",
+            "error": "daemon unavailable",
+            "accounts": {},
+        },
+    )
+
+    report = audit_mcp_surface(include_live_probe=True)
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "mcp_live_probe_failed" for item in report["findings"])
 
 
 def test_docs_audit_passes_for_current_control_plane_docs() -> None:
