@@ -1019,9 +1019,9 @@ def audit_mcp_surface(*, include_live_probe: bool = True) -> dict[str, Any]:
                     "id": "mcp_account_unhealthy",
                     "severity": "blocking",
                     "account": account,
-                    "message": f"Telegram MCP account {account!r} failed list_tools/get_me probe.",
+                    "message": f"Telegram MCP account {account!r} failed list_tools/telegram_read probe.",
                     "missing_required_tools": report.get("missing_required_tools"),
-                    "get_me_ok": report.get("get_me_ok"),
+                    "read_probe_ok": report.get("read_probe_ok"),
                 }
             )
     return {

@@ -25,6 +25,7 @@ def live_mcp_surface_probe(
     account_names = tuple(str(account) for account in accounts)
     script = f"""
 import asyncio
+from datetime import date
 import json
 import sys
 
@@ -37,22 +38,30 @@ accounts = {account_names!r}
 async def main():
     async def probe(account):
         names, list_elapsed, list_attempt = await list_tools_with_failover(account=account, timeout=8)
-        me_result, me_elapsed, me_attempt = await call_tool_with_failover(
-            tool_name="get_me",
-            arguments={{}},
+        read_result, read_elapsed, read_attempt = await call_tool_with_failover(
+            tool_name="telegram_read",
+            arguments={{
+                "chat": "me",
+                "day": date.today().isoformat(),
+                "limit": 1,
+                "mode": "fast",
+            }},
             account=account,
             timeout=8,
         )
         missing = sorted(set(required) - set(names))
         return account, {{
-            "status": "ok" if not missing and me_result is not None else "fail",
+            "status": "ok" if not missing and read_result is not None else "fail",
             "tool_count": len(names),
             "missing_required_tools": missing,
-            "get_me_ok": me_result is not None,
+            "read_probe_ok": read_result is not None,
+            "get_me_ok": read_result is not None,
             "list_endpoint": list_attempt.endpoint,
-            "get_me_endpoint": me_attempt.endpoint,
+            "read_endpoint": read_attempt.endpoint,
+            "get_me_endpoint": read_attempt.endpoint,
             "list_elapsed_seconds": list_elapsed,
-            "get_me_elapsed_seconds": me_elapsed,
+            "read_elapsed_seconds": read_elapsed,
+            "get_me_elapsed_seconds": read_elapsed,
         }}
     results = await asyncio.gather(*(probe(account) for account in accounts))
     out = dict(results)

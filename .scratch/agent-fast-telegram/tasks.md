@@ -18,7 +18,7 @@
 ## P1 — Runtime speed (partial)
 
 - [x] Fast defaults already in `telegram_read` (verified)
-- [x] Prewarm: HTTP `get_me` + `telegram_read me`; shared wrapper startup prewarm
+- [x] Prewarm: HTTP/shared wrapper use `telegram_read me`; `get_me` is not part of the warm path
 - [x] `mcp_shared_client` default true
 - [x] HTTP worker stickiness documented (facade-routing: limit + use tg CLI mitigation)
 - [x] `bin/tg` symlink-safe wrapper; kit_install links `~/bin/tg` → kit wrapper
