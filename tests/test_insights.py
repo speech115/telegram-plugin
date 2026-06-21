@@ -39,7 +39,8 @@ def test_build_insights_ranks_actionable_telemetry(monkeypatch, tmp_path: Path) 
                 {"tool": "telegram_read", "count": 10, "p95_ms": 5000, "max_ms": 7000},
             ],
             "top_tool_error_buckets": [
-                {"tool": "telegram_read", "error_type": "FloodWaitError", "count": 3}
+                {"tool": "telegram_read", "error_type": "FloodWaitError", "error_code": "rate_limited", "port": 8799, "count": 3},
+                {"tool": "telegram_read", "error_type": "FloodWaitError", "error_code": "rate_limited", "port": 8800, "count": 2},
             ],
             "findings": [
                 {"id": "telemetry_low_cache_hit_rate", "severity": "warn", "message": "cache low"}
@@ -53,7 +54,9 @@ def test_build_insights_ranks_actionable_telemetry(monkeypatch, tmp_path: Path) 
     assert report["window_hours"] == 6
     assert report["recommendations"][0]["kind"] == "slow_tool"
     assert report["recommendations"][0]["subject"] == "tg_read_today"
-    assert any(item["kind"] == "floodwait" for item in report["recommendations"])
+    floodwait = next(item for item in report["recommendations"] if item["kind"] == "floodwait")
+    assert floodwait["count"] == 5
+    assert floodwait["ports"] == [8799, 8800]
     assert any(item["kind"] == "lane_pressure" and item["subject"] == "read" for item in report["recommendations"])
 
 

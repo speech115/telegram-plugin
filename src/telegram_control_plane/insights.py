@@ -44,9 +44,36 @@ def _add_slow_tools(recommendations: list[dict[str, Any]], telemetry: dict[str, 
 
 
 def _add_error_buckets(recommendations: list[dict[str, Any]], telemetry: dict[str, Any]) -> None:
-    for row in telemetry.get("top_tool_error_buckets", [])[:5]:
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in telemetry.get("top_tool_error_buckets", []):
         if not isinstance(row, dict):
             continue
+        tool = str(row.get("tool") or "unknown")
+        error_type = str(row.get("error_type") or "unknown")
+        error_code = str(row.get("error_code") or "unknown")
+        key = (tool, error_type, error_code)
+        item = grouped.setdefault(
+            key,
+            {
+                "tool": tool,
+                "error_type": error_type,
+                "error_code": error_code,
+                "count": 0,
+                "ports": set(),
+            },
+        )
+        count = row.get("count")
+        if isinstance(count, int | float):
+            item["count"] += int(count)
+        port = row.get("port")
+        if port is not None:
+            item["ports"].add(port)
+
+    rows = sorted(
+        grouped.values(),
+        key=lambda item: (-int(item["count"]), str(item["tool"]), str(item["error_type"])),
+    )
+    for row in rows[:5]:
         error_type = str(row.get("error_type") or "unknown")
         kind = "floodwait" if error_type in {"FloodWaitError", "PeerFloodError"} else "tool_error"
         recommendations.append(
@@ -57,6 +84,8 @@ def _add_error_buckets(recommendations: list[dict[str, Any]], telemetry: dict[st
                 "message": f"{row.get('tool', 'unknown')} has recent {error_type} errors.",
                 "count": row.get("count"),
                 "error_type": error_type,
+                "error_code": row.get("error_code"),
+                "ports": sorted(row.get("ports") or []),
                 "recommendation": (
                     "Treat FloodWait as a throughput signal; reduce duplicate reads or improve caching."
                     if kind == "floodwait"
