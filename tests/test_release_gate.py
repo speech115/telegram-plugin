@@ -34,8 +34,9 @@ def test_release_gate_manifest_matches_shell_gate_ids() -> None:
 def test_run_release_gates_ci_mode(monkeypatch) -> None:
     calls: list[list[str]] = []
 
-    def fake_run(argv, cwd=None, capture_output=True, text=True):
+    def fake_run(argv, cwd=None, capture_output=True, text=True, timeout=None):
         calls.append(list(argv))
+        assert timeout == 120
         return type("R", (), {"returncode": 0, "stderr": ""})()
 
     monkeypatch.setattr("telegram_control_plane.release_gate.subprocess.run", fake_run)
@@ -45,6 +46,22 @@ def test_run_release_gates_ci_mode(monkeypatch) -> None:
     assert report["status"] == "ok"
     assert len(calls) == 5
     assert calls[0][-2:] == ["--check", "--json"] or "agent-docs-sync" in str(calls[0][0])
+
+
+def test_run_release_gates_reports_timeout(monkeypatch) -> None:
+    import subprocess
+
+    def fake_run(argv, cwd=None, capture_output=True, text=True, timeout=None):
+        raise subprocess.TimeoutExpired(cmd=argv, timeout=timeout)
+
+    monkeypatch.setattr("telegram_control_plane.release_gate.subprocess.run", fake_run)
+
+    report = run_release_gates(mode="ci")
+
+    assert report["status"] == "fail"
+    assert report["gates"][0]["status"] == "fail"
+    assert report["gates"][0]["exit_code"] is None
+    assert "timed out" in report["gates"][0]["message"]
 
 
 def test_release_gate_local_includes_golden_read_smoke() -> None:

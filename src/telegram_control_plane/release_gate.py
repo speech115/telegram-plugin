@@ -9,6 +9,7 @@ from .paths import CONTROL_ROOT, MCP_REPO, POLICY_DIR, TG_CLI
 from .util import load_json, status_from_findings
 
 RELEASE_GATES_PATH = POLICY_DIR / "release-gates.json"
+DEFAULT_GATE_TIMEOUT_SECONDS = 120
 
 
 def _format_argv(argv: list[str]) -> list[str]:
@@ -48,13 +49,36 @@ def _run_gate(gate_id: str, spec: dict[str, Any]) -> dict[str, Any]:
     argv = _format_argv([str(item) for item in raw_argv])
     cwd_raw = spec.get("cwd")
     cwd = _format_argv([str(cwd_raw)])[0] if isinstance(cwd_raw, str) else None
+    timeout_raw = spec.get("timeout_seconds", DEFAULT_GATE_TIMEOUT_SECONDS)
+    try:
+        timeout = max(1, int(timeout_raw))
+    except (TypeError, ValueError):
+        timeout = DEFAULT_GATE_TIMEOUT_SECONDS
 
-    completed = subprocess.run(
-        argv,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "id": gate_id,
+            "status": "fail",
+            "message": f"timed out after {timeout}s",
+            "argv": argv,
+            "exit_code": None,
+        }
+    except OSError as error:
+        return {
+            "id": gate_id,
+            "status": "fail",
+            "message": f"{type(error).__name__}: {error}",
+            "argv": argv,
+            "exit_code": None,
+        }
     ok = completed.returncode == 0
     return {
         "id": gate_id,
