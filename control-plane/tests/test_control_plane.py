@@ -75,6 +75,7 @@ def test_mcp_surface_is_clean_for_owner_local_full_surface() -> None:
 
 
 def test_mcp_surface_live_probe_failure_is_blocking(monkeypatch) -> None:
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     monkeypatch.setattr(
         audits,
         "live_mcp_surface_probe",
@@ -89,6 +90,25 @@ def test_mcp_surface_live_probe_failure_is_blocking(monkeypatch) -> None:
 
     assert report["status"] == "fail"
     assert any(item["id"] == "mcp_live_probe_failed" for item in report["findings"])
+
+
+def test_mcp_surface_skips_live_probe_in_portable_ci(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_CI_PORTABLE", "1")
+    monkeypatch.setattr(
+        audits,
+        "live_mcp_surface_probe",
+        lambda *_args, **_kwargs: {
+            "status": "fail",
+            "error": "daemon unavailable",
+            "accounts": {},
+        },
+    )
+
+    report = audit_mcp_surface()
+
+    assert report["status"] == "ok"
+    assert report["live_probe"]["status"] == "skipped"
+    assert not any(item["id"] == "mcp_live_probe_failed" for item in report["findings"])
 
 
 def test_docs_audit_passes_for_current_control_plane_docs() -> None:
@@ -896,6 +916,7 @@ def test_launchd_does_not_enforce_allowed_roots(monkeypatch, tmp_path: Path) -> 
 def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
@@ -955,6 +976,7 @@ def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch
 
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
@@ -991,6 +1013,7 @@ def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path:
 
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {

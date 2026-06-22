@@ -221,6 +221,17 @@ def _expected_kind_matches(path: Path, expected_kind: str) -> bool:
     return False
 
 
+def _is_portable_repo_path(raw_path: str) -> bool:
+    projects_root = os.environ.get("TELEGRAM_PROJECTS_ROOT")
+    if not projects_root:
+        return False
+    try:
+        Path(raw_path).resolve(strict=False).relative_to(Path(projects_root).resolve(strict=False))
+    except ValueError:
+        return False
+    return True
+
+
 def evaluate_managed_systems(
     *,
     policy: dict[str, Any] | None = None,
@@ -267,8 +278,10 @@ def evaluate_managed_systems(
         if (
             portable_mode
             and deletion_protection == "blocking"
-            and not bool(item.get("source_of_truth"))
-            and (env_override is not None or raw_path.startswith(f"{HOME_PATH}/"))
+            and (
+                not bool(item.get("source_of_truth"))
+                or not _is_portable_repo_path(raw_path)
+            )
         ):
             deletion_protection = "warn"
         required_markers = record.required_markers if record else ()

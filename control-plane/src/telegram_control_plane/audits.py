@@ -715,6 +715,9 @@ def _facade_tool_names(init_py: Path) -> set[str]:
 
 
 def audit_mcp_surface(*, include_live_probe: bool = True) -> dict[str, Any]:
+    if os.environ.get("TELEGRAM_CI_PORTABLE") == "1":
+        include_live_probe = False
+
     init_py = MCP_REPO / "src/telegram_mcp/tools/__init__.py"
     dialog_py = MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py"
     tools = _imported_tool_names(init_py) if init_py.exists() else []

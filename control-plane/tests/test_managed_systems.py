@@ -123,6 +123,7 @@ def test_managed_systems_policy_has_topology_bindings() -> None:
 
 
 def test_evaluate_managed_systems_reports_missing_path(monkeypatch) -> None:
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
