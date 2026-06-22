@@ -32,8 +32,8 @@ jobs:
           TELEGRAM_MONOREPO_ROOT: ${{ github.workspace }}
           TELEGRAM_CONTROL_PLANE_ROOT: ${{ github.workspace }}/control-plane
           TELEGRAM_MCP_REPO: ${{ github.workspace }}/mcp
-          TELEGRAM_PLUGIN_SOURCE: ${{ github.workspace }}/control-plane/generated/telegram-plugin-package
-          TELEGRAM_PLUGIN_PACKAGE: ${{ github.workspace }}/control-plane/generated/telegram-plugin-package
+          TELEGRAM_PLUGIN_SOURCE: ${{ github.workspace }}/plugin
+          TELEGRAM_PLUGIN_PACKAGE: ${{ github.workspace }}/plugin
           TELEGRAM_PROJECTS_ROOT: ${{ github.workspace }}
         run: |
           python -m pip install --upgrade pip

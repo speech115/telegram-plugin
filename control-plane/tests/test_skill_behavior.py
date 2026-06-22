@@ -10,6 +10,7 @@ from telegram_control_plane.skill_behavior import (
     decide_write_action,
     plugin_surface_findings,
 )
+from telegram_control_plane.paths import PLUGIN_SOURCE
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,7 +109,7 @@ def test_complete_context_pages_only_when_completeness_was_requested() -> None:
 
 
 def test_portable_plugin_exposes_full_surface_without_allowed_tools() -> None:
-    config = json.loads((ROOT / "generated/telegram-plugin-package/.mcp.json").read_text())
+    config = json.loads((PLUGIN_SOURCE / ".mcp.json").read_text())
     broken = {
         "mcpServers": {
             "telegram-main": {
