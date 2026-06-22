@@ -12,6 +12,7 @@ desired policy.
 ./bin/tgc next --json       # doctor triage as prioritized actions with exact commands
 ./bin/tgc commands --json   # machine-readable registry of every command
 ./bin/telegram-status --json
+./bin/telegram-operator-status
 ./bin/telegram-doctor --json
 ./bin/telegram-maintenance-doctor --json
 ./bin/telegram-feature-status --json
@@ -96,6 +97,8 @@ codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-lo
 - `MAP.md` explains where every Telegram-related system lives.
 - `PLAN.md` records the current control-plane rollout strategy.
 - `PROTECTION.md` defines the cleanup and deletion safety contract.
+- `docs/agents/system-map.md` is the compact map of repos, runtime ports,
+  source routing, and verification order.
 - `docs/telegram-kit-explainer.html` is a self-contained Russian explainer for
   how the Telegram agent kit fits together (open locally in a browser).
 
@@ -112,6 +115,15 @@ release, plugin, archive, telemetry, and recovery checks.
 `docs/agents/feature-status.csv` from the current maintenance doctor output.
 Use `--write` only when you intentionally want to update the canonical feature
 spreadsheet.
+
+`telegram-operator-status` is the fastest human status view across live MCP,
+telemetry, runtime schema compatibility, docs sync, feature CSV freshness, and
+maintenance doctor health.
+
+`telegram-regression-loop --include-live --json` runs the safe sequential gate
+order after meaningful changes: control-plane tests, runtime tests, daemon
+restart, golden live smoke, maintenance doctor, and feature-status dry-run. Do
+not run live smoke in parallel with runtime test suites.
 
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
@@ -180,8 +192,8 @@ component.
   `telegram-telemetry-status`, `telegram-telecrawl-status`,
   `telegram-managed-systems`, `telegram-runtime-compat`, and
   `telegram-docs-audit`.
-- Release/maintenance: `telegram-maintenance-doctor`, `telegram-release-gate`,
-  `telegram-agent-docs-sync`, `telegram-install-adapters`, plugin cache
+- Release/maintenance: `telegram-maintenance-doctor`, `telegram-regression-loop`,
+  `telegram-release-gate`, `telegram-agent-docs-sync`, `telegram-install-adapters`, plugin cache
   materialization, `telegram-feature-status`, `telegram-repair-plan`, and
   `telegram-repair-plan-apply`.
 

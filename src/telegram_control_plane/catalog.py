@@ -223,6 +223,20 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         example="./bin/telegram-feature-status --json",
     ),
     CommandSpec(
+        name="telegram-operator-status",
+        purpose="Human-readable operator summary across live MCP, telemetry, docs, runtime compat, and feature CSV",
+        level="maintenance",
+        safety="read-only",
+        example="./bin/telegram-operator-status",
+    ),
+    CommandSpec(
+        name="telegram-regression-loop",
+        purpose="Run regression gates in the safe sequential order; live gates require --include-live",
+        level="release",
+        safety="read-only",
+        example="./bin/telegram-regression-loop --include-live --json",
+    ),
+    CommandSpec(
         name="telegram-repair-plan-apply",
         purpose="Apply only allowlisted safe repair steps; explicit maintenance task only",
         level="maintenance",

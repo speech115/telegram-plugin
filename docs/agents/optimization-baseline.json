@@ -36,33 +36,30 @@
   },
   "feature_status": {
     "path": "docs/agents/feature-status.csv",
-    "rows": 66,
+    "rows": 68,
     "statuses": {
-      "tested_pass": 30,
-      "tested_fail_live_runtime": 1,
-      "tested_fail_operational_state": 4,
+      "tested_pass": 39,
       "tested_pass_safe_apply": 1,
-      "tested_pass_check_mode": 1,
       "tested_pass_dry_run": 1,
       "tested_pass_behavior_fixture": 7,
+      "tested_pass_check_mode": 1,
       "tested_pass_surface_policy": 19
     },
     "code_statuses": {
-      "pass": 64
+      "pass": 68
     },
     "host_statuses": {
-      "pass": 49,
-      "fail": 5,
+      "pass": 58,
       "not_applicable": 10
     },
     "proof_types": {
-      "command-json": 32,
+      "command-json": 36,
       "behavior-fixture": 13,
       "surface-policy-json": 19
     },
     "optimization_verdicts": {
       "acceptable": 31,
-      "improved": 35
+      "improved": 37
     },
     "host_blockers": []
   },

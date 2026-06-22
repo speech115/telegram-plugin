@@ -50,6 +50,7 @@ debugging the MCP server itself.
 
 - Doctor warn triage and command levels: `docs/agents/doctor-triage.md`
 - Full MCP surface and release-gate naming: `docs/agents/mcp-surface.md`
+- System map and verification order: `docs/agents/system-map.md`
 - Telemetry locations and thresholds: `docs/agents/telemetry.md`
 - Doc sync skill ↔ MCP resources: `docs/agents/doc-sync.md`
 - Human map: `MAP.md`; roadmap: `TELEGRAM_AGENT_KIT_ROADMAP.md`
@@ -62,10 +63,14 @@ debugging the MCP server itself.
 tg read today me --limit 1 --json   # payload.data_source == "live_telegram"
 ./bin/tgc next
 ./bin/telegram-doctor --json
+./bin/telegram-operator-status
 ```
 
 Use `./bin/telegram-golden-read-smoke --json` only for release or live-smoke
 verification (five dialogs from `policy/golden-dialogs.json`).
+For a full post-change verification run, use
+`./bin/telegram-regression-loop --include-live --json`; it keeps live smoke
+sequential and avoids racing runtime tests.
 `TELEGRAM_GOLDEN_READ_SKIP=1` is CI/offline only.
 
 ## Agent skills
