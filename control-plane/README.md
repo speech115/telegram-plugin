@@ -31,6 +31,10 @@ Telegram path instead:
 tg read today <chat> --limit 30 --json
 tg route 'сколько постов в @channel всего?' --json
 tg count posts @channel --json
+tg count photos|videos|documents|voice|pinned @channel --json
+tg latest @channel --json
+tg info @channel --json
+tg message @channel <message_id> --json
 ```
 
 For local mirror work, use the mirror fast path/status first; full mirror
@@ -165,6 +169,14 @@ plan-only entrypoint. It does not send, delete, mark read, or fetch history. For
 channel history-size questions, use `tg count posts <chat> --json`; it calls the
 read-only `telegram_count_posts` MCP tool and uses Telegram metadata instead of
 downloading the channel timeline.
+
+For new read-only metadata tools, use the MCP fast lane before the full release
+gate:
+
+```bash
+mcp/bin/telegram-metadata-scaffold --json
+mcp/bin/telegram-fast-tool-check --tool telegram_count_posts --live-chat me --json
+```
 
 `generated/observed-registry.json` is an allowlist-only runtime snapshot. It must
 not contain Telegram user IDs, Telegram handles, phone numbers, exact session

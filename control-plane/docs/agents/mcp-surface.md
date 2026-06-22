@@ -10,6 +10,9 @@ single-user machine. A healthy config exposes the local MCP server without
 groups, reactions, pins, polls, stories, privacy and profile tools directly.
 
 Expected high-value tools include `telegram_read`, `telegram_search`,
+`telegram_count_posts`, `telegram_count_photos`, `telegram_count_videos`,
+`telegram_count_documents`, `telegram_count_voice`, `telegram_count_pinned`,
+`telegram_latest_message`, `telegram_dialog_metadata`, `telegram_get_message`,
 `global_search`, `sent_media_search`, `list_forum_topics`,
 `get_forum_topics_by_id`, `get_discussion_message`, `get_thread_replies`,
 `get_message_reactions`, `get_unread_reactions`, `telegram_send`,

@@ -184,8 +184,32 @@ class DialogReadResult(BaseModel):
 class DialogPostCountResult(BaseModel):
     chat: DialogHandle
     total: int
+    count_type: str = "posts"
+    filter: str | None = None
     data_source: str = "live_telegram"
     method: str = "get_messages_limit_0"
+
+
+class DialogLatestMessageResult(BaseModel):
+    chat: DialogHandle
+    message: MessageInfo | None = None
+    data_source: str = "live_telegram"
+    method: str = "get_messages_limit_1"
+
+
+class DialogMetadataResult(BaseModel):
+    chat: DialogHandle
+    info: ChatInfo
+    data_source: str = "live_telegram"
+    method: str = "resolve_dialog_plus_chat_info"
+
+
+class DialogMessageByIdResult(BaseModel):
+    chat: DialogHandle
+    message_id: int
+    message: MessageInfo | None = None
+    data_source: str = "live_telegram"
+    method: str = "get_messages_ids"
 
 
 class DialogContextResult(BaseModel):

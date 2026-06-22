@@ -70,6 +70,10 @@ tg read recent <chat> --limit 30 --json
 tg search <chat> "<query>" --limit 20 --json
 tg route "<task>" --json
 tg count posts <chat> --json
+tg count photos|videos|documents|voice|pinned <chat> --json
+tg latest <chat> --json
+tg info <chat> --json
+tg message <chat> <message_id> --json
 ```
 
 Fallback: `telegram-fast-read-today` or MCP `telegram_read` with `mode="fast"`.
@@ -90,7 +94,8 @@ Prefer the task-shaped and direct tools exposed by Telegram MCP:
 
 - `telegram_read` — default first read path (fast, no pinned/voice unless requested)
 - `telegram_search`
-- `telegram_count_posts` — total visible posts/messages via metadata, no history download
+- `telegram_count_*` — totals for posts/photos/videos/documents/voice/pinned via metadata, no history download
+- `telegram_latest_message`, `telegram_dialog_metadata`, `telegram_get_message` — bounded metadata/message lookup
 - `telegram_prepare_reply`
 - `telegram_send`
 - `send_message`

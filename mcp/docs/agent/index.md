@@ -18,7 +18,7 @@ Fetch routing and safety docs via MCP resources instead of loading the full skil
 1. Classify: live vs historical vs write.
 2. Low-stakes today read: `telegram_read(mode="fast")` or host fast adapter.
 3. Search: `telegram_search` — not broad reads.
-4. Count channel posts: `telegram_count_posts` — metadata only, no history download.
+4. Metadata: `telegram_count_*`, `telegram_latest_message`, `telegram_dialog_metadata` — no broad history download.
 5. Escalate to `mode="full"` or paging only when the user needs completeness.
 
 ## Live data

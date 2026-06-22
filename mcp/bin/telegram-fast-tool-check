@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="${ROOT}/.venv/bin/python"
+if [[ ! -x "${PYTHON}" ]]; then
+  printf 'telegram-fast-tool-check: missing MCP venv python: %s\n' "${PYTHON}" >&2
+  exit 127
+fi
+PYTHONPATH="${ROOT}/src" exec "${PYTHON}" -m telegram_mcp.telegram_fast_tool_check "$@"

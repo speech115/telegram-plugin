@@ -7,6 +7,9 @@ from telegram_mcp.tools.dialog_facade_tools import telegram_export_members
 from telegram_mcp.types import (
     DialogContextResult,
     DialogHandle,
+    DialogLatestMessageResult,
+    DialogMessageByIdResult,
+    DialogMetadataResult,
     DialogReadRange,
     DialogReadResult,
     DialogReplyPreparation,
@@ -14,6 +17,7 @@ from telegram_mcp.types import (
     DialogPostCountResult,
     MessageInfo,
     Participant,
+    ChatInfo,
 )
 
 
@@ -61,7 +65,7 @@ class DialogFacadeToolTests(unittest.TestCase):
 
     def test_telegram_count_posts_returns_metadata_without_history_download(self):
         wrapper = AsyncMock()
-        wrapper.count_dialog_posts.return_value = DialogPostCountResult(
+        wrapper.count_dialog_metadata.return_value = DialogPostCountResult(
             chat=DialogHandle(
                 dialog_ref="tg://dialog/channel/1",
                 id=1,
@@ -78,7 +82,59 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertEqual(result.total, 123)
         self.assertEqual(result.data_source, "live_telegram")
-        wrapper.count_dialog_posts.assert_awaited_once_with(chat="@targetchannel")
+        wrapper.count_dialog_metadata.assert_awaited_once_with(chat="@targetchannel", count_type="posts")
+
+    def test_filtered_metadata_counts_use_shared_helper(self):
+        wrapper = AsyncMock()
+        wrapper.count_dialog_metadata.return_value = DialogPostCountResult(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/channel/1",
+                id=1,
+                name="Channel",
+                type="channel",
+                username="targetchannel",
+                resolved_from="@targetchannel",
+            ),
+            total=5,
+            count_type="videos",
+            filter="InputMessagesFilterVideo",
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(server.telegram_count_videos("@targetchannel"))
+
+        self.assertEqual(result.total, 5)
+        self.assertEqual(result.count_type, "videos")
+        wrapper.count_dialog_metadata.assert_awaited_once_with(chat="@targetchannel", count_type="videos")
+
+    def test_metadata_latest_info_and_message_tools(self):
+        handle = DialogHandle(
+            dialog_ref="tg://dialog/channel/1",
+            id=1,
+            name="Channel",
+            type="channel",
+            username="targetchannel",
+            resolved_from="@targetchannel",
+        )
+        wrapper = AsyncMock()
+        wrapper.latest_dialog_message.return_value = DialogLatestMessageResult(chat=handle, message=None)
+        wrapper.dialog_metadata.return_value = DialogMetadataResult(
+            chat=handle,
+            info=ChatInfo(id=1, name="Channel", type="channel", username="targetchannel"),
+        )
+        wrapper.get_dialog_message.return_value = DialogMessageByIdResult(chat=handle, message_id=42, message=None)
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            latest = _run(server.telegram_latest_message("@targetchannel"))
+            info = _run(server.telegram_dialog_metadata("@targetchannel"))
+            message = _run(server.telegram_get_message("@targetchannel", 42))
+
+        self.assertIsNone(latest.message)
+        self.assertEqual(info.info.username, "targetchannel")
+        self.assertEqual(message.message_id, 42)
+        wrapper.latest_dialog_message.assert_awaited_once_with(chat="@targetchannel")
+        wrapper.dialog_metadata.assert_awaited_once_with(chat="@targetchannel")
+        wrapper.get_dialog_message.assert_awaited_once_with(chat="@targetchannel", message_id=42)
 
     def test_read_dialog_by_date_returns_dialog_read_result(self):
         wrapper = AsyncMock()

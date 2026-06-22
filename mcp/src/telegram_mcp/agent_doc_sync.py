@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .facade_manifest import default_facade_tool_names
+from .metadata_tools_spec import METADATA_COUNT_SPECS
 from .mcp_http_restart import restart_mcp_http_daemons
 
 MANIFEST_NAME = "manifest.json"
@@ -187,10 +188,14 @@ def transform_media(reference_text: str) -> str:
 
 def generate_tools_doc() -> str:
     names = default_facade_tool_names()
+    metadata_count_tools = [spec.tool_name for spec in METADATA_COUNT_SPECS]
     read_tools = [
         "telegram_read",
         "telegram_search",
-        "telegram_count_posts",
+        *metadata_count_tools,
+        "telegram_latest_message",
+        "telegram_dialog_metadata",
+        "telegram_get_message",
         "resolve_dialog",
         "find_dialog",
         "collect_dialog_context",
@@ -281,7 +286,7 @@ def generate_index_doc(topics: list[str]) -> str:
             "1. Classify: live vs historical vs write.",
             '2. Low-stakes today read: `telegram_read(mode="fast")` or host fast adapter.',
             "3. Search: `telegram_search` — not broad reads.",
-            "4. Count channel posts: `telegram_count_posts` — metadata only, no history download.",
+            "4. Metadata: `telegram_count_*`, `telegram_latest_message`, `telegram_dialog_metadata` — no broad history download.",
             '5. Escalate to `mode="full"` or paging only when the user needs completeness.',
             "",
             "## Live data",

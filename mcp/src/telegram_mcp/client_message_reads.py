@@ -5,7 +5,16 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .types import DialogPostCountResult, DialogSliceResult, MessageInfo, TranscriptionResult
+from .metadata_tools_spec import count_spec_for_key
+from .types import (
+    DialogLatestMessageResult,
+    DialogMessageByIdResult,
+    DialogMetadataResult,
+    DialogPostCountResult,
+    DialogSliceResult,
+    MessageInfo,
+    TranscriptionResult,
+)
 
 
 class MessageReadMixin:
@@ -59,19 +68,74 @@ class MessageReadMixin:
         )
 
     async def count_dialog_posts(self, chat: str | int) -> DialogPostCountResult:
+        return await self.count_dialog_metadata(chat=chat, count_type="posts")
+
+    async def count_dialog_metadata(self, chat: str | int, count_type: str) -> DialogPostCountResult:
         started_at = time.perf_counter()
+        spec = count_spec_for_key(count_type)
         handle, entity = await self._resolve_dialog_with_entity(chat)
+        filter_arg = self._metadata_count_filter(spec.telethon_filter)
         result = await self._run_read(
-            "count_dialog_posts",
-            lambda: self.client.get_messages(entity, limit=0),
+            f"count_dialog_{spec.key}",
+            lambda: self.client.get_messages(entity, limit=0, filter=filter_arg),
         )
         total = int(getattr(result, "total", 0) or 0)
         self._emit_read_timing(
-            "count_dialog_posts",
+            f"count_dialog_{spec.key}",
             started_at,
             item_count=0,
         )
-        return DialogPostCountResult(chat=handle, total=total)
+        return DialogPostCountResult(
+            chat=handle,
+            total=total,
+            count_type=spec.key,
+            filter=spec.telethon_filter,
+        )
+
+    def _metadata_count_filter(self, filter_name: str | None):
+        if filter_name is None:
+            return None
+        from telethon.tl import types
+
+        filter_cls = getattr(types, filter_name)
+        return filter_cls()
+
+    async def latest_dialog_message(self, chat: str | int) -> DialogLatestMessageResult:
+        started_at = time.perf_counter()
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        result = await self._run_read(
+            "latest_dialog_message",
+            lambda: self.client.get_messages(entity, limit=1),
+        )
+        message = self._message_to_info(result[0], default_chat_id=handle.id) if result else None
+        self._emit_read_timing(
+            "latest_dialog_message",
+            started_at,
+            item_count=1 if message is not None else 0,
+        )
+        return DialogLatestMessageResult(chat=handle, message=message)
+
+    async def dialog_metadata(self, chat: str | int) -> DialogMetadataResult:
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        return DialogMetadataResult(
+            chat=handle,
+            info=self._chat_info_from_entity(entity),
+        )
+
+    async def get_dialog_message(self, chat: str | int, message_id: int) -> DialogMessageByIdResult:
+        started_at = time.perf_counter()
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        message = await self._run_read(
+            "get_dialog_message",
+            lambda: self.client.get_messages(entity, ids=message_id),
+        )
+        info = self._message_to_info(message, default_chat_id=handle.id) if message is not None else None
+        self._emit_read_timing(
+            "get_dialog_message",
+            started_at,
+            item_count=1 if info is not None else 0,
+        )
+        return DialogMessageByIdResult(chat=handle, message_id=message_id, message=info)
 
     async def _list_messages_uncached(
         self,

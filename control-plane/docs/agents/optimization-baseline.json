@@ -1,17 +1,16 @@
 {
   "schema_version": 1,
-  "created_at": "2026-06-22T18:17:59.589587+00:00",
+  "created_at": "2026-06-22T18:38:29.454233+00:00",
   "control_root": "/Users/sereja/Projects/tools/telegram",
   "external_telegram_mcp": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp",
   "git_status": {
     "tools_telegram": [
       " M control-plane/AGENTS.md",
       " M control-plane/README.md",
+      " M control-plane/docs/agents/feature-status.csv",
+      " M control-plane/docs/agents/mcp-surface.md",
       " M control-plane/docs/agents/optimization-baseline.json",
       " M control-plane/policy/surface-contract.json",
-      " M control-plane/src/telegram_control_plane/catalog.py",
-      " M control-plane/src/telegram_control_plane/feature_status.py",
-      " M control-plane/tests/test_feature_status_update.py",
       " M control-plane/tests/test_surface_contract.py",
       " M mcp/docs/agent/index.md",
       " M mcp/docs/agent/routing.md",
@@ -30,7 +29,14 @@
       " M plugin/skills/telegram/agent-docs/index.md",
       " M plugin/skills/telegram/agent-docs/routing.md",
       " M plugin/skills/telegram/agent-docs/tools.md",
-      " M plugin/skills/telegram/references/facade-routing.md"
+      " M plugin/skills/telegram/references/facade-routing.md",
+      "?? mcp/bin/telegram-fast-tool-check",
+      "?? mcp/bin/telegram-metadata-scaffold",
+      "?? mcp/src/telegram_mcp/metadata_tools_spec.py",
+      "?? mcp/src/telegram_mcp/telegram_fast_tool_check.py",
+      "?? mcp/src/telegram_mcp/telegram_metadata_scaffold.py",
+      "?? mcp/tests/test_metadata_reads.py",
+      "?? mcp/tests/test_metadata_scaffold.py"
     ],
     "external_telegram_mcp": [
       " M docs/agent/index.md",
@@ -45,35 +51,42 @@
       " M src/telegram_mcp/types.py",
       " M tests/test_dialog_facade_tools.py",
       " M tests/test_registration.py",
-      " M tests/test_tg_cli.py"
+      " M tests/test_tg_cli.py",
+      "?? bin/telegram-fast-tool-check",
+      "?? bin/telegram-metadata-scaffold",
+      "?? src/telegram_mcp/metadata_tools_spec.py",
+      "?? src/telegram_mcp/telegram_fast_tool_check.py",
+      "?? src/telegram_mcp/telegram_metadata_scaffold.py",
+      "?? tests/test_metadata_reads.py",
+      "?? tests/test_metadata_scaffold.py"
     ]
   },
   "feature_status": {
     "path": "docs/agents/feature-status.csv",
-    "rows": 69,
+    "rows": 77,
     "statuses": {
       "tested_pass": 39,
       "tested_pass_safe_apply": 1,
       "tested_pass_dry_run": 1,
       "tested_pass_behavior_fixture": 7,
       "tested_pass_check_mode": 1,
-      "tested_pass_surface_policy": 20
+      "tested_pass_surface_policy": 28
     },
     "code_statuses": {
-      "pass": 69
+      "pass": 77
     },
     "host_statuses": {
-      "pass": 59,
+      "pass": 67,
       "not_applicable": 10
     },
     "proof_types": {
       "command-json": 36,
       "behavior-fixture": 13,
-      "surface-policy-json": 20
+      "surface-policy-json": 28
     },
     "optimization_verdicts": {
-      "acceptable": 31,
-      "improved": 38
+      "acceptable": 32,
+      "improved": 45
     },
     "host_blockers": []
   },
@@ -97,7 +110,15 @@
       "send_reaction",
       "sent_media_search",
       "set_message_pinned",
+      "telegram_count_documents",
+      "telegram_count_photos",
+      "telegram_count_pinned",
       "telegram_count_posts",
+      "telegram_count_videos",
+      "telegram_count_voice",
+      "telegram_dialog_metadata",
+      "telegram_get_message",
+      "telegram_latest_message",
       "telegram_read",
       "telegram_send"
     ]

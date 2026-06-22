@@ -21,7 +21,14 @@ from ..facade_limits import (
     clamp_search_limit,
 )
 from ..member_export_paths import resolve_member_export_dir
-from ..types import DialogPostCountResult, ParticipantsResult
+from ..metadata_tools_spec import METADATA_COUNT_SPECS
+from ..types import (
+    DialogLatestMessageResult,
+    DialogMessageByIdResult,
+    DialogMetadataResult,
+    DialogPostCountResult,
+    ParticipantsResult,
+)
 
 READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
@@ -375,12 +382,80 @@ async def telegram_search(chat: str | int, query: str, limit: int = FAST_SEARCH_
 
 async def telegram_count_posts(chat: str | int) -> DialogPostCountResult:
     """Return total visible posts/messages in a dialog without downloading history."""
-    enforce_live_read_route(tool_name="telegram_count_posts", explicit_intent="live_read")
+    return await _telegram_count_metadata(chat=chat, count_type="posts", tool_name="telegram_count_posts")
+
+
+async def _telegram_count_metadata(chat: str | int, count_type: str, tool_name: str) -> DialogPostCountResult:
+    enforce_live_read_route(tool_name=tool_name, explicit_intent="live_read")
     tg = await runtime.get_tg()
-    result = await tg.count_dialog_posts(chat=chat)
+    result = await tg.count_dialog_metadata(chat=chat, count_type=count_type)
     assert_live_result_data_source(
         result.model_dump(mode="json"),
-        tool_name="telegram_count_posts",
+        tool_name=tool_name,
+        intent="live_read",
+    )
+    return result
+
+
+async def telegram_count_photos(chat: str | int) -> DialogPostCountResult:
+    """Return total visible photo messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="photos", tool_name="telegram_count_photos")
+
+
+async def telegram_count_videos(chat: str | int) -> DialogPostCountResult:
+    """Return total visible video messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="videos", tool_name="telegram_count_videos")
+
+
+async def telegram_count_documents(chat: str | int) -> DialogPostCountResult:
+    """Return total visible document/file messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="documents", tool_name="telegram_count_documents")
+
+
+async def telegram_count_voice(chat: str | int) -> DialogPostCountResult:
+    """Return total visible voice messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="voice", tool_name="telegram_count_voice")
+
+
+async def telegram_count_pinned(chat: str | int) -> DialogPostCountResult:
+    """Return total visible pinned messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="pinned", tool_name="telegram_count_pinned")
+
+
+async def telegram_latest_message(chat: str | int) -> DialogLatestMessageResult:
+    """Return the latest visible message metadata for a dialog."""
+    enforce_live_read_route(tool_name="telegram_latest_message", explicit_intent="live_read")
+    tg = await runtime.get_tg()
+    result = await tg.latest_dialog_message(chat=chat)
+    assert_live_result_data_source(
+        result.model_dump(mode="json"),
+        tool_name="telegram_latest_message",
+        intent="live_read",
+    )
+    return result
+
+
+async def telegram_dialog_metadata(chat: str | int) -> DialogMetadataResult:
+    """Return resolved dialog metadata without reading message history."""
+    enforce_live_read_route(tool_name="telegram_dialog_metadata", explicit_intent="live_read")
+    tg = await runtime.get_tg()
+    result = await tg.dialog_metadata(chat=chat)
+    assert_live_result_data_source(
+        result.model_dump(mode="json"),
+        tool_name="telegram_dialog_metadata",
+        intent="live_read",
+    )
+    return result
+
+
+async def telegram_get_message(chat: str | int, message_id: int) -> DialogMessageByIdResult:
+    """Return one message by id without scanning dialog history."""
+    enforce_live_read_route(tool_name="telegram_get_message", explicit_intent="live_read")
+    tg = await runtime.get_tg()
+    result = await tg.get_dialog_message(chat=chat, message_id=message_id)
+    assert_live_result_data_source(
+        result.model_dump(mode="json"),
+        tool_name="telegram_get_message",
         intent="live_read",
     )
     return result
@@ -565,7 +640,11 @@ def register(
         mcp.tool(annotations=READONLY)(tool_error_handler(search_dialog_messages))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_read))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_search))
-    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_count_posts))
+    for spec in METADATA_COUNT_SPECS:
+        mcp.tool(annotations=READONLY)(tool_error_handler(globals()[spec.tool_name]))
+    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_latest_message))
+    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_dialog_metadata))
+    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_get_message))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_export_members))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_prepare_reply))
     mcp.tool(annotations=CONFIRMED_WRITE)(tool_error_handler(telegram_confirmed_send))

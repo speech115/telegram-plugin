@@ -9,6 +9,7 @@ import re
 import sys
 from datetime import date
 
+from .metadata_tools_spec import COUNT_SPECS_BY_CLI, METADATA_COUNT_SPECS, MetadataCountSpec
 from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover
 from .telemetry import record_telemetry, telemetry_fields_from_result
 
@@ -77,6 +78,10 @@ COUNT_POSTS_RE = re.compile(
     r"(сколько|count|how many|total).{0,80}(пост|posts?|messages?|сообщен)",
     re.IGNORECASE,
 )
+COUNT_RE = re.compile(r"(сколько|count|how many|total)", re.IGNORECASE)
+LATEST_RE = re.compile(r"(latest|last|последн)", re.IGNORECASE)
+INFO_RE = re.compile(r"(info|metadata|about|инфо|метадан|о канале|о чате)", re.IGNORECASE)
+MESSAGE_ID_RE = re.compile(r"(?:message|msg|сообщени[ея]|пост)\s*(?:id)?\s*#?(?P<message_id>\d+)", re.IGNORECASE)
 SEARCH_RE = re.compile(r"(найди|search|искать|поиск)", re.IGNORECASE)
 TODAY_RE = re.compile(r"(сегодня|today|что нового|прочитай)", re.IGNORECASE)
 
@@ -86,27 +91,79 @@ def _extract_chat(text: str) -> str | None:
     return match.group("chat") if match else None
 
 
+def _count_spec_from_text(text: str) -> MetadataCountSpec:
+    for spec in METADATA_COUNT_SPECS:
+        if any(term.lower() in text.lower() for term in spec.route_terms):
+            return spec
+    return COUNT_SPECS_BY_CLI["posts"]
+
+
 def route_task(intent_text: str) -> dict[str, object]:
     text = intent_text.strip()
     chat = _extract_chat(text)
-    if COUNT_POSTS_RE.search(text):
-        execute = ["tg", "count", "posts"]
+    message_id_match = MESSAGE_ID_RE.search(text)
+    if message_id_match and chat:
+        message_id = int(message_id_match.group("message_id"))
+        return {
+            "ok": True,
+            "command": "route",
+            "intent": "get_message_by_id",
+            "data_source": "live_telegram",
+            "safety": "read-only",
+            "confidence": 0.86,
+            "chat": chat,
+            "tool": "telegram_get_message",
+            "execute": ["tg", "message", chat, str(message_id), "--json"],
+            "needs_user_input": False,
+            "next_action": "run_execute_command",
+        }
+    if COUNT_RE.search(text) or COUNT_POSTS_RE.search(text):
+        spec = _count_spec_from_text(text)
+        execute = ["tg", "count", spec.cli_name]
         if chat:
             execute.append(chat)
         execute.append("--json")
         return {
             "ok": True,
             "command": "route",
-            "intent": "count_channel_posts",
+            "intent": f"count_channel_{spec.key}",
             "data_source": "live_telegram",
             "safety": "read-only",
             "confidence": 0.92 if chat else 0.72,
             "chat": chat,
-            "tool": "telegram_count_posts",
+            "tool": spec.tool_name,
             "execute": execute,
             "needs_user_input": chat is None,
             "next_action": "run_execute_command" if chat else "ask_for_chat",
             "notes": ["Uses Telegram history metadata; does not download the channel history."],
+        }
+    if LATEST_RE.search(text):
+        return {
+            "ok": True,
+            "command": "route",
+            "intent": "latest_message_metadata",
+            "data_source": "live_telegram",
+            "safety": "read-only",
+            "confidence": 0.82 if chat else 0.62,
+            "chat": chat,
+            "tool": "telegram_latest_message",
+            "execute": ["tg", "latest", chat or "<chat>", "--json"],
+            "needs_user_input": chat is None,
+            "next_action": "run_execute_command" if chat else "ask_for_chat",
+        }
+    if INFO_RE.search(text):
+        return {
+            "ok": True,
+            "command": "route",
+            "intent": "dialog_metadata",
+            "data_source": "live_telegram",
+            "safety": "read-only",
+            "confidence": 0.78 if chat else 0.58,
+            "chat": chat,
+            "tool": "telegram_dialog_metadata",
+            "execute": ["tg", "info", chat or "<chat>", "--json"],
+            "needs_user_input": chat is None,
+            "next_action": "run_execute_command" if chat else "ask_for_chat",
         }
     if SEARCH_RE.search(text):
         return {
@@ -287,16 +344,17 @@ async def cmd_search(
     )
 
 
-async def cmd_count_posts(
+async def cmd_count_metadata(
     *,
     chat: str,
+    spec: MetadataCountSpec,
     timeout: float,
     endpoint: str | None,
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
     payload, elapsed, attempt = await call_tool_with_failover(
-        tool_name="telegram_count_posts",
+        tool_name=spec.tool_name,
         arguments={"chat": chat},
         timeout=timeout,
         explicit_endpoint=endpoint,
@@ -304,7 +362,7 @@ async def cmd_count_posts(
         account=account,
     )
     record_telemetry(
-        "tg_count_posts",
+        f"tg_count_{spec.key}",
         status="ok",
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
@@ -313,12 +371,137 @@ async def cmd_count_posts(
         **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
-        command="count posts",
+        command=f"count {spec.cli_name}",
         endpoint=attempt.endpoint,
         endpoint_port=attempt.port or None,
         elapsed_seconds=elapsed,
         payload=payload,
-        intent="count_channel_posts",
+        intent=f"count_channel_{spec.key}",
+    )
+
+
+async def cmd_count_posts(
+    *,
+    chat: str,
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+) -> dict[str, object]:
+    return await cmd_count_metadata(
+        chat=chat,
+        spec=COUNT_SPECS_BY_CLI["posts"],
+        timeout=timeout,
+        endpoint=endpoint,
+        env_file=env_file,
+        account=account,
+    )
+
+
+async def cmd_latest(
+    *,
+    chat: str,
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+) -> dict[str, object]:
+    payload, elapsed, attempt = await call_tool_with_failover(
+        tool_name="telegram_latest_message",
+        arguments={"chat": chat},
+        timeout=timeout,
+        explicit_endpoint=endpoint,
+        env_file=env_file,
+        account=account,
+    )
+    record_telemetry(
+        "tg_latest_message",
+        status="ok",
+        duration_ms=round(elapsed * 1000, 3),
+        source="tg_cli",
+        endpoint_port=attempt.port or None,
+        arg_chat=chat,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
+    return _wrap_ok(
+        command="latest",
+        endpoint=attempt.endpoint,
+        endpoint_port=attempt.port or None,
+        elapsed_seconds=elapsed,
+        payload=payload,
+        intent="latest_message_metadata",
+    )
+
+
+async def cmd_info(
+    *,
+    chat: str,
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+) -> dict[str, object]:
+    payload, elapsed, attempt = await call_tool_with_failover(
+        tool_name="telegram_dialog_metadata",
+        arguments={"chat": chat},
+        timeout=timeout,
+        explicit_endpoint=endpoint,
+        env_file=env_file,
+        account=account,
+    )
+    record_telemetry(
+        "tg_dialog_metadata",
+        status="ok",
+        duration_ms=round(elapsed * 1000, 3),
+        source="tg_cli",
+        endpoint_port=attempt.port or None,
+        arg_chat=chat,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
+    return _wrap_ok(
+        command="info",
+        endpoint=attempt.endpoint,
+        endpoint_port=attempt.port or None,
+        elapsed_seconds=elapsed,
+        payload=payload,
+        intent="dialog_metadata",
+    )
+
+
+async def cmd_message(
+    *,
+    chat: str,
+    message_id: int,
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+) -> dict[str, object]:
+    payload, elapsed, attempt = await call_tool_with_failover(
+        tool_name="telegram_get_message",
+        arguments={"chat": chat, "message_id": message_id},
+        timeout=timeout,
+        explicit_endpoint=endpoint,
+        env_file=env_file,
+        account=account,
+    )
+    record_telemetry(
+        "tg_get_message",
+        status="ok",
+        duration_ms=round(elapsed * 1000, 3),
+        source="tg_cli",
+        endpoint_port=attempt.port or None,
+        arg_chat=chat,
+        arg_message_id=message_id,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
+    return _wrap_ok(
+        command="message",
+        endpoint=attempt.endpoint,
+        endpoint_port=attempt.port or None,
+        elapsed_seconds=elapsed,
+        payload=payload,
+        intent="get_message_by_id",
     )
 
 
@@ -372,9 +555,23 @@ def build_parser() -> argparse.ArgumentParser:
     count = sub.add_parser("count", parents=[common], help="Read-only Telegram counts")
     count_sub = count.add_subparsers(dest="count_mode", required=True)
 
-    posts = count_sub.add_parser("posts", parents=[common], help="Total visible posts/messages in a dialog")
-    posts.add_argument("chat")
-    posts.set_defaults(handler="count_posts")
+    for spec in METADATA_COUNT_SPECS:
+        count_parser = count_sub.add_parser(spec.cli_name, parents=[common], help=f"Total visible {spec.label}")
+        count_parser.add_argument("chat")
+        count_parser.set_defaults(handler="count_metadata", count_kind=spec.cli_name)
+
+    latest = sub.add_parser("latest", parents=[common], help="Latest visible message metadata")
+    latest.add_argument("chat")
+    latest.set_defaults(handler="latest")
+
+    info = sub.add_parser("info", parents=[common], help="Resolved dialog metadata")
+    info.add_argument("chat")
+    info.set_defaults(handler="info")
+
+    message = sub.add_parser("message", parents=[common], help="Get one message by id")
+    message.add_argument("chat")
+    message.add_argument("message_id", type=int)
+    message.set_defaults(handler="message")
 
     return parser
 
@@ -418,9 +615,35 @@ async def run_command(args: argparse.Namespace) -> dict[str, object]:
             env_file=env_file,
             account=account,
         )
-    if args.handler == "count_posts":
-        return await cmd_count_posts(
+    if args.handler == "count_metadata":
+        return await cmd_count_metadata(
             chat=args.chat,
+            spec=COUNT_SPECS_BY_CLI[args.count_kind],
+            timeout=timeout,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+    if args.handler == "latest":
+        return await cmd_latest(
+            chat=args.chat,
+            timeout=timeout,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+    if args.handler == "info":
+        return await cmd_info(
+            chat=args.chat,
+            timeout=timeout,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+    if args.handler == "message":
+        return await cmd_message(
+            chat=args.chat,
+            message_id=args.message_id,
             timeout=timeout,
             endpoint=endpoint,
             env_file=env_file,

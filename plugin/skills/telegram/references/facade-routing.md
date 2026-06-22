@@ -107,6 +107,11 @@ Prefer canonical full-MCP tool names in agent routing unless the host exposes on
 - Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `search_dialog_messages` first.
 - Do not download a channel timeline just to answer "how many posts/messages".
   Use `tg count posts <chat> --json` or MCP `telegram_count_posts`.
+- Do not broad-read a channel just to count photos, videos, documents, voice,
+  or pinned messages. Use `tg count photos|videos|documents|voice|pinned
+  <chat> --json` or the matching `telegram_count_*` MCP tool.
+- Do not broad-read just to inspect one message id or the latest message. Use
+  `tg message <chat> <message_id> --json` or `tg latest <chat> --json`.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.
 - Do not page just because `has_more_before=true`; page only when the user asked for completeness or current evidence is insufficient.
 

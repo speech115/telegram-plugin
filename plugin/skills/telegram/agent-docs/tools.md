@@ -7,6 +7,14 @@ The restricted plugin profile exposes task-shaped tools only. Prefer these names
 - `telegram_read`
 - `telegram_search`
 - `telegram_count_posts`
+- `telegram_count_photos`
+- `telegram_count_videos`
+- `telegram_count_documents`
+- `telegram_count_voice`
+- `telegram_count_pinned`
+- `telegram_latest_message`
+- `telegram_dialog_metadata`
+- `telegram_get_message`
 - `resolve_dialog`
 - `find_dialog`
 - `collect_dialog_context`
