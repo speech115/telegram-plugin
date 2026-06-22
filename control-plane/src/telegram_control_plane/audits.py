@@ -383,9 +383,10 @@ def audit_fast_read_adapter() -> dict[str, Any]:
 
     findings: list[dict[str, Any]] = []
     adapters: list[dict[str, Any]] = []
+    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE") == "1"
     tg_on_path = shutil.which("tg")
     kit_wrapper = CONTROL_ROOT / "bin" / "tg"
-    if not tg_on_path:
+    if not tg_on_path and not portable_ci:
         findings.append(
             {
                 "id": "tg_not_on_path",
@@ -425,7 +426,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
         executable = exists and path.stat().st_mode & 0o111 != 0
         command = [str(path), "--help"]
         help_probe: dict[str, Any] = {"ran": False}
-        skip_help_probe = label != "tg"
+        skip_help_probe = label != "tg" or portable_ci
         if not exists:
             findings.append(
                 {
@@ -443,7 +444,12 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                 }
             )
         elif skip_help_probe:
-            help_probe = {"ran": False, "skipped_reason": "secondary_adapter_source_checked"}
+            help_probe = {
+                "ran": False,
+                "skipped_reason": (
+                    "portable_ci_source_checked" if portable_ci else "secondary_adapter_source_checked"
+                ),
+            }
         else:
             try:
                 completed = subprocess.run(
