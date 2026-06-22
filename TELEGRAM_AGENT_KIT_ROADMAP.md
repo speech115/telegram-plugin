@@ -20,38 +20,44 @@ and local MCP runtime. Codex plugin support remains an adapter, not the core UX.
 - Host adapters: generated or materialized config for Codex, Claude Code,
   OpenCode, and standalone skill-aware agents.
 - Installer/doctor: setup, host config generation, smoke checks, and drift gates.
-- Control-plane: local audit/protection layer only; not the public runtime.
+- Control-plane: local audit and routing evidence layer; not the public runtime.
 
 ## Capability Model
 
-- Default: read, search, context collection, draft/preview, scoped media
-  inspection, and voice transcription.
-- Write: send/reply only through server-side preview confirmation.
-- Export: subscriber/member exports only with explicit PII acknowledgement and
-  safe local output defaults.
+- Default owner-local surface: full local MCP read, search, context collection,
+  draft/preview, media inspection, voice transcription, direct writes, and
+  subscriber/member export.
+- Write: send/reply/edit/delete/forward/react/pin use exact target/message ids
+  and the selected local account; no facade allowlist clamp is the default.
+- Export: subscriber/member exports accept normal explicit output directories
+  without extra PII or durable-output approval flags; private local cache paths
+  remain the default when no output directory is provided.
 - Admin: destructive/admin actions only through separate explicit escalation and
   plan/apply confirmation.
 
-Do not expose raw full/admin tools as the normal installed surface. "All
-functions available" means task workflows are available, not that every low-level
-Telegram mutation tool is visible by default.
+Do not reintroduce facade-style default clamps, PII acknowledgement gates, or
+git/synced-directory output bans for the owner-local runtime. Safety is handled
+by exact-target workflows, local account selection, audit evidence, and explicit
+operator intent for external/public effects.
 
 ## Milestones
 
-1. Fix default surface drift.
-   - Plugin `.mcp.json`, approved facade policy, runtime facade, and installed
-     cache must agree.
-   - No unknown, write, destructive, or wildcard tools in default allowlists.
+1. Keep owner-local full surface drift-free.
+   - Plugin `.mcp.json`, surface contract, runtime tool registration, and
+     installed cache must agree.
+   - Default installs must not add `allowedTools` clamps or restricted tool
+     profiles unless explicitly requested for a separate host.
 
 2. Make fast defaults real in server code.
    - Fast reads do not fetch pinned messages or voice transcriptions unless
      explicitly requested.
    - First-pass limits are small and agent-friendly.
 
-3. Add server-side write confirmation.
-   - Preview tools mint short-lived confirmation ids tied to account, target,
-     reply id, exact text hash, parse mode, and expiry.
-   - Send/reply tools refuse mutation without a valid unchanged confirmation.
+3. Keep write workflows exact and auditable.
+   - Direct write tools require stable account, target, message ids, and exact
+     requested text where text is involved.
+   - Draft/preview remains available for composition, but is not a hidden
+     mandatory facade before every owner-local write.
 
 4. Add task-shaped tools.
    - Prefer `telegram_read`, `telegram_search`, `telegram_prepare_reply`,
@@ -64,8 +70,8 @@ Telegram mutation tool is visible by default.
    - Fresh installs must not depend on `/Users/sereja` paths or private artifact
      roots.
 
-6. Harden PII/media/session handling.
-   - Export workflows require PII acknowledgement and private local defaults.
+6. Harden media/session handling without exporter gates.
+   - Export workflows use private local defaults and accept explicit output dirs.
    - Media downloads are scoped, capped, local, and temporary by default.
    - Sessions, tokens, `.env`, media, exports, caches, and `__pycache__` are not
      packaged.

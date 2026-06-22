@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import subprocess
+import importlib.machinery
+import importlib.util
 from pathlib import Path
 
 import telegram_control_plane.audits as audits
@@ -19,6 +23,17 @@ import telegram_control_plane.planner as planner
 from telegram_control_plane.audit_remediation import apply_repair_plan, build_repair_plan
 from telegram_control_plane import audit_remediation as remediation
 from telegram_control_plane.paths import PLUGIN_SOURCE
+
+
+def load_fast_read_adapter_module():
+    path = Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today"
+    loader = importlib.machinery.SourceFileLoader("telegram_fast_read_today_adapter", str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_imported_tool_names_excludes_register_aliases(tmp_path: Path) -> None:
@@ -211,6 +226,41 @@ def test_mcp_telemetry_ignores_synthetic_preflight_for_agent_warning(monkeypatch
     assert not any(item["id"] == "telemetry_preflight_violations" for item in report["findings"])
 
 
+def test_mcp_telemetry_preflight_warning_uses_current_read_path_language(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_preflight_violations": 10},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 50,
+            "event_counts": {"tool_call": 20},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "agent_preflight": {
+                "preflight_violations": 11,
+                "synthetic_probe_violations": 0,
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+    finding = next(item for item in report["findings"] if item["id"] == "telemetry_preflight_violations")
+
+    assert "before first live read" in finding["message"]
+    assert "get_me" not in finding["message"]
+
+
 def test_mcp_telemetry_warns_on_low_cache_hit_rate(monkeypatch, tmp_path: Path) -> None:
     mcp_repo = tmp_path / "mcp"
     python_bin = mcp_repo / ".venv/bin/python"
@@ -367,6 +417,85 @@ def test_fast_read_adapter_calls_task_shaped_tool() -> None:
     assert '"read_today_dialog"' not in module
 
 
+def test_fast_read_adapter_sanitizes_nested_tool_errors(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    home = tmp_path / "home"
+    mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
+    python_path = mcp_repo / ".venv/bin/python"
+    python_path.parent.mkdir(parents=True)
+    python_path.touch()
+    module = load_fast_read_adapter_module()
+    monkeypatch.setenv("HOME", str(home))
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "mode": "telegram_fast_read_today",
+                    "endpoint": "http://127.0.0.1:8799/mcp",
+                    "endpoint_port": 8799,
+                    "payload": "Error executing tool telegram_read: private raw bytes",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    returncode = module.main(["me"])
+    captured = capsys.readouterr()
+
+    assert returncode == 1
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert payload["error"] == "telegram_tool_error"
+    assert payload["tool"] == "telegram_read"
+    assert "private raw bytes" not in captured.out
+
+
+def test_fast_read_adapter_sanitizes_failed_tool_errors(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    home = tmp_path / "home"
+    mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
+    python_path = mcp_repo / ".venv/bin/python"
+    python_path.parent.mkdir(parents=True)
+    python_path.touch()
+    module = load_fast_read_adapter_module()
+    monkeypatch.setenv("HOME", str(home))
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout=json.dumps(
+                {
+                    "ok": False,
+                    "mode": "telegram_fast_read_today",
+                    "error": "Error executing tool telegram_read: private raw bytes",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    returncode = module.main(["me"])
+    captured = capsys.readouterr()
+
+    assert returncode == 1
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert payload["error"] == "telegram_tool_error"
+    assert payload["tool"] == "telegram_read"
+    assert "private raw bytes" not in captured.out
+    assert "private raw bytes" not in captured.err
+
+
 def test_registry_includes_fast_read_adapter_component() -> None:
     registry = build_registry()
 
@@ -452,7 +581,8 @@ def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) 
     assert report["default_archive_status"]["coverage_claim"] == "partial_archive_snapshot_with_known_gaps"
     assert report["freshness"]["last_complete_import_at"] == "2026-05-18T16:54:53Z"
     assert report["freshness"]["newest_message_at"] == "2026-05-18T16:18:16Z"
-    assert any(item["id"] == "telecrawl_known_gaps" for item in report["findings"])
+    assert report["status"] == "ok"
+    assert any(item["id"] == "telecrawl_known_gaps" for item in report["accepted_findings"])
     assert not any(item["id"] == "telecrawl_active_archives_incomplete" for item in report["findings"])
 
 
@@ -579,6 +709,49 @@ def test_mirror_preflight_externalizes_only_recovery_sessions(monkeypatch, tmp_p
     assert gates["session_externalization"]["evidence"]["session_count_in_tree"] == 0
     assert gates["runtime_exports"]["status"] == "ok"
     assert gates["runtime_exports"]["evidence"]["path"] == str(runtime / "runtime" / "ingest" / "telegram" / "exports")
+
+
+def test_mirror_preflight_cold_mode_only_counts_mirror_launchagents(monkeypatch, tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime" / "telegram-mirror"
+    (runtime / "runtime" / "ingest" / "telegram" / "exports").mkdir(parents=True)
+    mirror_root = tmp_path / "telegram-mirror"
+    (mirror_root / ".git").mkdir(parents=True)
+    monkeypatch.setattr(audits, "MIRROR_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(audits, "MIRROR_ROOT", mirror_root)
+    monkeypatch.setattr(
+        audits,
+        "audit_mirror",
+        lambda: {
+            "status": "ok",
+            "classification": "mirror-recovery",
+            "findings": [],
+            "runtime_state": {
+                "recovery_sessions": [],
+                "sessions": ["runtime.session"],
+                "ledgers": ["watch_progress.json"],
+                "runtime_root_exists": True,
+                "runtime_exports_exists": True,
+            },
+        },
+    )
+    monkeypatch.setattr(audits, "run_json", lambda *args, **kwargs: {"policy_exists": True, "registry": {"mirrors_count": 1}})
+    monkeypatch.setattr(
+        audits,
+        "audit_launchd",
+        lambda: {
+            "loaded_jobs": {
+                "com.sereja.telegram-music-autoclean": {"loaded": True},
+                "com.sereja.telegram-mcp-http": {"loaded": True},
+            }
+        },
+    )
+    monkeypatch.setattr(audits, "audit_sessions", lambda: {"status": "ok", "findings": []})
+
+    report = audit_mirror_preflight()
+    gates = {gate["id"]: gate for gate in report["gates"]}
+
+    assert gates["launchd_cold_mode"]["status"] == "ok"
+    assert gates["launchd_cold_mode"]["evidence"]["loaded_mirror_jobs"] == []
 
 
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:

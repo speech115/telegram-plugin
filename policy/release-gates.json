@@ -23,25 +23,81 @@
   },
   "gates": {
     "managed-systems": {
-      "argv": ["{control_root}/bin/telegram-managed-systems", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-managed-systems",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "operational",
+      "can_run_offline": true
     },
     "mcp-surface": {
-      "argv": ["{control_root}/bin/telegram-mcp-surface", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-mcp-surface",
+        "--json"
+      ],
+      "cost_tier": "medium",
+      "live_required": true,
+      "mutates_state": false,
+      "operational_vs_code": "mixed",
+      "can_run_offline": false
     },
     "plugin-drift": {
-      "argv": ["{control_root}/bin/telegram-plugin-drift", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-plugin-drift",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "release-gates": {
-      "argv": ["{control_root}/bin/telegram-release-gates", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-release-gates",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "install-adapters": {
-      "argv": ["{control_root}/bin/telegram-install-adapters", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-install-adapters",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "operational",
+      "can_run_offline": true
     },
     "docs-audit": {
-      "argv": ["{control_root}/bin/telegram-docs-audit", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-docs-audit",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "source-routing-audit": {
-      "argv": ["{control_root}/bin/telegram-source-routing-audit", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-source-routing-audit",
+        "--json"
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "agent-docs-check": {
       "argv": [
@@ -49,23 +105,72 @@
         "--check",
         "--no-restart",
         "--json"
-      ]
+      ],
+      "cost_tier": "cheap",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "write-safety-smoke": {
-      "argv": ["{mcp_repo}/bin/telegram-write-safety-smoke", "--json"]
+      "argv": [
+        "{mcp_repo}/bin/telegram-write-safety-smoke",
+        "--json"
+      ],
+      "cost_tier": "medium",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "runtime-contract-smoke": {
-      "argv": ["{mcp_repo}/bin/contract-smoke", "--json"]
+      "argv": [
+        "{mcp_repo}/bin/contract-smoke",
+        "--json"
+      ],
+      "cost_tier": "medium",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "runtime-app-media-smoke": {
-      "argv": ["{mcp_repo}/bin/contract-smoke", "--profile", "app-media", "--json"]
+      "argv": [
+        "{mcp_repo}/bin/contract-smoke",
+        "--profile",
+        "app-media",
+        "--json"
+      ],
+      "cost_tier": "medium",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "pytest": {
-      "argv": ["python3", "-m", "pytest", "-q"],
-      "cwd": "{control_root}"
+      "argv": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q"
+      ],
+      "cwd": "{control_root}",
+      "cost_tier": "expensive",
+      "live_required": false,
+      "mutates_state": false,
+      "operational_vs_code": "code",
+      "can_run_offline": true
     },
     "tg-read-smoke": {
-      "argv": ["{control_root}/bin/telegram-golden-read-smoke", "--json"]
+      "argv": [
+        "{control_root}/bin/telegram-golden-read-smoke",
+        "--json"
+      ],
+      "cost_tier": "live",
+      "live_required": true,
+      "mutates_state": false,
+      "operational_vs_code": "live",
+      "can_run_offline": false
     }
   }
 }

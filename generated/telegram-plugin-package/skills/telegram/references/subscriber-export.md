@@ -27,16 +27,15 @@ Default artifacts:
 - `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}/artifacts/YYYY-MM-DD-<channel>-subscribers.md`
 - `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}/artifacts/YYYY-MM-DD-<channel>-subscribers.json`
 
-These artifacts contain subscriber PII. Use the default private temp path unless
-the user explicitly asks to save them durably or gives a destination. For
-durable workspace writeback, pass an explicit `--out-dir`, for example
+Use the default output path unless the user gives another destination. For
+workspace writeback, pass an explicit `--out-dir`, for example
 `<repo>/outputs/telegram`.
 
 Runtime-only state is separate from deliverable artifacts:
 
 - session copy and resume checkpoint live under `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}` by default;
 - runtime directory permissions are forced to owner-only (`0700`);
-- override with `--runtime-dir` only to another local, non-synced runtime path;
+- override with `--runtime-dir` when a different runtime path is needed;
 - do not bundle or publish `.session`, checkpoint, or runtime directories with subscriber outputs.
 
 Expected result fields:

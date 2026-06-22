@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "recommended_order": [
     "managed-systems-inventory",
     "plugin-cache-parity",
@@ -26,6 +26,88 @@
       "start mirror watchers/backfills/sync",
       "copy sessions"
     ]
+  },
+  "step_specs": {
+    "managed-systems-inventory": {
+      "title": "Verify Telegram managed systems inventory before any cleanup or repair",
+      "touched_paths": ["${CONTROL_ROOT}/policy/managed-systems.json", "${CONTROL_ROOT}/PROTECTION.md"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-managed-systems", "--json"]],
+      "apply_commands": [],
+      "rollback": [
+        "Policy-only inventory changes can be reverted without touching actual Telegram systems.",
+        "Do not delete or move any registered system from this step."
+      ],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-managed-systems", "--json"], ["${CONTROL_ROOT}/bin/telegram-doctor", "--json"]]
+    },
+    "plugin-cache-parity": {
+      "title": "Normalize Telegram plugin source/cache/version parity",
+      "touched_paths": ["${PLUGIN_SOURCE}", "${PLUGIN_CACHE}", "${HOME}/.codex/config.toml", "${HOME}/.agents/plugins/marketplace.json"],
+      "dry_run_commands": [["${MCP_REPO}/bin/check-plugin-drift", "--json"], ["diff", "-ru", "${PLUGIN_SOURCE}/skills/telegram", "${PLUGIN_CACHE}/skills/telegram"]],
+      "apply_commands": [["codex", "plugin", "remove", "telegram@sereja-local"], ["codex", "plugin", "add", "telegram@sereja-local"]],
+      "rollback": [
+        "Leave older versioned cache directories intact.",
+        "If installer output is wrong, disable the new cache by restoring the previous marketplace entry."
+      ],
+      "verification_commands": [["${MCP_REPO}/bin/check-plugin-drift", "--json"], ["${CONTROL_ROOT}/bin/telegram-plugin-drift", "--json"]]
+    },
+    "plugin-cache-materialize": {
+      "title": "Materialize Codex Telegram plugin cache from canonical source",
+      "touched_paths": ["${PLUGIN_SOURCE}", "${PLUGIN_CACHE_ROOT}"],
+      "dry_run_commands": [["${MCP_REPO}/bin/check-plugin-drift", "--json"]],
+      "apply_commands": [["${MCP_REPO}/bin/materialize-plugin-cache", "--source-dir", "${PLUGIN_SOURCE}", "--cache-root", "${PLUGIN_CACHE_ROOT}", "--json"]],
+      "rollback": ["Older versioned cache directories remain intact; re-run materialize after reverting source."],
+      "verification_commands": [["${MCP_REPO}/bin/check-plugin-drift", "--json"], ["${CONTROL_ROOT}/bin/telegram-doctor", "--json"]],
+      "auto_apply_allowed": true
+    },
+    "mcp-surface-contract": {
+      "title": "Diagnose owner-local Telegram MCP surface contract",
+      "touched_paths": ["${CONTROL_ROOT}/policy/surface-contract.json", "${MCP_REPO}/src/telegram_mcp/tools/__init__.py", "${MCP_REPO}/src/telegram_mcp/tools/dialog_facade_tools.py", "${PLUGIN_SOURCE}/.mcp.json"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-mcp-surface", "--json"]],
+      "apply_commands": [],
+      "rollback": [
+        "This step is diagnostic only; no files or live Telegram state are modified.",
+        "Fix the specific failed contract separately, then rerun the dry-run command."
+      ],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-mcp-surface", "--json"], ["${MCP_REPO}/bin/contract-smoke", "--json"], ["python3", "-m", "pytest", "-q", "${CONTROL_ROOT}"]]
+    },
+    "launchd-inventory-and-cold-mode": {
+      "title": "Reconcile Telegram launchd jobs with approved roots and cold mirror mode",
+      "touched_paths": ["${HOME}/Library/LaunchAgents/com.sereja.telegram-*.plist", "${HOME}/Library/LaunchAgents/com.sereja.telecrawl*.plist"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-launchd-audit", "--json"], ["launchctl", "list"]],
+      "apply_commands": [],
+      "rollback": [
+        "Before any plist write, copy the original plist to a timestamped local backup.",
+        "Use launchctl bootout/bootstrap only from an explicit later migration step."
+      ],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-launchd-audit", "--json"]]
+    },
+    "session-registry": {
+      "title": "Create external Telegram session registry/broker inputs",
+      "touched_paths": ["${CONTROL_ROOT}/policy/sessions.json"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-session-audit", "--json"]],
+      "apply_commands": [],
+      "rollback": [
+        "Policy-only session registry can be removed without touching actual session files.",
+        "Do not move or copy session files in this milestone."
+      ],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-session-audit", "--json"]]
+    },
+    "mirror-runtime-promotion-policy": {
+      "title": "Keep telegram-mirror recovery-scoped until runtime preflight exists",
+      "touched_paths": ["${CONTROL_ROOT}/policy/source-routing.json", "${MIRROR_ROOT}"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-mirror-audit", "--json"], ["${CONTROL_ROOT}/bin/telegram-mirror-preflight", "--json"]],
+      "apply_commands": [],
+      "rollback": ["Keep recovery classification until an explicit runtime preflight passes."],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-mirror-audit", "--json"]]
+    },
+    "telecrawl-archive-policy": {
+      "title": "Make telecrawl archive coverage explicit and non-live",
+      "touched_paths": ["${CONTROL_ROOT}/policy/source-routing.json", "${CONTROL_ROOT}/policy/telecrawl.json"],
+      "dry_run_commands": [["${CONTROL_ROOT}/bin/telegram-telecrawl-status", "--json"]],
+      "apply_commands": [],
+      "rollback": ["Policy-only archive routing can be reverted without touching archive DBs."],
+      "verification_commands": [["${CONTROL_ROOT}/bin/telegram-telecrawl-status", "--json"]]
+    }
   },
   "finding_to_steps": {
     "managed_system_missing": ["managed-systems-inventory"],

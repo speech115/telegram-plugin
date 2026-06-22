@@ -53,6 +53,24 @@ def test_audit_remediation_policy_owns_order_safety_and_triggers() -> None:
     assert policy.recommended_order([{"id": "fallback"}])[0] == "managed-systems-inventory"
 
 
+def test_remediation_step_specs_are_policy_owned_and_expanded() -> None:
+    policy = AuditRemediationPolicy()
+
+    spec = policy.step_spec("plugin-cache-parity")
+    assert spec["title"] == "Normalize Telegram plugin source/cache/version parity"
+    assert "${PLUGIN_SOURCE}" in spec["touched_paths"]
+
+    plan = policy.build_plan({"status": "ok", "summary": {"components": {}}, "findings": [], "components": {}})
+    by_id = {step["id"]: step for step in plan["steps"]}
+    step = by_id["plugin-cache-parity"]
+
+    assert "${" not in " ".join(step["touched_paths"])
+    assert step["apply_commands"] == [
+        ["codex", "plugin", "remove", "telegram@sereja-local"],
+        ["codex", "plugin", "add", "telegram@sereja-local"],
+    ]
+
+
 def test_build_repair_plan_includes_finding_remediation_map(monkeypatch) -> None:
     from telegram_control_plane import audits
 
@@ -70,7 +88,11 @@ def test_build_repair_plan_includes_finding_remediation_map(monkeypatch) -> None
             "sessions": {"status": "ok", "findings": []},
             "telegram_mirror": {"status": "ok", "findings": []},
             "runtime_inventory": {"status": "ok", "findings": [], "summary": {}},
-            "telecrawl": {"status": "warn", "findings": [{"id": "telecrawl_known_gaps", "severity": "warn"}]},
+            "telecrawl": {
+                "status": "ok",
+                "findings": [],
+                "accepted_findings": [{"id": "telecrawl_known_gaps", "severity": "warn"}],
+            },
             "mcp_telemetry": {"status": "ok", "findings": []},
             "fast_read_adapter": {"status": "ok", "findings": []},
             "agent_docs_sync": {"status": "ok", "findings": []},
@@ -79,6 +101,6 @@ def test_build_repair_plan_includes_finding_remediation_map(monkeypatch) -> None
         },
     )
     plan = build_repair_plan()
-    assert "telecrawl_known_gaps" in plan["finding_remediation_map"]
+    assert "telecrawl_known_gaps" not in plan["finding_remediation_map"]
     telecrawl_step = next(step for step in plan["steps"] if step["id"] == "telecrawl-archive-policy")
-    assert "telecrawl_known_gaps" in telecrawl_step.get("triggered_by_findings", [])
+    assert telecrawl_step.get("triggered_by_findings", []) == []

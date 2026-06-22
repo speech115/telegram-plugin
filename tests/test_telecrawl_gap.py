@@ -5,6 +5,7 @@ from pathlib import Path
 
 from telegram_control_plane.source_evidence import source_evidence_rules
 from telegram_control_plane.telecrawl_gap import (
+    evaluate_archive_readiness,
     gap_policy_summary,
     import_gaps,
     known_gaps_findings,
@@ -49,6 +50,25 @@ def test_known_gaps_finding_is_operational_warn_by_default() -> None:
     assert findings[0]["id"] == "telecrawl_known_gaps"
     assert findings[0]["severity"] == "warn"
     assert findings[0]["expected_operational_warning"] is True
+
+
+def test_expected_gap_warning_is_accepted_in_readiness() -> None:
+    report = evaluate_archive_readiness(
+        accounts={"accounts": []},
+        archive_status={
+            "source_kind": "archive_snapshot",
+            "import_gaps": {
+                "has_known_gaps": True,
+                "retryable_error_summary": [],
+                "terminal_error_summary": [],
+            },
+        },
+        policy=load_telecrawl_policy(),
+    )
+
+    assert report["status"] == "ok"
+    assert report["findings"] == []
+    assert report["accepted_findings"][0]["id"] == "telecrawl_known_gaps"
 
 
 def test_non_retryable_error_types_defaults() -> None:

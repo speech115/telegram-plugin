@@ -14,6 +14,7 @@ desired policy.
 ./bin/telegram-status --json
 ./bin/telegram-doctor --json
 ./bin/telegram-maintenance-doctor --json
+./bin/telegram-feature-status --json
 ```
 
 `tgc` is the agent entrypoint: `next` answers "what should I do right now",
@@ -107,6 +108,11 @@ Use `telegram-doctor --profile maintenance --json` or
 `telegram-maintenance-doctor --json` for the broad estate audit that includes
 release, plugin, archive, telemetry, and recovery checks.
 
+`telegram-feature-status --json` dry-runs a refresh of
+`docs/agents/feature-status.csv` from the current maintenance doctor output.
+Use `--write` only when you intentionally want to update the canonical feature
+spreadsheet.
+
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
 applying changes.
@@ -172,24 +178,28 @@ component.
   preflight is maintenance only.
 - Drill-down: component audits such as `telegram-mcp-surface`,
   `telegram-telemetry-status`, `telegram-telecrawl-status`,
-  `telegram-managed-systems`, and `telegram-docs-audit`.
+  `telegram-managed-systems`, `telegram-runtime-compat`, and
+  `telegram-docs-audit`.
 - Release/maintenance: `telegram-maintenance-doctor`, `telegram-release-gate`,
   `telegram-agent-docs-sync`, `telegram-install-adapters`, plugin cache
-  materialization, `telegram-repair-plan`, and `telegram-repair-plan-apply`.
+  materialization, `telegram-feature-status`, `telegram-repair-plan`, and
+  `telegram-repair-plan-apply`.
 
 ## Current Status
 
 - Healthy core target: `telegram-doctor --json` returns `ok` with
   `0` blocking findings and does not run release/archive/telemetry checks.
 - Healthy maintenance target: `telegram-maintenance-doctor --json` returns
-  `warn` with `0` blocking findings; any blocking finding is a release blocker
-  (`exit 1`).
-- A maintenance `warn` with `0` blocking findings is an operational warning, not
-  a reason to start repair. Read `findings[].component` first, then run
-  `telegram-repair-plan --json` only when a concrete repair is needed.
-- Expected maintenance warning: `telecrawl_known_gaps` when the default archive
-  still has retryable import gaps (`TimeoutError` backlog). This is documented
-  in `policy/telecrawl.json` and is not a core/live Telegram blocker.
+  `ok` when there are no active maintenance findings; any blocking finding is a
+  release blocker (`exit 1`).
+- A maintenance `warn` with `0` blocking findings is an active operational
+  warning, not a reason to start broad repair. Read `findings[].component`
+  first, then run `telegram-repair-plan --json` only when a concrete repair is
+  needed.
+- Accepted archive limitation: `telecrawl_known_gaps` belongs in
+  `accepted_findings`, not active `findings`, when the default archive still has
+  documented import gaps. This is documented in `policy/telecrawl.json`, remains
+  visible for archive-evidence work, and is not a core/live Telegram blocker.
 - Expected maintenance warning: `mcp_telemetry` when recent tool errors or error
   rate cross local telemetry thresholds. Check `telegram-telemetry-status --json`
   before changing runtime routing.

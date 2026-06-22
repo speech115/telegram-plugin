@@ -49,9 +49,6 @@ workflow.
 - **Media truth requires files:** do not describe photos, stickers, images, or
   videos from metadata, captions, or manifests. Download scoped files and
   inspect the actual local media.
-- **Subscriber and media artifacts are sensitive:** keep them local and
-  temporary by default; write to synced, durable, git, Drive, or vault
-  destinations only when the user explicitly asks.
 
 ## Runtime Preflight
 
@@ -219,11 +216,6 @@ output schema, counter gaps, and known API-limit behavior.
 
 Do not include Telethon `access_hash` values in normal subscriber artifacts.
 They are debug-only and require an explicit `--include-access-hash` choice.
-Subscriber exports are sensitive PII artifacts. The default exporter path is a
-private local temp directory; write to `karpathy-kb`, Drive, git, or another
-durable/synced destination only when the user explicitly asks to save or
-provides that destination.
-
 ## Media And Voice
 
 For media-heavy windows, first collect scoped message ids. Use

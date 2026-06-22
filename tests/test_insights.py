@@ -35,6 +35,7 @@ def test_build_insights_ranks_actionable_telemetry(monkeypatch, tmp_path: Path) 
             "events_in_window": 42,
             "cache_hit_rate": 0.1,
             "top_slow_tools": [
+                {"tool": "download_media", "count": 1, "p95_ms": 42000, "max_ms": 42000},
                 {"tool": "tg_read_today", "count": 4, "p95_ms": 9000, "max_ms": 11000},
                 {"tool": "telegram_read", "count": 10, "p95_ms": 5000, "max_ms": 7000},
             ],
@@ -53,7 +54,8 @@ def test_build_insights_ranks_actionable_telemetry(monkeypatch, tmp_path: Path) 
     assert report["status"] == "warn"
     assert report["window_hours"] == 6
     assert report["recommendations"][0]["kind"] == "slow_tool"
-    assert report["recommendations"][0]["subject"] == "tg_read_today"
+    assert report["recommendations"][0]["subject"] == "download_media"
+    assert "manifest" in report["recommendations"][0]["recommendation"]
     floodwait = next(item for item in report["recommendations"] if item["kind"] == "floodwait")
     assert floodwait["count"] == 5
     assert floodwait["ports"] == [8799, 8800]

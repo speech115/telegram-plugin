@@ -30,6 +30,13 @@ def _add_slow_tools(recommendations: list[dict[str, Any]], telemetry: dict[str, 
             continue
         tool = str(row.get("tool") or "unknown")
         p95 = row.get("p95_ms")
+        if "media" in tool or tool in {"send_file", "download_dialog_media", "download_media_batch"}:
+            recommendation = (
+                "Start with a scoped media manifest and batch downloads; avoid broad media fetches "
+                "until selected message ids are known."
+            )
+        else:
+            recommendation = "Start with this path when optimizing latency; it has real recent traffic."
         recommendations.append(
             {
                 "kind": "slow_tool",
@@ -38,7 +45,7 @@ def _add_slow_tools(recommendations: list[dict[str, Any]], telemetry: dict[str, 
                 "message": f"{tool} is among the slowest tools in the telemetry window.",
                 "p95_ms": p95,
                 "max_ms": row.get("max_ms"),
-                "recommendation": "Start with this path when optimizing latency; it has real recent traffic.",
+                "recommendation": recommendation,
             }
         )
 

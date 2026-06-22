@@ -4,36 +4,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .catalog import CORE_COMPONENTS, MAINTENANCE_COMPONENTS, PROFILE_COMPONENTS, ControlPlaneCatalog
+
 ComponentCollector = Callable[[], dict[str, Any]]
-
-CORE_COMPONENTS = (
-    "mcp_surface",
-)
-
-MAINTENANCE_COMPONENTS = (
-    "managed_systems",
-    "docs",
-    "plugin_drift",
-    "mcp_telemetry",
-    "fast_read_adapter",
-    "golden_read_smoke",
-    "agent_docs_sync",
-    "release_gates",
-    "install_adapters",
-    "mcp_surface",
-    "mcp_profiles",
-    "source_routing",
-    "launchd",
-    "sessions",
-    "telegram_mirror",
-    "runtime_inventory",
-    "telecrawl",
-)
-
-PROFILE_COMPONENTS = {
-    "core": CORE_COMPONENTS,
-    "maintenance": MAINTENANCE_COMPONENTS,
-}
 
 
 @dataclass(frozen=True)
@@ -43,10 +16,12 @@ class DoctorProfile:
 
 
 def doctor_profile(name: str = "core") -> DoctorProfile:
-    components = PROFILE_COMPONENTS.get(name)
-    if components is None:
-        known = ", ".join(sorted(PROFILE_COMPONENTS))
-        raise ValueError(f"Unknown doctor profile {name!r}; expected one of: {known}")
+    catalog = ControlPlaneCatalog.default()
+    try:
+        components = catalog.profile_components(name)
+    except KeyError as exc:
+        known = ", ".join(sorted(catalog.profile_names()))
+        raise ValueError(f"Unknown doctor profile {name!r}; expected one of: {known}") from exc
     return DoctorProfile(name=name, components=components)
 
 

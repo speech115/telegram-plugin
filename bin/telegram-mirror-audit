@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHONPATH="${ROOT}/src" python3 -m telegram_control_plane mirror-audit "$@"
+PYTHONPATH="${ROOT}/src" exec python3 -m telegram_control_plane mirror-audit "$@"

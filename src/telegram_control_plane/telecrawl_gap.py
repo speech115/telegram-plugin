@@ -221,6 +221,7 @@ def evaluate_archive_readiness(
 ) -> dict[str, Any]:
     payload = policy if policy is not None else load_telecrawl_policy()
     findings: list[dict[str, Any]] = []
+    accepted_findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
     active_incomplete = [
         row
@@ -241,7 +242,11 @@ def evaluate_archive_readiness(
         if isinstance(archive_status.get("import_gaps"), dict)
         else {}
     )
-    findings.extend(known_gaps_findings(payload, import_gaps_payload))
+    for finding in known_gaps_findings(payload, import_gaps_payload):
+        if finding.get("expected_operational_warning") is True:
+            accepted_findings.append(finding)
+        else:
+            findings.append(finding)
     if archive_status.get("source_kind") != "archive_snapshot":
         findings.append(
             {
@@ -253,5 +258,6 @@ def evaluate_archive_readiness(
     return {
         "status": status_from_findings(findings),
         "findings": findings,
+        "accepted_findings": accepted_findings,
         "gap_policy": gap_policy_summary(payload),
     }

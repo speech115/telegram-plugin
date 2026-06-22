@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .doctor_profiles import collect_profile_components, doctor_profile
-from . import runtime_inventory, source_routing
+from . import runtime_compat, runtime_inventory, source_routing
 from .util import status_from_findings
 
 ComponentReports = dict[str, dict[str, Any]]
@@ -83,6 +83,7 @@ class ControlPlaneDoctor:
             "telegram_mirror": mirror,
             "mirror_fast_status": audits.audit_mirror_fast_status,
             "runtime_inventory": runtime_inventory_report,
+            "runtime_compat": runtime_compat.audit_runtime_compat,
             "telecrawl": audits.audit_telecrawl,
         }
         return collect_profile_components(
@@ -94,11 +95,16 @@ class ControlPlaneDoctor:
     def build_registry(self, raw_components: ComponentReports | None = None) -> dict[str, Any]:
         components_input = raw_components if raw_components is not None else self.collect_components()
         findings: list[dict[str, Any]] = []
+        accepted_findings: list[dict[str, Any]] = []
         for component, report in components_input.items():
             for item in report.get("findings", []):
                 enriched = dict(item)
                 enriched.setdefault("component", component)
                 findings.append(enriched)
+            for item in report.get("accepted_findings", []):
+                enriched = dict(item)
+                enriched.setdefault("component", component)
+                accepted_findings.append(enriched)
 
         components = components_input
         registry = {
@@ -111,8 +117,10 @@ class ControlPlaneDoctor:
                 "components": {name: report.get("status") for name, report in components_input.items()},
                 "blocking_findings": sum(1 for item in findings if item.get("severity") == "blocking"),
                 "warning_findings": sum(1 for item in findings if item.get("severity") in {"warn", "warning"}),
+                "accepted_findings": len(accepted_findings),
             },
             "findings": findings,
+            "accepted_findings": accepted_findings,
             "components": components,
         }
         return registry

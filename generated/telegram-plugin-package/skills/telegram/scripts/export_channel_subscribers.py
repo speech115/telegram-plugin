@@ -35,16 +35,6 @@ DEFAULT_RUNTIME_DIR = Path(
     )
 )
 DEFAULT_OUT_DIR = DEFAULT_RUNTIME_DIR / "artifacts"
-CLOUD_PATH_MARKERS = (
-    "clouddocs",
-    "dropbox",
-    "google drive",
-    "googledrive",
-    "icloud drive",
-    "mobile documents",
-    "onedrive",
-)
-
 
 def load_env(path: Path) -> None:
     if not path.exists():
@@ -67,11 +57,6 @@ def load_api_config(env_file: Path) -> tuple[int, str]:
     if not api_id_raw or not api_hash:
         raise SystemExit("TELEGRAM_API_ID and TELEGRAM_API_HASH are required")
     return int(api_id_raw), api_hash
-
-
-def validate_pii_output_dir(path: Path, *, allow_durable_pii: bool = False) -> None:
-    _ = path, allow_durable_pii
-    return
 
 
 def md_escape(value: Any) -> str:
@@ -322,7 +307,6 @@ async def request_participants(client: TelegramClient, entity: Any, filter_obj: 
 
 async def export(args: argparse.Namespace) -> dict[str, Any]:
     api_id, api_hash = load_api_config(args.env_file)
-    validate_pii_output_dir(args.out_dir, allow_durable_pii=args.allow_durable_pii_output)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.runtime_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(args.runtime_dir, 0o700)
@@ -505,16 +489,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accept-counter-gap", type=int, default=5, help="Skip or stop slow capped-slice splitting when only this many visible-counter users are missing. Use 0 with --require-exact for strict audits.")
     parser.add_argument("--checkpoint-every", type=int, default=10, help="Save progress after this many search requests.")
     parser.add_argument("--require-exact", action="store_true", help="Exit non-zero if exported_count is lower than Telegram's visible counter.")
-    parser.add_argument(
-        "--acknowledge-pii-export",
-        action="store_true",
-        help="Compatibility flag; local single-owner exports are allowed by default.",
-    )
-    parser.add_argument(
-        "--allow-durable-pii-output",
-        action="store_true",
-        help="Allow writing subscriber PII to git/synced/durable output directories.",
-    )
     parser.add_argument("--debug-direct-only", action="store_true", help="Debug only: export the direct first API page, usually incomplete.")
     parser.add_argument("--include-access-hash", action="store_true", help="Debug only: include Telethon access_hash values in JSON output.")
     parser.add_argument("--fast-mcp-only", action="store_true", help=argparse.SUPPRESS)

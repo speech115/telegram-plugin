@@ -1,6 +1,8 @@
 # MCP Surface
 
 Default local agent surface is the full `telegram-mcp` tool set.
+The active policy profile is `owner_local_full_mcp` in
+`policy/surface-contract.json`.
 
 The old 16-tool facade allowlist is no longer the healthy target for this
 single-user machine. A healthy config exposes the local MCP server without

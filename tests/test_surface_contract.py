@@ -147,7 +147,7 @@ def test_mcp_surface_flags_plugin_allowlist_drift(monkeypatch) -> None:
 
 
 def test_mcp_surface_includes_surface_contract_summary() -> None:
-    report = audit_mcp_surface()
+    report = audit_mcp_surface(include_live_probe=False)
     assert report["status"] == "ok"
     assert report["surface_mode"] == "owner_local_full_mcp"
     assert report["active_surface_tools"] == report["default_surface_tools"]
@@ -158,3 +158,14 @@ def test_mcp_surface_includes_surface_contract_summary() -> None:
     assert report["missing_required_full_surface_tools"] == []
     assert report["surface_contract"]["active_profile"] == "owner_local_full_mcp"
     assert report["surface_contract"]["policy_path"].endswith("surface-contract.json")
+
+
+def test_context_describes_owner_local_full_surface() -> None:
+    root = Path(__file__).resolve().parents[1]
+    context = (root / "CONTEXT.md").read_text(encoding="utf-8")
+    mcp_surface = (root / "docs/agents/mcp-surface.md").read_text(encoding="utf-8")
+
+    assert "owner_local_full_mcp" in context
+    assert "owner_local_full_mcp" in mcp_surface
+    assert "restricted tool profile" not in context
+    assert "Legacy facade allowlist" in context
