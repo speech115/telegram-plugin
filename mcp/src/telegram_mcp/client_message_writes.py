@@ -187,10 +187,10 @@ class MessageWriteMixin:
             id=0,
             question=question,
             answers=poll_answers,
+            hash=0,
             multiple_choice=multiple_choice,
             quiz=quiz_mode,
             public_voters=public_voters,
-            hash=0,
         )
         media = InputMediaPoll(
             poll=poll,

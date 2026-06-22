@@ -1,15 +1,121 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+from __future__ import annotations
 
-# shellcheck source=telegram-env.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-PYTHON="${TELEGRAM_MCP_REPO}/.venv/bin/python"
 
-if [ ! -x "${PYTHON}" ]; then
-  printf 'telegram-fast-read-today: missing MCP venv python: %s\n' "${PYTHON}" >&2
-  exit 2
-fi
+def is_tool_error_text(value: object) -> bool:
+    return isinstance(value, str) and "error executing tool " in value.lower()
 
-export PYTHONPATH="${TELEGRAM_MCP_REPO}/src${PYTHONPATH:+:${PYTHONPATH}}"
-exec "${PYTHON}" -m telegram_mcp.fast_read_today "$@"
+
+def sanitized_tool_error(payload: dict[str, object] | None = None, tool: str | None = None) -> dict[str, object]:
+    payload = payload or {}
+    return {
+        "elapsed_seconds": payload.get("elapsed_seconds"),
+        "endpoint": payload.get("endpoint"),
+        "endpoint_port": payload.get("endpoint_port"),
+        "error": "telegram_tool_error",
+        "message": "Live Telegram read failed inside the MCP tool.",
+        "mode": payload.get("mode", "telegram_fast_read_today"),
+        "ok": False,
+        "tool": tool or "telegram_read",
+    }
+
+
+def print_sanitized_tool_error(payload: dict[str, object] | None = None, tool: str | None = None) -> None:
+    print(
+        json.dumps(
+            sanitized_tool_error(payload, tool),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def main(argv: list[str]) -> int:
+    root = Path(__file__).resolve().parents[1]
+    home = Path(os.environ.get("HOME") or str(Path.home()))
+    mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
+    python = mcp_repo / ".venv/bin/python"
+    if not python.exists():
+        print(f"telegram-fast-read-today: missing MCP venv python: {python}", file=sys.stderr)
+        return 2
+
+    env = dict(os.environ)
+    env.update(
+        {
+            "TELEGRAM_CONTROL_ROOT": str(root),
+            "TELEGRAM_MCP_REPO": str(mcp_repo),
+            "TELEGRAM_PLUGIN_PACKAGE": str(root / "generated/telegram-plugin-package"),
+            "TELEGRAM_PLUGIN_SOURCE": str(home / "plugins/telegram"),
+            "TELEGRAM_PLUGIN_CACHE_ROOT": str(home / ".codex/plugins/cache/sereja-local/telegram"),
+            "TELEGRAM_LIVE_SKILL": str(home / ".agents/skills/telegram"),
+            "TELEGRAM_LOCAL_MIRROR_SKILL": str(home / "Projects/.codex/skills/telegram-local-mirror"),
+            "TELEGRAM_MIRROR_ROOT": str(home / "Projects/tools/telegram-mirror"),
+            "TELEGRAM_MIRROR_RUNTIME_ROOT": str(home / "Projects/runtime/telegram-mirror"),
+            "TELEGRAM_MIRROR_LEGACY_ALIAS": str(home / "Projects/tools/hermes-agent-local/workspace/integrations/telegram-mirror"),
+            "TELEGRAM_TELECRAWL_ARCHIVE": str(home / "Projects/tools/agent-tooling/bin/telecrawl-archive"),
+            "TELEGRAM_TELECRAWL_DEFAULT_DB": str(home / "Projects/.artifacts/telecrawl/telecrawl-fast.db"),
+            "TELEGRAM_GENERATED_DIR": str(root / "generated"),
+            "TELEGRAM_POLICY_DIR": str(root / "policy"),
+            "TELEGRAM_FAST_READ_ADAPTER": str(root / "bin/telegram-fast-read-today"),
+            "TELEGRAM_TG_CLI": str(mcp_repo / "bin/tg"),
+            "TELEGRAM_OBSERVED_REGISTRY": str(root / "generated/observed-registry.json"),
+            "TELEGRAM_LAUNCHAGENTS_DIR": str(home / "Library/LaunchAgents"),
+            "TELEGRAM_MCP_TELEMETRY_LOG": str(home / "telegram-mcp/telemetry.jsonl"),
+            "TELEGRAM_MCP_TELEMETRY_DIR": str(home / "telegram-mcp/telemetry"),
+            "TELEGRAM_MCP_TELEMETRY_STATS": str(home / "telegram-mcp/telemetry-stats.json"),
+            "TELEGRAM_TELEMETRY_ALERT_THRESHOLDS": str(root / "policy/telemetry/alert-thresholds.json"),
+        }
+    )
+    env["PYTHONPATH"] = str(mcp_repo / "src") + (":" + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+
+    completed = subprocess.run(
+        [str(python), "-m", "telegram_mcp.fast_read_today", *argv],
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            payload = None
+        if (
+            isinstance(payload, dict)
+            and (
+                payload.get("error") == "telegram_tool_error"
+                or is_tool_error_text(payload.get("error"))
+            )
+        ) or is_tool_error_text(completed.stdout) or is_tool_error_text(completed.stderr):
+            print_sanitized_tool_error(payload if isinstance(payload, dict) else None)
+        else:
+            print(completed.stdout, end="")
+            print(completed.stderr, end="", file=sys.stderr)
+        return completed.returncode
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        print(completed.stdout, end="")
+        return 0
+
+    tool_payload = payload.get("payload") if isinstance(payload, dict) else None
+    if is_tool_error_text(tool_payload):
+        tool = tool_payload.split(":", 1)[0].removeprefix("Error executing tool ").strip()
+        print_sanitized_tool_error(payload, tool or "unknown")
+        return 1
+
+    print(completed.stdout, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

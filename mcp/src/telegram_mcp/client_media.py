@@ -55,17 +55,27 @@ class MediaOperationsMixin:
     def _media_manifest_metadata(
         self,
         msg: Any | None,
-    ) -> tuple[str | None, str | None, int | None]:
+    ) -> tuple[str | None, str | None, int | None, str | None]:
         media_type = get_media_type(msg) if msg is not None else None
         mime_type = None
         file_size = None
+        remote_media_ref = None
         document = getattr(msg, "document", None) if msg is not None else None
         if document is not None:
             mime_type = getattr(document, "mime_type", None)
             file_size = getattr(document, "size", None)
+            document_id = getattr(document, "id", None)
+            dc_id = getattr(document, "dc_id", None)
+            if document_id is not None:
+                remote_media_ref = f"document:{document_id}:dc{dc_id}:size{file_size}"
         elif getattr(msg, "photo", None) is not None:
             media_type = "photo"
-        return media_type, mime_type, file_size
+            photo = getattr(msg, "photo", None)
+            photo_id = getattr(photo, "id", None)
+            dc_id = getattr(photo, "dc_id", None)
+            if photo_id is not None:
+                remote_media_ref = f"photo:{photo_id}:dc{dc_id}"
+        return media_type, mime_type, file_size, remote_media_ref
 
     def _record_downloaded_message_media(
         self,
@@ -74,6 +84,7 @@ class MediaOperationsMixin:
         chat_ref: str,
         message_id: int,
         path: str | None,
+        remote_media_ref: str | None = None,
     ) -> None:
         if not path:
             return
@@ -86,6 +97,7 @@ class MediaOperationsMixin:
                 chat_ref=chat_ref,
                 message_id=message_id,
                 local_path=Path(path),
+                remote_media_ref=remote_media_ref,
             )
         except (OSError, sqlite3.Error) as exc:
             structlog.get_logger().warning(
@@ -95,7 +107,13 @@ class MediaOperationsMixin:
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-    def _known_local_media_path(self, *, chat_id: int | str, message_id: int) -> str | None:
+    def _known_local_media_path(
+        self,
+        *,
+        chat_id: int | str,
+        message_id: int,
+        remote_media_ref: str | None = None,
+    ) -> str | None:
         try:
             entry = DownloadRegistry(
                 self.settings.media_download_registry_path,
@@ -109,6 +127,8 @@ class MediaOperationsMixin:
             )
             return None
         if entry is None:
+            return None
+        if remote_media_ref is not None and entry.remote_media_ref != remote_media_ref:
             return None
         path = Path(entry.local_path).expanduser()
         return str(path) if path.exists() else None
@@ -148,9 +168,7 @@ class MediaOperationsMixin:
 
         media_messages = [message for message in read_result.messages if message.has_media]
         raw_messages_by_id: dict[int, Any] = {}
-        messages_needing_metadata = [
-            message for message in media_messages if message.media_type is None
-        ]
+        messages_needing_metadata = list(media_messages)
         if messages_needing_metadata:
             entity = await self._resolve_entity(self._coerce_dialog_query(chat))
             raw_messages = await self._run_read(
@@ -172,10 +190,13 @@ class MediaOperationsMixin:
         items = []
         for message in media_messages:
             raw_message = raw_messages_by_id.get(message.id)
-            media_type, mime_type, file_size = self._media_manifest_metadata(raw_message)
+            media_type, mime_type, file_size, remote_media_ref = (
+                self._media_manifest_metadata(raw_message)
+            )
             local_path = self._known_local_media_path(
                 chat_id=read_result.chat.id,
                 message_id=message.id,
+                remote_media_ref=remote_media_ref,
             )
             items.append(
                 MediaInspectionManifestItem(
@@ -186,6 +207,7 @@ class MediaOperationsMixin:
                     media_type=media_type or message.media_type,
                     mime_type=mime_type or message.mime_type,
                     file_size=file_size or message.file_size,
+                    remote_media_ref=remote_media_ref,
                     local_path=local_path,
                 )
             )
@@ -225,6 +247,7 @@ class MediaOperationsMixin:
             chat_ref=chat_ref,
             message_id=message_id,
             path=path,
+            remote_media_ref=self._media_manifest_metadata(msg)[3],
         )
         return self._media_info_for_downloaded_message(msg, path)
 

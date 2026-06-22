@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-06-22T06:44:47.929371+00:00",
+  "control_root": "/Users/sereja/Projects/tools/telegram",
+  "external_telegram_mcp": "/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp",
+  "git_status": {
+    "tools_telegram": [
+      " M CONTEXT.md",
+      " M bin/telegram-fast-read-today",
+      " M bin/telegram-mirror-audit",
+      " M bin/telegram-source-routing-audit",
+      " M docs/agents/mcp-surface.md",
+      " M generated/telegram-plugin-package/skills/telegram/SKILL.md",
+      " M generated/telegram-plugin-package/skills/telegram/references/subscriber-export.md",
+      " M generated/telegram-plugin-package/skills/telegram/references/validation.md",
+      " M generated/telegram-plugin-package/skills/telegram/scripts/export_channel_subscribers.py",
+      " M generated/telegram-plugin-package/skills/telegram/scripts/smoke_exporter_contract.py",
+      " M policy/release-gates.json",
+      " M src/telegram_control_plane/audits.py",
+      " M src/telegram_control_plane/insights.py",
+      " M tests/test_control_plane.py",
+      " M tests/test_insights.py",
+      " M tests/test_surface_contract.py",
+      "?? docs/agents/feature-status.csv",
+      "?? docs/agents/optimization-baseline.json",
+      "?? src/telegram_control_plane/skill_behavior.py",
+      "?? tests/test_feature_status_matrix.py",
+      "?? tests/test_skill_behavior.py"
+    ],
+    "external_telegram_mcp": [
+      " M src/telegram_mcp/fast_read_today.py",
+      " M src/telegram_mcp/tg_cli.py",
+      " M tests/test_fast_read_today.py",
+      "?? tests/test_tg_cli.py"
+    ]
+  },
+  "feature_status": {
+    "path": "docs/agents/feature-status.csv",
+    "rows": 68,
+    "statuses": {
+      "tested_pass": 39,
+      "tested_pass_safe_apply": 1,
+      "tested_pass_dry_run": 1,
+      "tested_pass_behavior_fixture": 7,
+      "tested_pass_check_mode": 1,
+      "tested_pass_surface_policy": 19
+    },
+    "code_statuses": {
+      "pass": 68
+    },
+    "host_statuses": {
+      "pass": 58,
+      "not_applicable": 10
+    },
+    "proof_types": {
+      "command-json": 36,
+      "behavior-fixture": 13,
+      "surface-policy-json": 19
+    },
+    "optimization_verdicts": {
+      "acceptable": 31,
+      "improved": 37
+    },
+    "host_blockers": []
+  },
+  "surface_contract": {
+    "active_profile": "owner_local_full_mcp",
+    "required_tools": [
+      "delete_messages",
+      "edit_message",
+      "forward_messages",
+      "get_discussion_message",
+      "get_forum_topics_by_id",
+      "get_message_reactions",
+      "get_thread_replies",
+      "get_unread_reactions",
+      "global_search",
+      "list_chats",
+      "list_contacts",
+      "list_forum_topics",
+      "send_file",
+      "send_message",
+      "send_reaction",
+      "sent_media_search",
+      "set_message_pinned",
+      "telegram_read",
+      "telegram_send"
+    ]
+  },
+  "release_gates": {
+    "modes": {
+      "local": [
+        "managed-systems",
+        "mcp-surface",
+        "plugin-drift",
+        "release-gates",
+        "install-adapters",
+        "docs-audit",
+        "write-safety-smoke",
+        "runtime-contract-smoke",
+        "runtime-app-media-smoke",
+        "pytest",
+        "tg-read-smoke"
+      ],
+      "ci": [
+        "agent-docs-check",
+        "docs-audit",
+        "mcp-surface",
+        "source-routing-audit",
+        "pytest"
+      ]
+    },
+    "gate_metadata": {
+      "managed-systems": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "operational",
+        "can_run_offline": true
+      },
+      "mcp-surface": {
+        "cost_tier": "medium",
+        "live_required": true,
+        "mutates_state": false,
+        "operational_vs_code": "mixed",
+        "can_run_offline": false
+      },
+      "plugin-drift": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "release-gates": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "install-adapters": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "operational",
+        "can_run_offline": true
+      },
+      "docs-audit": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "source-routing-audit": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "agent-docs-check": {
+        "cost_tier": "cheap",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "write-safety-smoke": {
+        "cost_tier": "medium",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "runtime-contract-smoke": {
+        "cost_tier": "medium",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "runtime-app-media-smoke": {
+        "cost_tier": "medium",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "pytest": {
+        "cost_tier": "expensive",
+        "live_required": false,
+        "mutates_state": false,
+        "operational_vs_code": "code",
+        "can_run_offline": true
+      },
+      "tg-read-smoke": {
+        "cost_tier": "live",
+        "live_required": true,
+        "mutates_state": false,
+        "operational_vs_code": "live",
+        "can_run_offline": false
+      }
+    }
+  },
+  "safe_gate_results": [
+    {
+      "id": "managed-systems",
+      "command": "./bin/telegram-managed-systems --json",
+      "exit_code": 0,
+      "duration_ms": 111,
+      "json_status": "ok",
+      "stdout_bytes": 12596,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "source-routing-audit",
+      "command": "./bin/telegram-source-routing-audit --json",
+      "exit_code": 0,
+      "duration_ms": 103,
+      "json_status": "ok",
+      "stdout_bytes": 2861,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "telemetry-status",
+      "command": "./bin/telegram-telemetry-status --json",
+      "exit_code": 0,
+      "duration_ms": 420,
+      "json_status": "warn",
+      "stdout_bytes": 25558,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "insights",
+      "command": "./bin/telegram-insights --json",
+      "exit_code": 0,
+      "duration_ms": 423,
+      "json_status": "warn",
+      "stdout_bytes": 6013,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "plugin-drift",
+      "command": "./bin/telegram-plugin-drift --json",
+      "exit_code": 0,
+      "duration_ms": 182,
+      "json_status": "warn",
+      "stdout_bytes": 9810,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "release-gates",
+      "command": "./bin/telegram-release-gates --json",
+      "exit_code": 0,
+      "duration_ms": 678,
+      "json_status": "ok",
+      "stdout_bytes": 764,
+      "stderr_bytes": 0
+    },
+    {
+      "id": "fast-read-today",
+      "command": "./bin/telegram-fast-read-today me --limit 1",
+      "exit_code": 0,
+      "duration_ms": 878,
+      "json_status": "fail",
+      "stdout_bytes": 252,
+      "stderr_bytes": 0,
+      "status": "ok",
+      "summary": "post-fix pass: 3 consecutive live fast-read runs"
+    }
+  ]
+}

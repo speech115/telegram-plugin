@@ -5,10 +5,15 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import structlog
+from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.messages import GetFullChatRequest
 from telethon.tl.types import Channel, Chat, User
 
 from .types import ChatInfo, Dialog, DialogHandle, UserInfo
 from .utils import get_display_name, get_entity_type
+
+log = structlog.get_logger()
 
 
 class ChatOperationsMixin:
@@ -117,30 +122,32 @@ class ChatOperationsMixin:
             try:
                 full_chat = await self._run_read(
                     "get_chat_info_full_channel",
-                    lambda: self.client(
-                        __import__(
-                            "telethon.tl.functions.channels", fromlist=["GetFullChannelRequest"]
-                        ).GetFullChannelRequest(full)
-                    ),
+                    lambda: self.client(GetFullChannelRequest(full)),
                 )
                 participants_count = full_chat.full_chat.participants_count
                 description = full_chat.full_chat.about
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "telegram_get_chat_info_full_channel_incomplete",
+                    chat=str(chat),
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
         elif isinstance(full, Chat):
             try:
                 full_chat = await self._run_read(
                     "get_chat_info_full_chat",
-                    lambda: self.client(
-                        __import__(
-                            "telethon.tl.functions.messages", fromlist=["GetFullChatRequest"]
-                        ).GetFullChatRequest(full.id)
-                    ),
+                    lambda: self.client(GetFullChatRequest(full.id)),
                 )
                 participants_count = full_chat.full_chat.participants_count
                 description = full_chat.full_chat.about
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning(
+                    "telegram_get_chat_info_full_chat_incomplete",
+                    chat=str(chat),
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                )
 
         result = ChatInfo(
             id=full.id,

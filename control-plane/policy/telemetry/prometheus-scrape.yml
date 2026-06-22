@@ -13,3 +13,15 @@ scrape_configs:
           - 127.0.0.1:9110
         labels:
           profile: pl
+      - targets:
+          - 127.0.0.1:9111
+        labels:
+          profile: recklessou
+      - targets:
+          - 127.0.0.1:9112
+        labels:
+          profile: teamsyncsage
+      - targets:
+          - 127.0.0.1:9113
+        labels:
+          profile: vermassov

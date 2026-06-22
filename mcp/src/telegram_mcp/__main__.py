@@ -2,6 +2,10 @@
 
 import sys
 
+from .telethon_compat import apply_telethon_compat
+
+apply_telethon_compat()
+
 from .auth import run_doctor, run_health, run_login
 
 

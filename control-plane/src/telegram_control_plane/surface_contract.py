@@ -25,6 +25,12 @@ WRITE_POLICY_PATH = POLICY_DIR / "write-policy.json"
 
 @dataclass(frozen=True)
 class SurfaceContractPolicy:
+    active_profile: str
+    owner_local_required_tools: frozenset[str]
+    owner_local_direct_write_tools: frozenset[str]
+    owner_local_plugin_allowlists_allowed: bool
+    owner_local_direct_write_tools_allowed: bool
+    owner_local_live_probe_accounts: tuple[str, ...]
     approved_facade_tools: frozenset[str]
     confirmed_write_facade_tools: frozenset[str]
     deprecated_doc_tools: frozenset[str]
@@ -48,12 +54,22 @@ def _as_alias_map(values: Any) -> dict[str, str]:
     }
 
 
+def _as_str_tuple(values: Any) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        return ()
+    return tuple(str(item) for item in values if isinstance(item, str))
+
+
 @lru_cache(maxsize=4)
 def load_surface_contract_policy(
     surface_contract_path: str,
     write_policy_path: str,
 ) -> SurfaceContractPolicy:
     payload = load_json(Path(surface_contract_path)) or {}
+    active_profile = str(payload.get("active_profile") or "default_profile")
+    owner_profile = payload.get("owner_local_full_mcp")
+    if not isinstance(owner_profile, dict):
+        owner_profile = {}
     profile = payload.get("default_profile")
     if not isinstance(profile, dict):
         profile = {}
@@ -66,6 +82,12 @@ def load_surface_contract_policy(
             confirmed = _as_str_set(default_profile.get("confirmed_write_facade_tools"))
 
     return SurfaceContractPolicy(
+        active_profile=active_profile,
+        owner_local_required_tools=_as_str_set(owner_profile.get("required_tools")),
+        owner_local_direct_write_tools=_as_str_set(owner_profile.get("direct_write_tools")),
+        owner_local_plugin_allowlists_allowed=bool(owner_profile.get("plugin_allowlists_allowed")),
+        owner_local_direct_write_tools_allowed=bool(owner_profile.get("direct_write_tools_allowed")),
+        owner_local_live_probe_accounts=_as_str_tuple(owner_profile.get("live_probe_accounts")),
         approved_facade_tools=_as_str_set(profile.get("approved_facade_tools")),
         confirmed_write_facade_tools=confirmed,
         deprecated_doc_tools=_as_str_set(profile.get("deprecated_doc_tools")),
@@ -90,6 +112,12 @@ def contract_summary() -> dict[str, Any]:
     approved = policy.approved_facade_tools
     return {
         "policy_path": str(SURFACE_CONTRACT_PATH),
+        "active_profile": policy.active_profile,
+        "owner_local_required_tools": sorted(policy.owner_local_required_tools),
+        "owner_local_direct_write_tools": sorted(policy.owner_local_direct_write_tools),
+        "owner_local_plugin_allowlists_allowed": policy.owner_local_plugin_allowlists_allowed,
+        "owner_local_direct_write_tools_allowed": policy.owner_local_direct_write_tools_allowed,
+        "owner_local_live_probe_accounts": list(policy.owner_local_live_probe_accounts),
         "approved_facade_tool_count": len(approved),
         "confirmed_write_facade_tools": sorted(policy.confirmed_write_facade_tools),
         "deprecated_doc_tools": sorted(policy.deprecated_doc_tools),
@@ -100,6 +128,23 @@ def contract_summary() -> dict[str, Any]:
 
 def approved_facade_tools() -> frozenset[str]:
     return _policy().approved_facade_tools
+
+
+def active_profile() -> str:
+    return _policy().active_profile
+
+
+def owner_local_required_tools() -> frozenset[str]:
+    return _policy().owner_local_required_tools
+
+
+def owner_local_direct_write_tools() -> frozenset[str]:
+    return _policy().owner_local_direct_write_tools
+
+
+def owner_local_live_probe_accounts() -> tuple[str, ...]:
+    accounts = _policy().owner_local_live_probe_accounts
+    return accounts if accounts else ("main", "pl")
 
 
 def confirmed_write_facade_tools() -> frozenset[str]:

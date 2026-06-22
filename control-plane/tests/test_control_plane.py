@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import subprocess
+import shutil
+import importlib.machinery
+import importlib.util
 from pathlib import Path
 
 import telegram_control_plane.audits as audits
@@ -19,6 +24,17 @@ import telegram_control_plane.planner as planner
 from telegram_control_plane.audit_remediation import apply_repair_plan, build_repair_plan
 from telegram_control_plane import audit_remediation as remediation
 from telegram_control_plane.paths import CONTROL_ROOT, MCP_REPO, PLUGIN_SOURCE
+
+
+def load_fast_read_adapter_module():
+    path = Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today"
+    loader = importlib.machinery.SourceFileLoader("telegram_fast_read_today_adapter", str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_imported_tool_names_excludes_register_aliases(tmp_path: Path) -> None:
@@ -45,14 +61,54 @@ def test_dialog_annotation_map_reads_facade_registration(tmp_path: Path) -> None
     }
 
 
-def test_mcp_surface_is_clean_after_default_profile_hardening() -> None:
-    report = audit_mcp_surface()
+def test_mcp_surface_is_clean_for_owner_local_full_surface() -> None:
+    report = audit_mcp_surface(include_live_probe=False)
     assert report["status"] == "ok"
-    assert "create_channel" not in report["default_surface_tools"]
-    assert "send_dialog_message" not in report["default_surface_tools"]
-    assert "send_file" not in report["default_surface_tools"]
+    assert report["surface_mode"] == "owner_local_full_mcp"
+    assert "create_channel" in report["default_surface_tools"]
+    assert "send_dialog_message" in report["default_surface_tools"]
+    assert "send_file" in report["default_surface_tools"]
+    assert "telegram_send" in report["default_surface_tools"]
     assert "telegram_confirmed_send" in report["default_surface_tools"]
     assert not report["unexpected_write_or_destructive_tools"]
+    assert "send_file" in report["legacy_default_surface_evaluation"]["unexpected_write_or_destructive_tools"]
+
+
+def test_mcp_surface_live_probe_failure_is_blocking(monkeypatch) -> None:
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
+    monkeypatch.setattr(
+        audits,
+        "live_mcp_surface_probe",
+        lambda *_args, **_kwargs: {
+            "status": "fail",
+            "error": "daemon unavailable",
+            "accounts": {},
+        },
+    )
+
+    report = audit_mcp_surface(include_live_probe=True)
+
+    assert report["status"] == "fail"
+    assert any(item["id"] == "mcp_live_probe_failed" for item in report["findings"])
+
+
+def test_mcp_surface_skips_live_probe_in_portable_ci(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_CI_PORTABLE", "1")
+    monkeypatch.setattr(
+        audits,
+        "live_mcp_surface_probe",
+        lambda *_args, **_kwargs: {
+            "status": "fail",
+            "error": "daemon unavailable",
+            "accounts": {},
+        },
+    )
+
+    report = audit_mcp_surface()
+
+    assert report["status"] == "ok"
+    assert report["live_probe"]["status"] == "skipped"
+    assert not any(item["id"] == "mcp_live_probe_failed" for item in report["findings"])
 
 
 def test_docs_audit_passes_for_current_control_plane_docs() -> None:
@@ -71,6 +127,273 @@ def test_docs_audit_flags_stale_plugin_version(monkeypatch, tmp_path: Path) -> N
 
     assert report["status"] == "fail"
     assert any(item["id"] == "stale_plugin_version_in_docs" for item in report["findings"])
+
+
+def test_mcp_telemetry_surfaces_error_buckets_and_write_summary(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "_telemetry_thresholds", lambda: {"window_hours": 1})
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 4,
+            "event_counts": {"tool_call": 2},
+            "tool_errors": 1,
+            "cache": {"hit_rate": 0.5},
+            "source_counts": {"mcp_tool": 2},
+            "tool_error_buckets": [
+                {
+                    "tool": "telegram_read",
+                    "error_type": "ToolContractError",
+                    "error_code": "dialog_not_found",
+                    "port": 8799,
+                    "count": 1,
+                }
+            ],
+            "write_operations": {
+                "count": 2,
+                "errors": 1,
+                "by_operation": {"send_message": {"count": 2, "errors": 1}},
+                "latency": {"send_message": {"p95_ms": 40.0}},
+            },
+            "tool_latency": {
+                "telegram_read": {"count": 2, "p95_ms": 10.0},
+                "send_file": {"count": 1, "p95_ms": 9000.0},
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert report["top_tool_error_buckets"] == [
+        {
+            "tool": "telegram_read",
+            "error_type": "ToolContractError",
+            "error_code": "dialog_not_found",
+            "port": 8799,
+            "count": 1,
+        }
+    ]
+    assert report["write_operations"]["errors"] == 1
+    assert report["top_slow_tools"][0]["tool"] == "send_file"
+    assert report["top_slow_tools"][0]["p95_ms"] == 9000.0
+
+
+def test_mcp_telemetry_warns_on_stale_stats_snapshot(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    stats = tmp_path / "telemetry-stats.json"
+    stats.write_text('{"ts":"2020-01-01T00:00:00Z","runtime_stats":{},"scheduler":{}}\n', encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "MCP_TELEMETRY_STATS", stats)
+    monkeypatch.setattr(audits, "_telemetry_thresholds", lambda: {"window_hours": 1, "max_stats_age_seconds": 60})
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 1,
+            "event_counts": {"tool_call": 0},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert report["stats_file_present"] is True
+    assert report["stats_file_age_seconds"] > 60
+    assert any(item["id"] == "telemetry_stats_snapshot_stale" for item in report["findings"])
+
+
+def test_mcp_telemetry_ignores_synthetic_preflight_for_agent_warning(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_preflight_violations": 10},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 50,
+            "event_counts": {"tool_call": 20},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "agent_preflight": {
+                "preflight_violations": 0,
+                "synthetic_probe_violations": 500,
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert not any(item["id"] == "telemetry_preflight_violations" for item in report["findings"])
+
+
+def test_mcp_telemetry_preflight_warning_uses_current_read_path_language(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_preflight_violations": 10},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 50,
+            "event_counts": {"tool_call": 20},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "agent_preflight": {
+                "preflight_violations": 11,
+                "synthetic_probe_violations": 0,
+            },
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+    finding = next(item for item in report["findings"] if item["id"] == "telemetry_preflight_violations")
+
+    assert "before first live read" in finding["message"]
+    assert "get_me" not in finding["message"]
+
+
+def test_mcp_telemetry_warns_on_low_cache_hit_rate(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {
+            "window_hours": 1,
+            "min_events_for_rate_checks": 1,
+            "min_cache_hit_rate_when_cache_tracked": 0.25,
+        },
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 10},
+            "tool_errors": 0,
+            "cache": {"hit_rate": 0.1, "hits": 1, "misses": 9, "total": 10},
+            "source_counts": {},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert any(item["id"] == "telemetry_low_cache_hit_rate" for item in report["findings"])
+
+
+def test_mcp_telemetry_warns_on_prewarm_failures(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_prewarm_failure_rate": 0.2},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 1},
+            "tool_errors": 0,
+            "cache": {},
+            "source_counts": {},
+            "prewarm": {"count": 10, "failed": 3, "failure_rate": 0.3},
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    assert any(item["id"] == "telemetry_high_prewarm_failure_rate" for item in report["findings"])
+
+
+def test_mcp_telemetry_warns_on_floodwait_and_rate_limited_lanes(monkeypatch, tmp_path: Path) -> None:
+    mcp_repo = tmp_path / "mcp"
+    python_bin = mcp_repo / ".venv/bin/python"
+    python_bin.parent.mkdir(parents=True)
+    python_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    stats = tmp_path / "telemetry-stats.json"
+    stats.write_text(
+        json.dumps(
+            {
+                "ts": "2099-01-01T00:00:00Z",
+                "runtime_stats": {
+                    "lanes": {
+                        "read": {"count": 8, "rate_limited": 2, "last_flood_wait_seconds": 11},
+                        "write": {"count": 3, "rate_limited": 0},
+                    }
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audits, "MCP_REPO", mcp_repo)
+    monkeypatch.setattr(audits, "MCP_TELEMETRY_STATS", stats)
+    monkeypatch.setattr(
+        audits,
+        "_telemetry_thresholds",
+        lambda: {"window_hours": 1, "max_read_floodwait_events": 0, "max_lane_rate_limited": 1},
+    )
+    monkeypatch.setattr(
+        audits,
+        "run_json",
+        lambda *args, **kwargs: {
+            "status": "ok",
+            "events_in_window": 10,
+            "event_counts": {"tool_call": 5},
+            "tool_errors": 1,
+            "cache": {},
+            "source_counts": {},
+            "tool_error_buckets": [
+                {"tool": "telegram_search", "error_type": "FloodWaitError", "count": 1}
+            ],
+        },
+    )
+
+    report = audits.audit_mcp_telemetry()
+
+    finding_ids = {item["id"] for item in report["findings"]}
+    assert "telemetry_read_floodwait" in finding_ids
+    assert "telemetry_lane_rate_limited" in finding_ids
 
 
 def test_docs_audit_flags_deprecated_default_surface_tool(monkeypatch, tmp_path: Path) -> None:
@@ -101,6 +424,17 @@ def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
     )
 
 
+def test_fast_read_adapter_allows_missing_path_tg_in_portable_ci(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_CI_PORTABLE", "1")
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    report = audits.audit_fast_read_adapter()
+
+    assert report["status"] == "ok"
+    assert report["tg_on_path"] is None
+    assert report["adapter"]["help_probe"]["skipped_reason"] == "portable_ci_source_checked"
+
+
 def test_fast_read_adapter_calls_task_shaped_tool() -> None:
     wrapper = (Path(__file__).resolve().parents[1] / "bin" / "telegram-fast-read-today").read_text(
         encoding="utf-8"
@@ -110,6 +444,85 @@ def test_fast_read_adapter_calls_task_shaped_tool() -> None:
     assert "telegram_mcp.fast_read_today" in wrapper
     assert '"telegram_read"' in module
     assert '"read_today_dialog"' not in module
+
+
+def test_fast_read_adapter_sanitizes_nested_tool_errors(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    home = tmp_path / "home"
+    mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
+    python_path = mcp_repo / ".venv/bin/python"
+    python_path.parent.mkdir(parents=True)
+    python_path.touch()
+    module = load_fast_read_adapter_module()
+    monkeypatch.setenv("HOME", str(home))
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "mode": "telegram_fast_read_today",
+                    "endpoint": "http://127.0.0.1:8799/mcp",
+                    "endpoint_port": 8799,
+                    "payload": "Error executing tool telegram_read: private raw bytes",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    returncode = module.main(["me"])
+    captured = capsys.readouterr()
+
+    assert returncode == 1
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert payload["error"] == "telegram_tool_error"
+    assert payload["tool"] == "telegram_read"
+    assert "private raw bytes" not in captured.out
+
+
+def test_fast_read_adapter_sanitizes_failed_tool_errors(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    home = tmp_path / "home"
+    mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
+    python_path = mcp_repo / ".venv/bin/python"
+    python_path.parent.mkdir(parents=True)
+    python_path.touch()
+    module = load_fast_read_adapter_module()
+    monkeypatch.setenv("HOME", str(home))
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout=json.dumps(
+                {
+                    "ok": False,
+                    "mode": "telegram_fast_read_today",
+                    "error": "Error executing tool telegram_read: private raw bytes",
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    returncode = module.main(["me"])
+    captured = capsys.readouterr()
+
+    assert returncode == 1
+    payload = json.loads(captured.out)
+    assert payload["ok"] is False
+    assert payload["error"] == "telegram_tool_error"
+    assert payload["tool"] == "telegram_read"
+    assert "private raw bytes" not in captured.out
+    assert "private raw bytes" not in captured.err
 
 
 def test_registry_includes_fast_read_adapter_component() -> None:
@@ -136,7 +549,7 @@ def test_install_adapters_audit_is_portable() -> None:
     report = audits.audit_install_adapters()
 
     assert report["status"] == "ok", report.get("findings")
-    assert report["planned_files"] >= 4
+    assert report["planned_files"] >= 8
 
 
 def test_registry_includes_docs_component() -> None:
@@ -197,7 +610,8 @@ def test_telecrawl_audit_uses_fast_manifest_status(monkeypatch, tmp_path: Path) 
     assert report["default_archive_status"]["coverage_claim"] == "partial_archive_snapshot_with_known_gaps"
     assert report["freshness"]["last_complete_import_at"] == "2026-05-18T16:54:53Z"
     assert report["freshness"]["newest_message_at"] == "2026-05-18T16:18:16Z"
-    assert any(item["id"] == "telecrawl_known_gaps" for item in report["findings"])
+    assert report["status"] == "ok"
+    assert any(item["id"] == "telecrawl_known_gaps" for item in report["accepted_findings"])
     assert not any(item["id"] == "telecrawl_active_archives_incomplete" for item in report["findings"])
 
 
@@ -326,6 +740,49 @@ def test_mirror_preflight_externalizes_only_recovery_sessions(monkeypatch, tmp_p
     assert gates["runtime_exports"]["evidence"]["path"] == str(runtime / "runtime" / "ingest" / "telegram" / "exports")
 
 
+def test_mirror_preflight_cold_mode_only_counts_mirror_launchagents(monkeypatch, tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime" / "telegram-mirror"
+    (runtime / "runtime" / "ingest" / "telegram" / "exports").mkdir(parents=True)
+    mirror_root = tmp_path / "telegram-mirror"
+    (mirror_root / ".git").mkdir(parents=True)
+    monkeypatch.setattr(audits, "MIRROR_RUNTIME_ROOT", runtime)
+    monkeypatch.setattr(audits, "MIRROR_ROOT", mirror_root)
+    monkeypatch.setattr(
+        audits,
+        "audit_mirror",
+        lambda: {
+            "status": "ok",
+            "classification": "mirror-recovery",
+            "findings": [],
+            "runtime_state": {
+                "recovery_sessions": [],
+                "sessions": ["runtime.session"],
+                "ledgers": ["watch_progress.json"],
+                "runtime_root_exists": True,
+                "runtime_exports_exists": True,
+            },
+        },
+    )
+    monkeypatch.setattr(audits, "run_json", lambda *args, **kwargs: {"policy_exists": True, "registry": {"mirrors_count": 1}})
+    monkeypatch.setattr(
+        audits,
+        "audit_launchd",
+        lambda: {
+            "loaded_jobs": {
+                "com.sereja.telegram-music-autoclean": {"loaded": True},
+                "com.sereja.telegram-mcp-http": {"loaded": True},
+            }
+        },
+    )
+    monkeypatch.setattr(audits, "audit_sessions", lambda: {"status": "ok", "findings": []})
+
+    report = audit_mirror_preflight()
+    gates = {gate["id"]: gate for gate in report["gates"]}
+
+    assert gates["launchd_cold_mode"]["status"] == "ok"
+    assert gates["launchd_cold_mode"]["evidence"]["loaded_mirror_jobs"] == []
+
+
 def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
     original_load_json = audits.load_json
 
@@ -339,7 +796,7 @@ def test_mcp_surface_blocks_unsafe_plugin_allowlist(monkeypatch) -> None:
     report = audit_mcp_surface()
 
     assert report["status"] == "fail"
-    assert any(item["id"] == "mcp_endpoint_unsafe_allowlist_tool" for item in report["findings"])
+    assert any(item["id"] == "mcp_endpoint_has_legacy_allowlist" for item in report["findings"])
 
 
 def test_plugin_package_has_no_private_runtime_artifacts() -> None:
@@ -432,7 +889,7 @@ def test_launchd_blocks_nonzero_launchctl(monkeypatch, tmp_path: Path) -> None:
     assert any(item["id"] == "launchctl_list_failed" for item in report["findings"])
 
 
-def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path) -> None:
+def test_launchd_does_not_enforce_allowed_roots(monkeypatch, tmp_path: Path) -> None:
     plist = tmp_path / "com.sereja.telegram-evil.plist"
     plist.write_text(
         """<?xml version="1.0" encoding="UTF-8"?>
@@ -452,13 +909,14 @@ def test_launchd_blocks_paths_outside_allowed_roots(monkeypatch, tmp_path: Path)
 
     report = audits.audit_launchd()
 
-    assert report["status"] == "fail"
-    assert any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
+    assert report["status"] == "ok"
+    assert not any(item["id"] == "launchd_path_outside_allowed_roots" for item in report["findings"])
 
 
 def test_managed_systems_blocks_missing_protected_path(monkeypatch) -> None:
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
@@ -518,6 +976,7 @@ def test_managed_systems_blocks_wrong_directory_with_missing_markers(monkeypatch
 
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
@@ -554,6 +1013,7 @@ def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path:
 
     import telegram_control_plane.managed_systems as managed_systems
 
+    monkeypatch.delenv("TELEGRAM_CI_PORTABLE", raising=False)
     policy = {
         "systems": [
             {
@@ -580,7 +1040,7 @@ def test_managed_systems_blocks_unexpected_symlink_target(monkeypatch, tmp_path:
     assert any(item["id"] == "managed_system_resolved_target_mismatch" for item in report["findings"])
 
 
-def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch) -> None:
+def test_registry_persisted_snapshot_keeps_local_runtime_details(monkeypatch) -> None:
     private_components = {
         "plugin_drift": {"status": "ok", "findings": []},
         "mcp_surface": {"status": "ok", "findings": []},
@@ -667,16 +1127,16 @@ def test_registry_persisted_snapshot_redacts_private_runtime_details(monkeypatch
 
     encoded = json.dumps(registry, ensure_ascii=False)
 
-    assert "/Users/sereja/.telegram-mcp/session.session" not in encoded
-    assert "telegram_user_id" not in encoded
-    assert "tdata_path" not in encoded
-    assert "db_path" not in encoded
-    assert "manifest_path" not in encoded
-    assert "Telegram @" not in encoded
-    assert "tg:7091037467" not in encoded
+    assert "/Users/sereja/.telegram-mcp/session.session" in encoded
+    assert "telegram_user_id" in encoded
+    assert "tdata_path" in encoded
+    assert "db_path" in encoded
+    assert "manifest_path" in encoded
+    assert "Telegram @" in encoded
+    assert "tg:7091037467" in encoded
 
 
-def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
+def test_registry_uses_full_local_component_schema(monkeypatch) -> None:
     monkeypatch.setattr(audits, "_collect_components", lambda: {
         "managed_systems": {
             "status": "ok",
@@ -721,12 +1181,11 @@ def test_registry_uses_allowlisted_component_schema(monkeypatch) -> None:
 
     registry = build_registry()
 
-    assert set(registry["components"]["sessions"]) == {"status", "findings", "summary", "policy_summary"}
-    assert "sessions" not in registry["components"]["sessions"]
-    assert "accounts" not in registry["components"]["telecrawl"]
-    assert "default_archive_status" not in registry["components"]["telecrawl"]
+    assert {"status", "findings", "sessions", "policy"} <= set(registry["components"]["sessions"])
+    assert "accounts" in registry["components"]["telecrawl"]
+    assert "default_archive_status" in registry["components"]["telecrawl"]
     assert "gap_policy" in registry["components"]["telecrawl"]
-    assert "runtime_state" not in registry["components"]["telegram_mirror"]
+    assert "runtime_state" in registry["components"]["telegram_mirror"]
     assert "managed_systems" in registry["components"]
 
 
@@ -778,7 +1237,7 @@ def test_registry_is_json_serializable_and_has_no_blocking_findings_after_policy
     }.issubset(registry["components"])
 
 
-def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
+def test_repair_plan_surfaces_mcp_contract_diagnostics(monkeypatch) -> None:
     monkeypatch.setattr(
         remediation,
         "build_registry",
@@ -788,10 +1247,10 @@ def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
             "findings": [
                 {
                     "component": "mcp_surface",
-                    "id": "unexpected_write_tools",
+                    "id": "missing_full_mcp_tools",
                     "severity": "blocking",
-                    "message": "Default MCP endpoint exposes write/destructive tools outside the approved facade.",
-                    "tools": ["send_file"],
+                    "message": "Telegram MCP source does not expose required full-surface agent tools.",
+                    "tools": ["telegram_send"],
                 }
             ],
             "components": {},
@@ -799,14 +1258,16 @@ def test_repair_plan_surfaces_send_file_surface_repair(monkeypatch) -> None:
     )
 
     plan = build_repair_plan()
-    step = {item["id"]: item for item in plan["steps"]}["mcp-surface-allowlist"]
+    step = {item["id"]: item for item in plan["steps"]}["mcp-surface-contract"]
 
-    assert step["status"] == "blocked_by_current_surface"
-    assert "send_file" in step["reason"]
-    assert step["apply_commands"] == [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
+    assert step["status"] == "needs_surface_contract_diagnosis"
+    assert "telegram_send" in step["reason"]
+    assert step["apply_commands"] == []
+    assert step["auto_apply_allowed"] is False
+    assert step["triggered_by_findings"] == ["missing_full_mcp_tools"]
     from telegram_control_plane.paths import MCP_REPO
 
-    assert str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py") in step["touched_paths"]
+    assert str(MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py") in step["touched_paths"]
 
 
 def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
@@ -833,7 +1294,8 @@ def test_repair_plan_is_ordered_and_dry_run_by_default(monkeypatch) -> None:
 
     plan = build_repair_plan()
     assert plan["status"] == "ready"
-    assert plan["safety"]["default_mode"] == "dry_run_only"
+    assert plan["safety"]["default_mode"] == "dry-run"
+    assert plan["safety"]["stateful_apply_requires_explicit_step"] is True
     assert plan["recommended_order"][0] == "managed-systems-inventory"
     by_id = {step["id"]: step for step in plan["steps"]}
     assert by_id["managed-systems-inventory"]["apply_commands"] == []

@@ -4,7 +4,11 @@
   "max_tool_errors": 10,
   "max_tool_error_rate": 0.25,
   "min_cache_hit_rate_when_cache_tracked": 0.05,
+  "max_prewarm_failure_rate": 0.25,
+  "max_read_floodwait_events": 0,
+  "max_lane_rate_limited": 0,
   "max_telegram_read_p95_ms": 5000,
   "max_preflight_violations": 10,
-  "prometheus_metrics_ports": [9109, 9110]
+  "max_stats_age_seconds": 3600,
+  "prometheus_metrics_ports": [9109, 9110, 9111, 9112, 9113]
 }

@@ -27,10 +27,6 @@ reject_unsafe_env_value() {
   esac
 }
 
-file_mode() {
-  stat -c '%a' "$1" 2>/dev/null || stat -f '%OLp' "$1"
-}
-
 load_env_file() {
   local line key value
 
@@ -39,8 +35,7 @@ load_env_file() {
     printf 'Refusing env file not owned by current user: %s\n' "${ENV_FILE}" >&2
     exit 1
   fi
-  mode="$(file_mode "${ENV_FILE}")"
-  if [ "${mode}" != "600" ] && [ "${mode}" != "400" ]; then
+  if [ "$(stat -f '%OLp' "${ENV_FILE}")" != "600" ] && [ "$(stat -f '%OLp' "${ENV_FILE}")" != "400" ]; then
     printf 'Refusing env file with unsafe permissions: %s\n' "${ENV_FILE}" >&2
     exit 1
   fi
@@ -67,10 +62,6 @@ load_env_file() {
         exit 1
         ;;
     esac
-    if [ "${key}" = "TELEGRAM_MCP_TOOL_PROFILE" ]; then
-      printf 'Refusing TELEGRAM_MCP_TOOL_PROFILE in default launchd env file\n' >&2
-      exit 1
-    fi
     reject_unsafe_env_value "${key}" "${value}"
     export "${key}=${value}"
   done < "${ENV_FILE}"
@@ -228,6 +219,14 @@ append_optional_env_var TELEGRAM_DOWNLOAD_REGISTRY_PATH
 append_optional_env_var TELEGRAM_DOWNLOAD_RETENTION_DAYS
 append_optional_env_var TELEGRAM_DOWNLOAD_CLEANUP_INTERVAL_SECONDS
 append_optional_env_var TELEGRAM_MCP_INCLUDE_DIAGNOSTICS
+append_optional_env_var TELEGRAM_TELEMETRY_ENABLED
+append_optional_env_var TELEGRAM_TELEMETRY_LOG_PATH
+append_optional_env_var TELEGRAM_TELEMETRY_STATS_PATH
+append_optional_env_var TELEGRAM_TELEMETRY_STATS_FLUSH_SECONDS
+append_optional_env_var TELEGRAM_TELEMETRY_PROMETHEUS_ENABLED
+append_optional_env_var TELEGRAM_TELEMETRY_METRICS_HOST
+append_optional_env_var TELEGRAM_TELEMETRY_METRICS_PORT
+append_optional_env_var TELEGRAM_TELEMETRY_RETENTION_DAYS
 append_optional_env_var TELEGRAM_MCP_JSON_RESPONSE
 append_optional_env_var TELEGRAM_MCP_PROBE_TIMEOUT_SECONDS
 append_optional_env_var TELEGRAM_CACHE_TTL

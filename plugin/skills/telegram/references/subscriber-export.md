@@ -5,13 +5,13 @@ Use this for all subscribers/members of a channel or group.
 ## Default Command
 
 ```bash
-python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume --acknowledge-pii-export
+python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --progress --resume
 ```
 
 Fallback only when the plugin bundle is unavailable:
 
 ```bash
-python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume --acknowledge-pii-export
+python3 "$HOME/.agents/skills/telegram/scripts/run_export_channel_subscribers.py" @channel_username --progress --resume
 ```
 
 The wrapper resolves the canonical exporter path, prefers the plugin source when
@@ -27,16 +27,15 @@ Default artifacts:
 - `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}/artifacts/YYYY-MM-DD-<channel>-subscribers.md`
 - `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}/artifacts/YYYY-MM-DD-<channel>-subscribers.json`
 
-These artifacts contain subscriber PII. Use the default private temp path unless
-the user explicitly asks to save them durably or gives a destination. For
-durable workspace writeback, pass an explicit `--out-dir`, for example
+Use the default output path unless the user gives another destination. For
+workspace writeback, pass an explicit `--out-dir`, for example
 `<repo>/outputs/telegram`.
 
 Runtime-only state is separate from deliverable artifacts:
 
 - session copy and resume checkpoint live under `${TELEGRAM_SUBSCRIBER_RUNTIME_DIR:-$HOME/.cache/telegram-subscriber-export}` by default;
 - runtime directory permissions are forced to owner-only (`0700`);
-- override with `--runtime-dir` only to another local, non-synced runtime path;
+- override with `--runtime-dir` when a different runtime path is needed;
 - do not bundle or publish `.session`, checkpoint, or runtime directories with subscriber outputs.
 
 Expected result fields:
@@ -70,7 +69,7 @@ If `exported_count < visible_count`, say so plainly. Usually this means Telegram
 When the user challenges completeness or asks for proof:
 
 ```bash
-python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --profile exhaustive --progress --resume --accept-counter-gap 0 --max-depth 1 --acknowledge-pii-export
+python3 skills/telegram/scripts/run_export_channel_subscribers.py @channel_username --profile exhaustive --progress --resume --accept-counter-gap 0 --max-depth 1
 ```
 
 Treat `exhaustive` as a confidence check, not the default. Use

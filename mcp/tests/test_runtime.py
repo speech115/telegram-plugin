@@ -110,6 +110,21 @@ class RuntimeConfigTests(unittest.TestCase):
         finally:
             runtime._shared_wrapper = None
 
+    def test_shared_wrapper_prewarm_uses_read_path_without_get_me(self):
+        wrapper = type(
+            "Wrapper",
+            (),
+            {
+                "get_me": AsyncMock(side_effect=AssertionError("get_me prewarm disabled")),
+                "read_today_dialog": AsyncMock(return_value=object()),
+            },
+        )()
+
+        _run(runtime._prewarm_shared_wrapper(wrapper))
+
+        wrapper.get_me.assert_not_awaited()
+        wrapper.read_today_dialog.assert_awaited_once()
+
     def test_read_transport_rejects_invalid_value(self):
         with patch.dict(
             "os.environ",

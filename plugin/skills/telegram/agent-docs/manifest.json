@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "topics": {
+    "routing": {
+      "from_reference": "references/facade-routing.md",
+      "transform": "routing"
+    },
+    "sources": {
+      "from_reference": "references/source-evidence-broker.md",
+      "transform": "sources"
+    },
+    "media": {
+      "from_reference": "references/media-and-voice.md",
+      "transform": "media"
+    },
+    "tools": {
+      "transform": "tools_from_facade"
+    },
+    "writes": {
+      "static": "static/writes.md"
+    },
+    "index": {
+      "transform": "index"
+    }
+  }
+}

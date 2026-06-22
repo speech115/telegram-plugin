@@ -69,6 +69,70 @@ class MessagesResult(BaseModel):
     truncated_reason: str | None = None
 
 
+class ForumTopicInfo(BaseModel):
+    id: int
+    title: str = ""
+    top_message: int | None = None
+    date: datetime | None = None
+    unread_count: int = 0
+    unread_mentions_count: int = 0
+    unread_reactions_count: int = 0
+    closed: bool = False
+    pinned: bool = False
+    hidden: bool = False
+    icon_color: int | None = None
+    icon_emoji_id: int | None = None
+
+
+class ForumTopicsResult(BaseModel):
+    topics: list[ForumTopicInfo]
+    count: int | None = None
+    order_by_create_date: bool | None = None
+
+
+class ThreadMessagesResult(BaseModel):
+    messages: list[MessageInfo]
+    message_count: int
+    has_more_before: bool = False
+    next_offset_id: int | None = None
+    sender_resolution_count: int = 0
+    truncated: bool = False
+    truncated_reason: str | None = None
+
+
+class ReactionCountInfo(BaseModel):
+    reaction: str
+    count: int
+    chosen_order: int | None = None
+
+
+class ReactionPeerInfo(BaseModel):
+    peer_id: int | None = None
+    peer_type: str | None = None
+    date: datetime | None = None
+    reaction: str | None = None
+    big: bool = False
+    unread: bool = False
+    my: bool = False
+
+
+class MessageReactionsResult(BaseModel):
+    message_id: int
+    counts: list[ReactionCountInfo] = Field(default_factory=list)
+    peers: list[ReactionPeerInfo] = Field(default_factory=list)
+    next_offset: str | None = None
+    can_see_list: bool | None = None
+    truncated: bool = False
+
+
+class UnreadReactionsResult(BaseModel):
+    messages: list[MessageInfo]
+    message_count: int
+    next_offset_id: int | None = None
+    has_more_before: bool = False
+    sender_resolution_count: int = 0
+
+
 class DialogHandle(BaseModel):
     dialog_ref: str
     id: int
@@ -112,6 +176,9 @@ class DialogReadResult(BaseModel):
     sender_resolution_count: int = 0
     truncated: bool = False
     truncated_reason: str | None = None
+    result_cache_hit: bool | None = None
+    result_cache_age_seconds: float | None = None
+    result_cache_ttl_seconds: int | None = None
 
 
 class DialogContextResult(BaseModel):
@@ -134,6 +201,9 @@ class DialogContextResult(BaseModel):
     sender_resolution_count: int = 0
     truncated: bool = False
     truncated_reason: str | None = None
+    result_cache_hit: bool | None = None
+    result_cache_age_seconds: float | None = None
+    result_cache_ttl_seconds: int | None = None
 
 
 class DialogReplyPreparation(BaseModel):
@@ -148,6 +218,8 @@ class DialogReplyPreparation(BaseModel):
     send_args_preview: dict[str, object]
     confirmation_token: str | None = None
     confirmation_expires_at: datetime | None = None
+    preview_id: str | None = None
+    human_approval_url: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -161,20 +233,8 @@ class DialogSendPreparation(BaseModel):
     send_args_preview: dict[str, object]
     confirmation_token: str | None = None
     confirmation_expires_at: datetime | None = None
-    warnings: list[str] = Field(default_factory=list)
-
-
-class DialogFileSendPreparation(BaseModel):
-    chat: DialogHandle
-    file_path: str
-    file_name: str
-    caption: str = ""
-    parse_mode: str | None = "md"
-    preview_only: bool = True
-    send_tool: str
-    send_args_preview: dict[str, object]
-    preview_token: str
-    warnings: list[str] = Field(default_factory=list)
+    preview_id: str | None = None
+    human_approval_url: str | None = None
 
 
 class ChatInfo(BaseModel):
@@ -245,6 +305,7 @@ class MediaInspectionManifestItem(BaseModel):
     media_type: str | None = None
     mime_type: str | None = None
     file_size: int | None = None
+    remote_media_ref: str | None = None
     local_path: str | None = None
 
 
@@ -285,6 +346,8 @@ class HealthInfo(BaseModel):
     endpoint_url: str | None = None
     scheduler: dict[str, dict[str, object]] | None = None
     runtime_stats: dict[str, object] | None = None
+    runtime_compat: dict[str, object] | None = None
+    telemetry_summary: dict[str, object] | None = None
 
 
 class DoctorInfo(BaseModel):
@@ -300,6 +363,8 @@ class DoctorInfo(BaseModel):
     endpoint_url: str | None = None
     scheduler: dict[str, dict[str, object]] | None = None
     runtime_stats: dict[str, object] | None = None
+    runtime_compat: dict[str, object] | None = None
+    telemetry_summary: dict[str, object] | None = None
 
 
 class StoryViewInfo(BaseModel):

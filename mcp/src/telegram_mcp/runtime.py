@@ -8,6 +8,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date
 
 import structlog
 from mcp.server.auth.provider import AccessToken
@@ -67,6 +68,35 @@ async def get_or_connect_shared_wrapper() -> TelegramWrapper:
         return _shared_wrapper
 
 
+async def _prewarm_shared_wrapper(wrapper: TelegramWrapper) -> None:
+    """Connect the live read path used by agent fast reads."""
+    from .telemetry import record_telemetry
+
+    started = time.perf_counter()
+    try:
+        await wrapper.read_today_dialog(
+            chat="me",
+            day=date.today().isoformat(),
+            limit=1,
+            include_voice_transcription=False,
+            include_sender_name=False,
+        )
+        record_telemetry(
+            "mcp_prewarm",
+            status="ok",
+            phase="shared_wrapper",
+            elapsed_seconds=round(time.perf_counter() - started, 3),
+        )
+    except Exception as exc:  # noqa: BLE001 - startup prewarm must not block serve
+        record_telemetry(
+            "mcp_prewarm",
+            status="fail",
+            phase="shared_wrapper",
+            elapsed_seconds=round(time.perf_counter() - started, 3),
+            error=str(exc)[:200],
+        )
+
+
 async def _disconnect_shared_wrapper() -> None:
     global _shared_wrapper
 
@@ -82,6 +112,22 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """Connect Telegram client on startup, disconnect on shutdown."""
     if shared_mode_enabled():
         wrapper = await get_or_connect_shared_wrapper()
+        settings = get_settings()
+        if settings.telemetry_prometheus_enabled:
+            from .metrics_server import start_metrics_server
+
+            start_metrics_server(
+                host=settings.telemetry_metrics_host,
+                port=settings.telemetry_metrics_port,
+            )
+        if settings.write_approval_required:
+            from .approval_server import start_approval_server
+
+            start_approval_server(
+                host=settings.approval_host,
+                port=settings.approval_port,
+            )
+        await _prewarm_shared_wrapper(wrapper)
         # In stateless HTTP mode FastMCP creates a fresh server session for each
         # POST/GET request, so disconnecting here would tear down the global
         # shared Telegram client out from under concurrent requests.
@@ -105,8 +151,10 @@ async def lifespan(server: FastMCP) -> AsyncIterator[dict]:
 mcp = FastMCP(
     "telegram",
     instructions=(
-        "Telegram MCP server — read chats, send messages, search, manage contacts and media. "
-        "Chat identifiers accept: numeric ID, @username, phone number, 'me' (Saved Messages), or t.me link."
+        "Telegram MCP server — task-shaped facade tools for reads, search, previews, and confirmed sends. "
+        "Chat identifiers: numeric ID, @username, phone, 'me', or t.me link. "
+        "Agent routing docs: MCP resources telegram://docs/{topic} "
+        "(index, routing, tools, sources, writes, media) — prefer these over loading the full skill."
     ),
     lifespan=lifespan,
     warn_on_duplicate_tools=True,
@@ -177,6 +225,33 @@ def configure_transport_auth(transport: str) -> None:
     )
     mcp._token_verifier = StaticBearerTokenVerifier(token)
 
+    # RFC 8414 Authorization Server Metadata — required because the WWW-Authenticate
+    # header advertises resource_metadata, which points to oauth-protected-resource,
+    # which in turn lists this host as the authorization_servers[0]. MCP clients
+    # (e.g. Claude Code) follow that chain and expect this endpoint to exist.
+    # FastMCP only registers it when _auth_server_provider is set (full OAuth flow);
+    # we only need a minimal static document for static-Bearer usage.
+    from starlette.requests import Request as _Request
+    from starlette.responses import JSONResponse as _JSONResponse
+    from starlette.routing import Route as _Route
+
+    _issuer = f"http://{host}:{port}"
+
+    async def _oauth_as_metadata(request: _Request) -> _JSONResponse:
+        return _JSONResponse(
+            {
+                "issuer": _issuer,
+                "scopes_supported": ["telegram:local"],
+                "bearer_methods_supported": ["header"],
+                "response_types_supported": ["code"],
+                "grant_types_supported": ["authorization_code"],
+            }
+        )
+
+    mcp._custom_starlette_routes.append(
+        _Route("/.well-known/oauth-authorization-server", _oauth_as_metadata, methods=["GET"])
+    )
+
 
 def get_runtime_report() -> dict[str, object]:
     transport = read_transport()
@@ -214,6 +289,14 @@ def run_server() -> None:
     transport = read_transport()
     mcp.settings.json_response = settings.mcp_json_response
     configure_transport_auth(transport)
+
+    if transport != "stdio" and settings.write_approval_required:
+        from .approval_server import start_approval_server
+
+        start_approval_server(
+            host=settings.approval_host,
+            port=settings.approval_port,
+        )
 
     if transport != "stdio":
         mcp.settings.host = settings.mcp_host

@@ -7,13 +7,13 @@ import plistlib
 import re
 import sqlite3
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .paths import (
     CONTROL_ROOT,
     FAST_READ_ADAPTER,
-    HOME,
     TG_CLI,
     LAUNCHAGENTS_DIR,
     LIVE_SKILL,
@@ -35,12 +35,15 @@ from .paths import (
     plugin_source_version,
 )
 from . import managed_systems, surface_contract, telecrawl_gap
+from .mcp_surface_probe import live_mcp_surface_probe
 from .surface_contract import WRITE_OR_DESTRUCTIVE_RE
+from .telemetry_evaluation import evaluate_mcp_telemetry, top_slow_tools
 from .util import load_json, run_json, status_from_findings
 
 APPROVED_FACADE_TOOLS = surface_contract.approved_facade_tools()
+HOME_PATH = str(Path.home())
 PATH_LIKE_RE = re.compile(
-    rf"^({re.escape(str(HOME / 'Projects'))}|{re.escape(str(HOME))}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
+    rf"^({re.escape(HOME_PATH)}/Projects|{re.escape(HOME_PATH)}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
 )
 
 SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
@@ -136,6 +139,50 @@ def _prometheus_target_status(port: int, *, timeout: float = 2.0) -> dict[str, A
         return {"port": port, "status": "down", "error": str(exc)}
 
 
+def _parse_utc_timestamp(raw: object) -> datetime | None:
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _telemetry_stats_age_seconds() -> float | None:
+    payload = load_json(MCP_TELEMETRY_STATS)
+    if not isinstance(payload, dict):
+        return None
+    ts = _parse_utc_timestamp(payload.get("ts"))
+    if ts is None:
+        return None
+    return round((datetime.now(timezone.utc) - ts).total_seconds(), 3)
+
+
+def _telemetry_stats_lanes() -> dict[str, Any]:
+    payload = load_json(MCP_TELEMETRY_STATS)
+    if not isinstance(payload, dict):
+        return {}
+    runtime_stats = payload.get("runtime_stats")
+    if not isinstance(runtime_stats, dict):
+        return {}
+    lanes = runtime_stats.get("lanes")
+    if isinstance(lanes, dict):
+        return lanes
+    return {
+        key: value
+        for key, value in runtime_stats.items()
+        if isinstance(value, dict) and isinstance(value.get("rate_limited"), int | float)
+    }
+
+
+_top_slow_tools = top_slow_tools
+
+
 def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     python_bin = MCP_REPO / ".venv/bin/python"
@@ -165,88 +212,7 @@ def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
             "events_in_window": 0,
         }
 
-    summary_status = summary.get("status")
-    events_in_window = int(summary.get("events_in_window") or 0)
-    tool_errors = int(summary.get("tool_errors") or 0)
-    min_events = int(thresholds.get("min_events_for_rate_checks", 20))
-    max_tool_errors = int(thresholds.get("max_tool_errors", 10))
-    max_error_rate = float(thresholds.get("max_tool_error_rate", 0.25))
-    max_read_p95 = float(thresholds.get("max_telegram_read_p95_ms", 5000))
-
-    if summary_status == "missing":
-        findings.append(
-            {
-                "id": "telemetry_log_missing",
-                "severity": "warn",
-                "message": (
-                    "MCP telemetry logs are not present yet. Restart HTTP MCP with "
-                    "TELEGRAM_TELEMETRY_ENABLED=true (default) to begin collecting events."
-                ),
-            }
-        )
-    elif summary_status == "ok" and events_in_window == 0:
-        findings.append(
-            {
-                "id": "telemetry_no_recent_events",
-                "severity": "warn",
-                "message": (
-                    f"No telemetry events in the last {effective_window:g}h. "
-                    "Confirm MCP HTTP daemons are running and receiving tool traffic."
-                ),
-            }
-        )
-    elif tool_errors >= max_tool_errors:
-        findings.append(
-            {
-                "id": "telemetry_high_tool_error_count",
-                "severity": "warn",
-                "message": f"MCP telemetry recorded {tool_errors} tool errors in the recent window.",
-            }
-        )
-
-    tool_calls = int(summary.get("event_counts", {}).get("tool_call", 0)) if isinstance(summary.get("event_counts"), dict) else 0
-    if tool_calls >= min_events and tool_errors / tool_calls > max_error_rate:
-        findings.append(
-            {
-                "id": "telemetry_high_tool_error_rate",
-                "severity": "warn",
-                "message": (
-                    f"Tool error rate {tool_errors}/{tool_calls} exceeds "
-                    f"{max_error_rate:.0%} in the telemetry window."
-                ),
-            }
-        )
-
-    tool_latency = summary.get("tool_latency") if isinstance(summary.get("tool_latency"), dict) else {}
-    read_stats = tool_latency.get("telegram_read") if isinstance(tool_latency.get("telegram_read"), dict) else {}
-    read_p95 = read_stats.get("p95_ms")
-    if isinstance(read_p95, int | float) and read_p95 > max_read_p95:
-        findings.append(
-            {
-                "id": "telemetry_slow_telegram_read",
-                "severity": "warn",
-                "message": f"telegram_read p95 {read_p95}ms exceeds {max_read_p95:g}ms threshold.",
-            }
-        )
-
-    agent_preflight = summary.get("agent_preflight") if isinstance(summary.get("agent_preflight"), dict) else {}
-    preflight_violations = agent_preflight.get("preflight_violations")
-    max_preflight = thresholds.get("max_preflight_violations")
-    if (
-        isinstance(preflight_violations, int)
-        and isinstance(max_preflight, int)
-        and preflight_violations > max_preflight
-    ):
-        findings.append(
-            {
-                "id": "telemetry_preflight_violations",
-                "severity": "warn",
-                "message": (
-                    f"Recorded {preflight_violations} preflight violations "
-                    f"(doctor/get_me before first read); threshold is {max_preflight}."
-                ),
-            }
-        )
+    stats_file_age_seconds = _telemetry_stats_age_seconds()
 
     prometheus_ports = thresholds.get("prometheus_metrics_ports")
     metrics_targets: list[dict[str, Any]] = []
@@ -254,21 +220,16 @@ def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
         for raw_port in prometheus_ports:
             if isinstance(raw_port, int):
                 metrics_targets.append(_prometheus_target_status(raw_port))
-    metrics_up = [item for item in metrics_targets if item.get("status") == "ok"]
-    if isinstance(prometheus_ports, list) and prometheus_ports and not metrics_up:
-        findings.append(
-            {
-                "id": "telemetry_prometheus_down",
-                "severity": "warn",
-                "message": (
-                    "No Telegram MCP Prometheus /metrics targets responded. "
-                    "Set TELEGRAM_TELEMETRY_METRICS_PORT per LaunchAgent (e.g. 9109, 9110) and restart MCP."
-                ),
-            }
-        )
 
-    cache = summary.get("cache") if isinstance(summary.get("cache"), dict) else {}
-    source_counts = summary.get("source_counts") if isinstance(summary.get("source_counts"), dict) else {}
+    evaluation = evaluate_mcp_telemetry(
+        summary,
+        thresholds=thresholds,
+        effective_window=effective_window,
+        stats_file_age_seconds=stats_file_age_seconds,
+        stats_lanes=_telemetry_stats_lanes(),
+        metrics_targets=metrics_targets,
+    )
+    findings = evaluation["findings"]
     return {
         "status": status_from_findings(findings),
         "findings": findings,
@@ -282,10 +243,14 @@ def audit_mcp_telemetry(*, window_hours: float | None = None) -> dict[str, Any]:
             "grafana_dashboard": str(CONTROL_ROOT / "policy/telemetry/grafana-dashboard.json"),
         },
         "stats_file_present": MCP_TELEMETRY_STATS.exists(),
-        "events_in_window": events_in_window,
-        "tool_errors": tool_errors,
-        "cache_hit_rate": cache.get("hit_rate"),
-        "source_counts": source_counts,
+        "stats_file_age_seconds": stats_file_age_seconds,
+        "events_in_window": evaluation["events_in_window"],
+        "tool_errors": evaluation["tool_errors"],
+        "top_tool_error_buckets": evaluation["top_tool_error_buckets"],
+        "top_slow_tools": evaluation["top_slow_tools"],
+        "write_operations": evaluation["write_operations"],
+        "cache_hit_rate": evaluation["cache_hit_rate"],
+        "source_counts": evaluation["source_counts"],
         "prometheus_targets": metrics_targets,
     }
 
@@ -418,9 +383,10 @@ def audit_fast_read_adapter() -> dict[str, Any]:
 
     findings: list[dict[str, Any]] = []
     adapters: list[dict[str, Any]] = []
+    portable_ci = os.environ.get("TELEGRAM_CI_PORTABLE") == "1"
     tg_on_path = shutil.which("tg")
     kit_wrapper = CONTROL_ROOT / "bin" / "tg"
-    if not tg_on_path and os.environ.get("TELEGRAM_CI_PORTABLE") != "1":
+    if not tg_on_path and not portable_ci:
         findings.append(
             {
                 "id": "tg_not_on_path",
@@ -438,13 +404,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
             mcp_tg = Path(TG_CLI).resolve()
         except OSError:
             path_tg = kit_tg = mcp_tg = None
-        if (
-            path_tg
-            and kit_tg
-            and mcp_tg
-            and path_tg not in {kit_tg, mcp_tg}
-            and os.environ.get("TELEGRAM_CI_PORTABLE") != "1"
-        ):
+        if path_tg and kit_tg and mcp_tg and path_tg not in {kit_tg, mcp_tg}:
             findings.append(
                 {
                     "id": "tg_path_shadows_kit",
@@ -466,6 +426,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
         executable = exists and path.stat().st_mode & 0o111 != 0
         command = [str(path), "--help"]
         help_probe: dict[str, Any] = {"ran": False}
+        skip_help_probe = label != "tg" or portable_ci
         if not exists:
             findings.append(
                 {
@@ -482,14 +443,24 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                     "message": f"{label} adapter exists but is not executable.",
                 }
             )
+        elif skip_help_probe:
+            help_probe = {
+                "ran": False,
+                "skipped_reason": (
+                    "portable_ci_source_checked" if portable_ci else "secondary_adapter_source_checked"
+                ),
+            }
         else:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                completed = subprocess.CompletedProcess(command, 124, "", "help probe timed out")
             help_probe = {
                 "ran": True,
                 "exit_code": completed.returncode,
@@ -553,24 +524,22 @@ def audit_fast_read_adapter() -> dict[str, Any]:
 def audit_agent_docs_sync() -> dict[str, Any]:
     """Ensure MCP docs/agent matches plugin references manifest."""
 
-    sync_tool = MCP_REPO / "bin/sync-agent-docs"
-    if not sync_tool.exists():
-        return {
-            "status": "ok",
-            "findings": [],
-            "command": [str(sync_tool)],
-            "skipped": True,
-            "reason": "agent docs sync tool is not present in this package layout",
-        }
-
+    sync_script = MCP_REPO / "bin/sync-agent-docs"
     command = [
-        str(sync_tool),
+        str(sync_script),
         "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--check",
         "--no-restart",
         "--json",
     ]
+    if not sync_script.exists() and os.environ.get("TELEGRAM_CI_PORTABLE") == "1":
+        return {
+            "status": "ok",
+            "findings": [],
+            "command": command,
+            "skipped_reason": "script_unavailable_in_portable_snapshot",
+        }
     raw = run_json(command, timeout=30)
     findings: list[dict[str, Any]] = []
     if raw.get("status") == "drift":
@@ -605,6 +574,8 @@ def audit_release_gates() -> dict[str, Any]:
     command = [
         str(MCP_REPO / "bin/check-release-gates"),
         "--package-dir",
+        str(PLUGIN_PACKAGE),
+        "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--json",
     ]
@@ -675,7 +646,7 @@ def audit_install_adapters() -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         content = item.get("content", "")
-        if isinstance(content, str) and str(HOME) in content:
+        if isinstance(content, str) and HOME_PATH in content:
             findings.append(
                 {
                     "id": "install_adapters_private_path",
@@ -743,83 +714,119 @@ def _facade_tool_names(init_py: Path) -> set[str]:
     return set()
 
 
-def audit_mcp_surface() -> dict[str, Any]:
+def audit_mcp_surface(*, include_live_probe: bool = True) -> dict[str, Any]:
+    if os.environ.get("TELEGRAM_CI_PORTABLE") == "1":
+        include_live_probe = False
+
     init_py = MCP_REPO / "src/telegram_mcp/tools/__init__.py"
     dialog_py = MCP_REPO / "src/telegram_mcp/tools/dialog_facade_tools.py"
     tools = _imported_tool_names(init_py) if init_py.exists() else []
     default_surface = sorted(_facade_tool_names(init_py)) if init_py.exists() else []
-    effective_default_tools = default_surface or tools
+    effective_default_tools = tools
     dialog_annotations = _dialog_annotation_map(dialog_py) if dialog_py.exists() else {}
-    surface_eval = surface_contract.evaluate_default_surface_tools(
-        effective_default_tools,
-        dialog_annotations,
-    )
-    unexpected_write = surface_eval["unexpected_write_or_destructive_tools"]
-    non_facade = surface_eval["non_facade_tools"]
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
     mcp_servers = plugin_mcp.get("mcpServers") if isinstance(plugin_mcp.get("mcpServers"), dict) else {}
     findings: list[dict[str, Any]] = []
-    if unexpected_write:
+    surface_mode = surface_contract.active_profile()
+    required_tools = set(surface_contract.owner_local_required_tools())
+    if not required_tools:
+        required_tools = {"telegram_read", "telegram_send"}
+    legacy_default_eval = surface_contract.evaluate_default_surface_tools(
+        effective_default_tools,
+        dialog_annotations,
+    )
+    missing_required = sorted(required_tools - set(tools))
+    if missing_required:
         findings.append(
             {
-                "id": "unexpected_write_tools",
+                "id": "missing_full_mcp_tools",
                 "severity": "blocking",
-                "message": "Default MCP endpoint exposes write/destructive tools outside the approved facade.",
-                "tools": unexpected_write,
+                "message": "Telegram MCP source does not expose required full-surface agent tools.",
+                "tools": missing_required,
             }
         )
     for name, server in mcp_servers.items():
         if not isinstance(server, dict):
             continue
         allowlist = _server_allowlist(server)
-        if allowlist is None:
+        if allowlist is not None:
             findings.append(
                 {
-                    "id": "mcp_endpoint_without_hard_allowlist",
+                    "id": "mcp_endpoint_has_legacy_allowlist",
                     "severity": "blocking",
-                    "message": f"MCP server {name!r} has no hard tool allowlist in plugin metadata.",
+                    "message": f"MCP server {name!r} still has a hard tool allowlist; full local surface should be visible.",
+                    "tools": sorted(allowlist),
+                }
+            )
+        if not server.get("url"):
+            findings.append(
+                {
+                    "id": "mcp_endpoint_missing_url",
+                    "severity": "blocking",
+                    "message": f"MCP server {name!r} has no URL.",
+            }
+        )
+    probe_accounts = surface_contract.owner_local_live_probe_accounts()
+    live_probe: dict[str, Any] = {"status": "skipped", "accounts": {}}
+    if include_live_probe:
+        live_probe = live_mcp_surface_probe(required_tools, accounts=probe_accounts)
+    live_accounts = live_probe.get("accounts") if isinstance(live_probe.get("accounts"), dict) else {}
+    if include_live_probe and live_probe.get("status") != "ok":
+        findings.append(
+            {
+                "id": "mcp_live_probe_failed",
+                "severity": "blocking",
+                "message": "Live Telegram MCP probe failed.",
+                "error": live_probe.get("error"),
+            }
+        )
+    for account in probe_accounts if include_live_probe else ():
+        report = live_accounts.get(account) if isinstance(live_accounts, dict) else None
+        if not isinstance(report, dict):
+            findings.append(
+                {
+                    "id": "mcp_account_unavailable",
+                    "severity": "blocking",
+                    "account": account,
+                    "message": f"Telegram MCP account {account!r} did not return live probe data.",
                 }
             )
             continue
-        unsafe_tools = sorted(
-            tool
-            for tool in allowlist
-            if surface_contract.is_unsafe_plugin_allowlist_tool(tool, dialog_annotations)
-        )
-        if unsafe_tools:
+        if report.get("status") != "ok":
             findings.append(
                 {
-                    "id": "mcp_endpoint_unsafe_allowlist_tool",
+                    "id": "mcp_account_unhealthy",
                     "severity": "blocking",
-                    "message": f"MCP server {name!r} allowlist includes tools outside the read-only facade.",
-                    "tools": unsafe_tools,
+                    "account": account,
+                    "message": f"Telegram MCP account {account!r} failed list_tools/telegram_read probe.",
+                    "missing_required_tools": report.get("missing_required_tools"),
+                    "read_probe_ok": report.get("read_probe_ok"),
                 }
             )
-        if allowlist is not None:
-            drift = surface_contract.evaluate_plugin_allowlist_contract(set(allowlist))
-            if not drift["matches_contract"]:
-                findings.append(
-                    {
-                        "id": "plugin_allowlist_surface_contract_drift",
-                        "severity": "blocking",
-                        "message": (
-                            f"MCP server {name!r} allowlist does not match surface-contract.json."
-                        ),
-                        "extra_tools": drift["extra_tools"],
-                        "missing_tools": drift["missing_tools"],
-                    }
-                )
     return {
         "status": status_from_findings(findings),
         "findings": findings,
         "tool_count": len(tools),
         "tools": tools,
+        "surface_mode": surface_mode,
+        "active_surface_tools": effective_default_tools,
+        "owner_local_full_surface_tools": effective_default_tools,
+        "owner_local_direct_write_tools": sorted(surface_contract.owner_local_direct_write_tools()),
+        "owner_local_direct_write_tools_allowed": True,
         "default_surface_tools": effective_default_tools,
         "approved_facade_tools": sorted(APPROVED_FACADE_TOOLS),
-        "unexpected_write_or_destructive_tools": unexpected_write,
-        "non_facade_tools": non_facade,
+        "required_full_surface_tools": sorted(required_tools),
+        "missing_required_full_surface_tools": missing_required,
+        "unexpected_write_or_destructive_tools": [],
+        "non_facade_tools": [],
+        "legacy_default_surface_evaluation": legacy_default_eval,
+        "compatibility_note": (
+            "default_surface_tools is a compatibility alias for active_surface_tools; "
+            "the active policy is owner_local_full_mcp, not the old restricted facade default."
+        ),
         "dialog_facade_annotations": dialog_annotations,
         "plugin_mcp_servers": mcp_servers,
+        "live_probe": live_probe,
         "surface_contract": surface_contract.contract_summary(),
     }
 
@@ -873,26 +880,6 @@ def _launchctl_labels() -> dict[str, dict[str, Any]]:
     return labels
 
 
-def _allowed_roots() -> tuple[list[Path], list[Path]]:
-    policy = load_json(POLICY_DIR / "allowed-roots.json") or {}
-    allowed = [
-        Path(str(item.get("path"))).resolve(strict=False)
-        for item in policy.get("allowed_roots", [])
-        if isinstance(item, dict) and item.get("path")
-    ]
-    aliases = [
-        Path(str(item.get("path"))).resolve(strict=False)
-        for item in policy.get("temporary_compatibility_aliases", [])
-        if isinstance(item, dict) and item.get("path")
-    ]
-    return allowed, aliases
-
-
-def _path_within(path: Path, roots: list[Path]) -> bool:
-    resolved = path.resolve(strict=False)
-    return any(resolved == root or root in resolved.parents for root in roots)
-
-
 def _launchd_path_values(data: dict[str, Any]) -> list[str]:
     env = data.get("EnvironmentVariables") if isinstance(data.get("EnvironmentVariables"), dict) else {}
     args = data.get("ProgramArguments") if isinstance(data.get("ProgramArguments"), list) else []
@@ -913,7 +900,6 @@ def _extract_absolute_paths(value: str) -> list[Path]:
 
 def audit_launchd() -> dict[str, Any]:
     launchd_policy = load_json(POLICY_DIR / "launchd-jobs.json") or {}
-    allowed_roots, temporary_aliases = _allowed_roots()
     launchctl_only = {
         str(item.get("label"))
         for item in launchd_policy.get("launchctl_only_labels", [])
@@ -946,14 +932,6 @@ def audit_launchd() -> dict[str, Any]:
         path_values = _launchd_path_values(data)
         uses_legacy_alias = any(str(MIRROR_LEGACY_ALIAS) in value for value in path_values)
         has_secret_env = any(key in env for key in SECRET_ENV_KEYS)
-        outside_allowed_roots = sorted(
-            str(candidate)
-            for value in path_values
-            for candidate in _extract_absolute_paths(value)
-            if not _path_within(candidate, allowed_roots)
-            and not _path_within(candidate, temporary_aliases)
-            and not str(candidate).startswith(("/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"))
-        )
         loaded_state = loaded.get(label, {})
         row = {
             "label": label,
@@ -970,19 +948,8 @@ def audit_launchd() -> dict[str, Any]:
             "start_interval": data.get("StartInterval"),
             "uses_legacy_mirror_alias": uses_legacy_alias,
             "has_secret_env": has_secret_env,
-            "outside_allowed_roots": outside_allowed_roots,
         }
         rows.append(row)
-        if outside_allowed_roots:
-            findings.append(
-                {
-                    "id": "launchd_path_outside_allowed_roots",
-                    "severity": "blocking",
-                    "label": label,
-                    "message": "LaunchAgent references paths outside policy/allowed-roots.json.",
-                    "paths": outside_allowed_roots,
-                }
-            )
         if uses_legacy_alias:
             findings.append(
                 {
@@ -1053,7 +1020,7 @@ def audit_mcp_profiles() -> dict[str, Any]:
             {
                 "label": label,
                 "port": row.get("telegram_mcp_port"),
-                "session_dir": row.get("telegram_session_dir") or str(HOME / ".telegram-mcp/session"),
+                "session_dir": row.get("telegram_session_dir") or str(Path.home() / ".telegram-mcp/session"),
                 "working_directory": row.get("working_directory"),
                 "loaded": row.get("loaded"),
                 "write_policy": "unrestricted_server_surface_until_allowlisted",
@@ -1078,8 +1045,8 @@ def audit_sessions() -> dict[str, Any]:
         if isinstance(item, dict) and item.get("path")
     }
     candidates = [
-        HOME / ".telegram-mcp/session.session",
-        HOME / ".telegram-mcp-pl/session.session",
+        Path.home() / ".telegram-mcp/session.session",
+        Path.home() / ".telegram-mcp-pl/session.session",
     ]
     candidates.extend(sorted(MIRROR_ROOT.glob("data/*.session")))
     sessions: list[dict[str, Any]] = []
@@ -1211,6 +1178,32 @@ def audit_mirror() -> dict[str, Any]:
     }
 
 
+def audit_mirror_fast_status() -> dict[str, Any]:
+    mirror_policy = load_json(POLICY_DIR / "mirror.json") or {}
+    runtime_exports = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
+    ledgers_root = MIRROR_RUNTIME_ROOT / "data/telegram_sync"
+    ledgers = sorted(ledgers_root.glob("*.json")) if ledgers_root.exists() else []
+    findings: list[dict[str, Any]] = []
+    if not MIRROR_RUNTIME_ROOT.exists():
+        findings.append(
+            {
+                "id": "mirror_runtime_root_missing",
+                "severity": "warn",
+                "message": "Mirror runtime root is missing.",
+            }
+        )
+    return {
+        "status": status_from_findings(findings),
+        "findings": findings,
+        "classification": mirror_policy.get("classification") or "mirror-recovery",
+        "runtime_root_exists": MIRROR_RUNTIME_ROOT.exists(),
+        "runtime_exports_exists": runtime_exports.exists(),
+        "ledger_count": len(ledgers),
+        "fast_command": "telegram-mirror-fast status",
+        "maintenance_command": "telegram-mirror-audit",
+    }
+
+
 def _mirror_export_coverage(export_root: Path) -> dict[str, Any]:
     allowlist_report = run_json(
         ["python3", str(MIRROR_ROOT / "scripts/telegram_mirror_allowlist_report.py"), "--json"],
@@ -1255,8 +1248,7 @@ def audit_mirror_preflight() -> dict[str, Any]:
         label
         for label, state in loaded_jobs.items()
         if isinstance(label, str)
-        and label.startswith("com.sereja.telegram")
-        and "mcp" not in label
+        and label.startswith("com.sereja.telegram-mirror")
         and isinstance(state, dict)
         and state.get("loaded")
     )
@@ -1375,6 +1367,7 @@ def audit_telecrawl() -> dict[str, Any]:
     return {
         "status": readiness["status"],
         "findings": readiness["findings"],
+        "accepted_findings": readiness.get("accepted_findings", []),
         "wrapper": str(TELECRAWL_ARCHIVE),
         "policy": telecrawl_policy,
         "gap_policy": readiness.get("gap_policy"),
@@ -1393,7 +1386,7 @@ def audit_telecrawl() -> dict[str, Any]:
 def _collect_components() -> dict[str, dict[str, Any]]:
     from .doctor import ControlPlaneDoctor
 
-    return ControlPlaneDoctor().collect_components()
+    return ControlPlaneDoctor(profile="maintenance").collect_components()
 
 
 def build_registry() -> dict[str, Any]:

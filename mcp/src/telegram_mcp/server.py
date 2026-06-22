@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from .telethon_compat import apply_telethon_compat
+
+apply_telethon_compat()
+
 from . import resources as _resources  # noqa: F401 — registers MCP resources at import
 
 from .runtime import (
@@ -31,11 +35,15 @@ from .tools import (
     edit_message,
     export_story_link,
     forward_messages,
+    global_search,
     get_blocked_users,
     get_chat_info,
+    get_discussion_message,
+    get_forum_topics_by_id,
     get_invite_link,
     get_me,
     get_message_link,
+    get_message_reactions,
     get_participants,
     get_peer_stories,
     get_pinned_messages,
@@ -44,6 +52,8 @@ from .tools import (
     get_stories_by_id,
     get_story_viewers,
     get_story_views,
+    get_thread_replies,
+    get_unread_reactions,
     get_user_photos,
     get_user_status,
     health_check,
@@ -52,6 +62,7 @@ from .tools import (
     leave_chat,
     list_chats,
     list_contacts,
+    list_forum_topics,
     list_messages,
     mark_as_read,
     collect_context,
@@ -59,7 +70,6 @@ from .tools import (
     draft_reply,
     download_dialog_media,
     prepare_dialog_reply,
-    prepare_send_file,
     prepare_reply_message,
     prepare_send_message,
     prepare_media_inspection_manifest,
@@ -80,6 +90,7 @@ from .tools import (
     search_contacts,
     search_messages,
     search_public_chats,
+    sent_media_search,
     telegram_confirmed_send,
     telegram_inspect_media,
     telegram_prepare_reply,

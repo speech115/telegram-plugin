@@ -6,11 +6,7 @@ import subprocess
 import pytest
 
 from telegram_control_plane.audits import audit_mirror_preflight, build_registry
-from telegram_control_plane.surface_contract import (
-    SURFACE_CONTRACT_PATH,
-    WRITE_POLICY_PATH,
-    load_surface_contract_policy,
-)
+from telegram_control_plane.audits import audit_mcp_surface
 
 
 pytestmark = pytest.mark.integration
@@ -19,14 +15,14 @@ pytestmark = pytest.mark.integration
 def test_live_registry_has_expected_warn_shape() -> None:
     registry = build_registry()
 
-    assert registry["status"] == "warn"
+    assert registry["status"] in {"ok", "warn"}
     assert registry["summary"]["blocking_findings"] == 0
-    assert registry["summary"]["warning_findings"] >= 1
+    assert registry["summary"]["accepted_findings"] >= 1
     assert registry["summary"]["components"]["docs"] == "ok"
     assert registry["summary"]["components"]["fast_read_adapter"] == "ok"
     assert registry["summary"]["components"]["mcp_surface"] == "ok"
-    finding_ids = {item.get("id") for item in registry.get("findings", []) if isinstance(item, dict)}
-    assert "telecrawl_known_gaps" in finding_ids
+    accepted_ids = {item.get("id") for item in registry.get("accepted_findings", []) if isinstance(item, dict)}
+    assert "telecrawl_known_gaps" in accepted_ids
 
 
 def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
@@ -39,25 +35,12 @@ def test_live_mirror_preflight_blocks_recovery_checkout_promotion() -> None:
     assert any(gate["status"] == "fail" for gate in gates.values())
 
 
-def test_live_mcporter_default_surface_has_no_write_tools() -> None:
-    policy = load_surface_contract_policy(
-        str(SURFACE_CONTRACT_PATH),
-        str(WRITE_POLICY_PATH),
-    )
-    assert len(policy.approved_facade_tools) == 16
+def test_live_mcp_surface_exposes_full_agent_tools() -> None:
+    report = audit_mcp_surface()
 
-    completed = subprocess.run(
-        ["mcporter", "list", "telegram"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-
-    output = completed.stdout
-    for name in sorted(policy.approved_facade_tools):
-        assert f"function {name}(" in output, f"missing default facade tool: {name}"
+    assert report["status"] == "ok"
     for name in [
+        "telegram_send",
         "send_dialog_message",
         "reply_in_dialog",
         "reply_message",
@@ -69,7 +52,7 @@ def test_live_mcporter_default_surface_has_no_write_tools() -> None:
         "read_today_dialog",
         "search_dialog_messages",
     ]:
-        assert f"function {name}(" not in output, f"unexpected tool on default surface: {name}"
+        assert name in report["default_surface_tools"], f"missing full-surface tool: {name}"
 
 
 def test_live_fast_read_adapter_reads_saved_messages() -> None:

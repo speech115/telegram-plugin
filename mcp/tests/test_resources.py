@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import telegram_mcp.server  # noqa: F401  Ensures resources are registered.
-from telegram_mcp.resources import me_resource
+from telegram_mcp.resources import agent_doc_resource, me_resource
 from telegram_mcp.runtime import mcp
 from telegram_mcp.types import UserInfo
 
@@ -35,3 +35,19 @@ class ResourceTests(unittest.TestCase):
         )
 
         self.assertEqual(resource.mime_type, "application/json")
+
+    def test_agent_doc_template_is_registered(self):
+        template = next(
+            t
+            for t in mcp._resource_manager.list_templates()
+            if t.uri_template == "telegram://docs/{topic}"
+        )
+
+        self.assertEqual(template.mime_type, "text/markdown")
+        self.assertIn("routing", template.description)
+
+    def test_agent_doc_resource_returns_routing_markdown(self):
+        text = agent_doc_resource("routing")
+
+        self.assertIn("# Full MCP Routing", text)
+        self.assertIn("telegram_read", text)

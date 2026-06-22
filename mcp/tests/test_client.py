@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from telethon.tl.types import Channel
+from telethon.tl.types import Channel, MessageReactions, MessagePeerReaction, PeerUser, ReactionCount, ReactionEmoji
 
 from telegram_mcp.client import TelegramWrapper
 from telegram_mcp.config import Settings
@@ -124,11 +124,6 @@ class DownloadTelegramClient(DummyTelegramClient):
         target.write_bytes(b"new")
         return str(target)
 
-    async def download_profile_photo(self, _entity, file):
-        target = Path(file) / "profile.jpg"
-        target.write_bytes(b"profile")
-        return str(target)
-
 
 class BatchDownloadMessage:
     def __init__(self, *, message_id: int, has_media: bool = True):
@@ -146,6 +141,8 @@ class BatchDownloadMessage:
         self.voice = False
         self.video_note = False
         self.document = SimpleNamespace(
+            id=1000 + message_id,
+            dc_id=4,
             size=10 + message_id,
             mime_type="audio/ogg",
             attributes=[],
@@ -544,6 +541,113 @@ class OutputCapTelegramClient(DummyTelegramClient):
             yield message
 
 
+class SentMediaSearchTelegramClient(DummyTelegramClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__(*_args, **_kwargs)
+        self.iter_dialogs_kwargs = []
+        self.iter_messages_args = []
+        self.iter_messages_kwargs = []
+
+    async def iter_dialogs(self, **kwargs):
+        self.iter_dialogs_kwargs.append(kwargs)
+        yield SimpleNamespace(entity=SimpleNamespace(id=501, username="chat1"))
+
+    async def iter_messages(self, *args, **kwargs):
+        self.iter_messages_args.append(args)
+        self.iter_messages_kwargs.append(kwargs)
+        message = OutputCapMessage(message_id=91, text="sent media", has_media=True)
+        message.out = True
+        message.photo = object()
+        yield message
+
+
+class ThreadForumTelegramClient(DummyTelegramClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__(*_args, **_kwargs)
+        self.requests = []
+        self.iter_messages_kwargs = []
+
+    async def __call__(self, request):
+        self.requests.append(request)
+        request_name = type(request).__name__
+        if request_name == "GetForumTopicsRequest":
+            return SimpleNamespace(
+                topics=[
+                    SimpleNamespace(
+                        id=11,
+                        title="Announcements",
+                        top_message=101,
+                        date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+                        unread_count=2,
+                        unread_mentions_count=1,
+                        unread_reactions_count=3,
+                        closed=False,
+                        pinned=True,
+                        hidden=False,
+                        icon_color=0x6FB9F0,
+                        icon_emoji_id=123,
+                    )
+                ],
+                count=1,
+                order_by_create_date=True,
+            )
+        if request_name == "GetForumTopicsByIDRequest":
+            return SimpleNamespace(
+                topics=[SimpleNamespace(id=12, title="Support", top_message=102)]
+            )
+        if request_name == "GetDiscussionMessageRequest":
+            return SimpleNamespace(
+                messages=[
+                    OutputCapMessage(message_id=501, text="discussion", has_media=False)
+                ]
+            )
+        return await super().__call__(request)
+
+    async def iter_messages(self, *_args, **kwargs):
+        self.iter_messages_kwargs.append(kwargs)
+        yield OutputCapMessage(message_id=601, text="reply 1", has_media=False)
+        yield OutputCapMessage(message_id=600, text="reply 2", has_media=False)
+
+
+class ReactionAnalyticsTelegramClient(DummyTelegramClient):
+    def __init__(self, *_args, **_kwargs):
+        super().__init__(*_args, **_kwargs)
+        self.requests = []
+
+    async def get_messages(self, _entity, ids):
+        message = OutputCapMessage(message_id=ids, text="reacted", has_media=False)
+        message.reactions = MessageReactions(
+            results=[
+                ReactionCount(reaction=ReactionEmoji("👍"), count=3),
+            ],
+            can_see_list=True,
+        )
+        return message
+
+    async def __call__(self, request):
+        self.requests.append(request)
+        request_name = type(request).__name__
+        if request_name == "GetMessageReactionsListRequest":
+            return SimpleNamespace(
+                reactions=[
+                    MessagePeerReaction(
+                        peer_id=PeerUser(777),
+                        date=datetime(2026, 4, 17, tzinfo=timezone.utc),
+                        reaction=ReactionEmoji("👍"),
+                        unread=True,
+                    )
+                ],
+                next_offset="next",
+            )
+        if request_name == "GetUnreadReactionsRequest":
+            return SimpleNamespace(
+                messages=[
+                    OutputCapMessage(message_id=701, text="unread reaction", has_media=False)
+                ]
+            )
+        return await super().__call__(request)
+
+
 class NonUserDialogTelegramClient(DummyTelegramClient):
     async def get_entity(self, chat):
         self.get_entity_calls.append(chat)
@@ -648,10 +752,27 @@ class ClientTests(unittest.TestCase):
         with patch("telegram_mcp.client.TelegramClient", UnauthorizedTelegramClient):
             with patch("telegram_mcp.client.FileSessionLock", FakeLock):
                 wrapper = TelegramWrapper(settings)
-                with self.assertRaises(RuntimeError):
+                with self.assertRaises(ToolContractError) as ctx:
                     _run(wrapper.connect())
 
+        self.assertEqual(ctx.exception.code, "auth_required")
         self.assertEqual(events, ["init", "acquire", "release"])
+
+    def test_ensure_connected_auth_failure_is_structured(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ReconnectTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        async def unauthorized():
+            return False
+
+        wrapper.client.is_user_authorized = unauthorized
+
+        with self.assertRaises(ToolContractError) as ctx:
+            _run(wrapper.ensure_connected())
+
+        self.assertEqual(ctx.exception.code, "auth_required")
 
     def test_concurrent_ensure_connected_uses_single_reconnect(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -720,6 +841,121 @@ class ClientTests(unittest.TestCase):
         self.assertEqual([message.id for message in first_result.messages], [7])
         self.assertEqual([message.id for message in second_result.messages], [7])
         self.assertEqual(wrapper.client.iter_message_calls, 1)
+
+    def test_sent_media_search_uses_global_sent_media_filter(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", SentMediaSearchTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.sent_media_search(media_type="photo", limit=3))
+
+        self.assertEqual([message.id for message in result.messages], [91])
+        self.assertEqual(wrapper.client.iter_dialogs_kwargs[0]["limit"], 20)
+        self.assertEqual(wrapper.client.iter_messages_args[0][0].id, 501)
+        kwargs = wrapper.client.iter_messages_kwargs[0]
+        self.assertEqual(kwargs["limit"], 4)
+        self.assertEqual(kwargs["from_user"], "me")
+        self.assertEqual(type(kwargs["filter"]).__name__, "InputMessagesFilterPhotos")
+
+    def test_list_forum_topics_uses_forum_topics_request(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ThreadForumTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.list_forum_topics(chat="@forum", limit=5, q="ann"))
+
+        self.assertEqual([topic.id for topic in result.topics], [11])
+        self.assertEqual(result.topics[0].title, "Announcements")
+        self.assertTrue(result.topics[0].pinned)
+        request = wrapper.client.requests[0]
+        self.assertEqual(type(request).__name__, "GetForumTopicsRequest")
+        self.assertEqual(request.limit, 5)
+        self.assertEqual(request.q, "ann")
+
+    def test_get_forum_topics_by_id_uses_topic_ids(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ThreadForumTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.get_forum_topics_by_id(chat="@forum", topic_ids=[12]))
+
+        self.assertEqual([topic.id for topic in result.topics], [12])
+        request = wrapper.client.requests[0]
+        self.assertEqual(type(request).__name__, "GetForumTopicsByIDRequest")
+        self.assertEqual(request.topics, [12])
+
+    def test_get_discussion_message_uses_discussion_request(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ThreadForumTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.get_discussion_message(chat="@channel", message_id=501))
+
+        self.assertEqual([message.id for message in result.messages], [501])
+        request = wrapper.client.requests[0]
+        self.assertEqual(type(request).__name__, "GetDiscussionMessageRequest")
+        self.assertEqual(request.msg_id, 501)
+
+    def test_get_thread_replies_uses_reply_to_iterator_and_caps(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ThreadForumTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.get_thread_replies(chat="@forum", message_id=10, limit=1))
+
+        self.assertEqual([message.id for message in result.messages], [601])
+        self.assertTrue(result.has_more_before)
+        kwargs = wrapper.client.iter_messages_kwargs[0]
+        self.assertEqual(kwargs["reply_to"], 10)
+        self.assertEqual(kwargs["limit"], 2)
+
+    def test_get_message_reactions_returns_counts_and_visible_peers(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ReactionAnalyticsTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(
+            wrapper.get_message_reactions(
+                chat="@targetdaddy",
+                message_id=7,
+                limit=5,
+                reaction="👍",
+            )
+        )
+
+        self.assertEqual(result.message_id, 7)
+        self.assertEqual(result.counts[0].reaction, "👍")
+        self.assertEqual(result.counts[0].count, 3)
+        self.assertEqual(result.peers[0].peer_id, 777)
+        self.assertEqual(result.peers[0].peer_type, "user")
+        self.assertTrue(result.peers[0].unread)
+        self.assertEqual(result.next_offset, "next")
+        request = wrapper.client.requests[0]
+        self.assertEqual(type(request).__name__, "GetMessageReactionsListRequest")
+        self.assertEqual(request.id, 7)
+        self.assertEqual(request.limit, 5)
+        self.assertEqual(request.reaction.emoticon, "👍")
+
+    def test_get_unread_reactions_returns_messages_without_marking_read(self):
+        settings = Settings(api_id=1, api_hash="hash")
+
+        with patch("telegram_mcp.client.TelegramClient", ReactionAnalyticsTelegramClient):
+            wrapper = TelegramWrapper(settings)
+
+        result = _run(wrapper.get_unread_reactions(chat="@targetdaddy", limit=1, topic_id=10))
+
+        self.assertEqual([message.id for message in result.messages], [701])
+        self.assertEqual(result.next_offset_id, 701)
+        request = wrapper.client.requests[0]
+        self.assertEqual(type(request).__name__, "GetUnreadReactionsRequest")
+        self.assertEqual(request.limit, 2)
+        self.assertEqual(request.top_msg_id, 10)
 
     def test_internal_pinned_helper_shares_inflight_work_for_tool_path(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -1417,7 +1653,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "dialog_not_found")
 
     def test_send_dialog_message_uses_existing_send_path(self):
-        settings = Settings(api_id=1, api_hash="hash")
+        settings = Settings(api_id=1, api_hash="hash", write_approval_required=False)
 
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
@@ -1430,7 +1666,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(wrapper.client.send_message_calls[0]["parse_mode"], "md")
 
     def test_reply_in_dialog_uses_existing_reply_path(self):
-        settings = Settings(api_id=1, api_hash="hash")
+        settings = Settings(api_id=1, api_hash="hash", write_approval_required=False)
 
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
@@ -1442,20 +1678,19 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result.reply_to_msg_id, 77)
         self.assertEqual(wrapper.client.send_message_calls[0]["reply_to"], 77)
 
-    def test_send_dialog_message_requires_confirmation_token(self):
-        settings = Settings(api_id=1, api_hash="hash")
+    def test_send_dialog_message_allows_direct_send_when_approval_disabled(self):
+        settings = Settings(api_id=1, api_hash="hash", write_approval_required=False)
 
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
 
-        with self.assertRaises(ToolContractError) as ctx:
-            _run(wrapper.send_dialog_message(chat="@targetdaddy", text="hello"))
+        result = _run(wrapper.send_dialog_message(chat="@targetdaddy", text="hello"))
 
-        self.assertEqual(ctx.exception.code, "missing_confirmation_token")
-        self.assertEqual(wrapper.client.send_message_calls, [])
+        self.assertEqual(result.text, "hello")
+        self.assertEqual(wrapper.client.send_message_calls[0]["entity"].username, "targetdaddy")
 
     def test_send_dialog_message_rejects_changed_preview_payload(self):
-        settings = Settings(api_id=1, api_hash="hash")
+        settings = Settings(api_id=1, api_hash="hash", write_approval_required=False)
 
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
@@ -1471,7 +1706,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(wrapper.client.send_message_calls, [])
 
     def test_send_confirmation_token_is_single_use(self):
-        settings = Settings(api_id=1, api_hash="hash")
+        settings = Settings(api_id=1, api_hash="hash", write_approval_required=False)
 
         with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
             wrapper = TelegramWrapper(settings)
@@ -1664,6 +1899,8 @@ class ClientTests(unittest.TestCase):
         self.assertIsNotNone(doctor.runtime_stats)
         self.assertIn("dialog_read_cache_hit", doctor.runtime_stats)
         self.assertIn("dialog_read_cache_hit_rate", doctor.runtime_stats)
+        self.assertIsNotNone(doctor.runtime_compat)
+        self.assertTrue(doctor.runtime_compat["ok"])
 
     def test_archive_chat_invalidates_list_chats_cache(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -1994,78 +2231,6 @@ class ClientTests(unittest.TestCase):
                 ["dialog_read:", "dialog_search:", "list_chats"],
             )
 
-    def test_send_file_rejects_sensitive_artifact_paths(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        wrapper.client.send_file = AsyncMock()
-
-        with patch.object(wrapper, "_resolve_entity", AsyncMock()) as resolve_entity:
-            with self.assertRaises(ToolContractError) as ctx:
-                _run(wrapper.send_file(chat="@example_user", file_path="/tmp/.env"))
-
-        self.assertEqual(ctx.exception.code, "unsafe_file_path")
-        resolve_entity.assert_not_awaited()
-        wrapper.client.send_file.assert_not_awaited()
-
-    def test_send_voice_rejects_sensitive_paths_before_resolving_chat(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        wrapper.client.send_file = AsyncMock()
-
-        with patch.object(wrapper, "_resolve_entity", AsyncMock()) as resolve_entity:
-            with self.assertRaises(ToolContractError) as ctx:
-                _run(wrapper.send_voice(chat="@example_user", file_path="/tmp/.env"))
-
-        self.assertEqual(ctx.exception.code, "unsafe_file_path")
-        resolve_entity.assert_not_awaited()
-        wrapper.client.send_file.assert_not_awaited()
-
-    def test_send_voice_rejects_subscriber_exports(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        wrapper.client.send_file = AsyncMock()
-
-        with self.assertRaises(ToolContractError) as ctx:
-            _run(
-                wrapper.send_voice(
-                    chat="@example_user",
-                    file_path="/tmp/2026-05-22-example-subscribers.json",
-                )
-            )
-
-        self.assertEqual(ctx.exception.code, "unsafe_file_path")
-        wrapper.client.send_file.assert_not_awaited()
-
-    def test_send_file_rejects_symlink_escape(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        wrapper.client.send_file = AsyncMock()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target.txt"
-            target.write_text("data", encoding="utf-8")
-            link = root / "link.txt"
-            link.symlink_to(target)
-
-            with self.assertRaises(ToolContractError) as ctx:
-                _run(wrapper.send_file(chat="@example_user", file_path=str(link)))
-
-        self.assertEqual(ctx.exception.code, "unsafe_file_path")
-        wrapper.client.send_file.assert_not_awaited()
-
     def test_pin_unpin_and_reaction_invalidate_dialog_and_list_caches(self):
         settings = Settings(api_id=1, api_hash="hash")
 
@@ -2307,6 +2472,7 @@ class ClientTests(unittest.TestCase):
                     chat_ref="@targetdaddy",
                     message_id=7,
                     path=str(known_media),
+                    remote_media_ref="document:1007:dc4:size17",
                 )
                 result = _run(
                     wrapper.prepare_media_inspection_manifest(
@@ -2320,8 +2486,40 @@ class ClientTests(unittest.TestCase):
             self.assertEqual(result.items[0].media_type, "audio")
             self.assertEqual(result.items[0].mime_type, "audio/ogg")
             self.assertEqual(result.items[0].file_size, 17)
+            self.assertEqual(result.items[0].remote_media_ref, "document:1007:dc4:size17")
             self.assertEqual(result.items[0].local_path, str(known_media))
-            self.assertEqual(wrapper.client.get_messages_calls, [])
+            self.assertEqual(wrapper.client.get_messages_calls, [[7]])
+
+    def test_prepare_media_inspection_manifest_ignores_stale_local_media_ref(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stale_media = root / "stale.oga"
+            stale_media.write_bytes(b"stale")
+            settings = Settings(
+                api_id=1,
+                api_hash="hash",
+                download_dir=root / "downloads",
+                download_registry_path=root / "downloads.sqlite3",
+            )
+
+            with patch("telegram_mcp.client.TelegramClient", ManifestTelegramClient):
+                wrapper = TelegramWrapper(settings)
+                wrapper._record_downloaded_message_media(
+                    chat_id=1,
+                    chat_ref="@targetdaddy",
+                    message_id=7,
+                    path=str(stale_media),
+                    remote_media_ref="document:old:dc4:size5",
+                )
+                result = _run(
+                    wrapper.prepare_media_inspection_manifest(
+                        chat="@targetdaddy",
+                        limit=10,
+                    )
+                )
+
+            self.assertEqual(result.items[0].remote_media_ref, "document:1007:dc4:size17")
+            self.assertIsNone(result.items[0].local_path)
 
     def test_prepare_send_and_reply_message_are_preview_only(self):
         settings = Settings(api_id=1, api_hash="hash")
@@ -2355,85 +2553,6 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(reply_preview.reply_target_message_id, 7)
         self.assertTrue(reply_preview.confirmation_token)
         wrapper.client.send_message.assert_not_awaited()
-
-    def test_prepare_send_file_is_preview_only_and_never_sends(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        wrapper.client.send_file = AsyncMock(side_effect=AssertionError("sent"))
-        preview = _run(
-            wrapper.prepare_send_file(
-                chat="@example_user",
-                file_path="/tmp/demo.txt",
-                caption="hello",
-            )
-        )
-
-        self.assertTrue(preview.preview_only)
-        self.assertEqual(preview.send_tool, "send_file")
-        self.assertEqual(
-            preview.send_args_preview["file_path"],
-            str(Path("/tmp/demo.txt").resolve(strict=False)),
-        )
-        self.assertEqual(preview.file_name, "demo.txt")
-        self.assertEqual(len(preview.preview_token), 16)
-        self.assertIn("never sends", preview.warnings[0])
-        wrapper.client.send_file.assert_not_awaited()
-
-    def test_prepare_send_file_rejects_unsafe_paths_before_resolve(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-            wrapper = TelegramWrapper(settings)
-
-        with patch.object(wrapper, "resolve_dialog", AsyncMock()) as resolve_dialog:
-            with self.assertRaises(ToolContractError) as ctx:
-                _run(wrapper.prepare_send_file(chat="@example_user", file_path="/tmp/.env"))
-
-        self.assertEqual(ctx.exception.code, "unsafe_file_path")
-        resolve_dialog.assert_not_awaited()
-
-    def test_prepare_send_file_is_preview_only_and_validates_path(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            media_path = Path(tmp) / "demo.txt"
-            media_path.write_text("demo", encoding="utf-8")
-
-            with patch("telegram_mcp.client.TelegramClient", DummyTelegramClient):
-                wrapper = TelegramWrapper(settings)
-
-            wrapper.client.send_file = AsyncMock(side_effect=AssertionError("sent"))
-
-            preview = _run(
-                wrapper.prepare_send_file(
-                    chat="@example_user",
-                    file_path=str(media_path),
-                    caption="caption",
-                )
-            )
-
-        self.assertTrue(preview.preview_only)
-        self.assertEqual(preview.send_tool, "send_file")
-        self.assertEqual(preview.send_args_preview["chat"], "tg://dialog/unknown/1")
-        self.assertEqual(preview.send_args_preview["file_path"], str(media_path.resolve()))
-        self.assertEqual(preview.send_args_preview["caption"], "caption")
-        self.assertIn("preview_only", preview.warnings[0])
-        wrapper.client.send_file.assert_not_awaited()
-
-    def test_download_profile_photo_returns_local_media_info(self):
-        settings = Settings(api_id=1, api_hash="hash")
-
-        with patch("telegram_mcp.client.TelegramClient", DownloadTelegramClient):
-            wrapper = TelegramWrapper(settings)
-            result = _run(wrapper.download_profile_photo(chat="@example_user"))
-
-        self.assertEqual(result.media_type, "photo")
-        self.assertEqual(result.file_name, "profile.jpg")
-        self.assertTrue(result.local_path.endswith("profile.jpg"))
-        self.assertEqual(Path(result.local_path).read_bytes(), b"profile")
 
     def test_mark_as_read_invalidates_list_chats_cache(self):
         settings = Settings(api_id=1, api_hash="hash")

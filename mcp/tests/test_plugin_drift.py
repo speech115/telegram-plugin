@@ -72,6 +72,44 @@ class PluginDriftTests(unittest.TestCase):
             self.assertTrue(report.sync_safe)
             self.assertEqual(report.live_skill.sha256, report.plugin_cache_skill.sha256)
 
+    def test_ignores_ds_store_in_package_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def write_plugin(base: Path, *, ds_store: bool = False) -> None:
+                skill = base / "skills" / "telegram" / "SKILL.md"
+                skill.parent.mkdir(parents=True, exist_ok=True)
+                skill.write_text("same skill\n", encoding="utf-8")
+                manifest_dir = base / ".codex-plugin"
+                manifest_dir.mkdir(parents=True, exist_ok=True)
+                (manifest_dir / "plugin.json").write_text(
+                    '{"name":"telegram","version":"0.1.0"}',
+                    encoding="utf-8",
+                )
+                (base / ".mcp.json").write_text('{"mcpServers": {}}\n', encoding="utf-8")
+                if ds_store:
+                    (base / ".DS_Store").write_bytes(b"macos-metadata")
+
+            live_root = root / "live"
+            source_root = root / "source"
+            cache_root = root / "cache"
+            write_plugin(live_root)
+            write_plugin(source_root)
+            write_plugin(cache_root, ds_store=True)
+
+            skill = "skills/telegram/SKILL.md"
+            report = check_plugin_drift(
+                live_skill_path=live_root / skill,
+                plugin_source_skill_path=source_root / skill,
+                marketplace_skill_path=source_root / skill,
+                plugin_cache_skill_path=cache_root / skill,
+                plugin_source_mcp_path=source_root / ".mcp.json",
+                plugin_cache_mcp_path=cache_root / ".mcp.json",
+            )
+
+            self.assertEqual(report.status, "ok")
+            self.assertEqual(report.canonical_source, "plugin_source_skill")
+
     def test_resolves_local_marketplace_source_and_installer_command(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -150,6 +188,9 @@ class PluginDriftTests(unittest.TestCase):
             self.assertTrue(report.sync_safe)
             self.assertTrue(report.installer_flow.safe_to_apply)
             self.assertIn("installer flow", report.recommendation)
+            self.assertTrue(report.installer_flow.materialize_command)
+            self.assertIn("--source-dir", report.installer_flow.materialize_command)
+            self.assertIn("--cache-root", report.installer_flow.materialize_command)
 
     def test_auto_cache_path_uses_source_manifest_version(self):
         with tempfile.TemporaryDirectory() as tmp:

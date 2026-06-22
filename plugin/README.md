@@ -1,50 +1,30 @@
 # Telegram local plugin
 
-Community-maintained packaging for local use. This is not an official Telegram
-client or Telegram LLC distribution.
+Local single-user Telegram MCP package for Codex/Claude agents. This is not an
+official Telegram client or Telegram LLC distribution.
 
-This plugin gives Codex a Telegram-flavored front door backed by the local
-`telegram-mcp` daemon at `http://127.0.0.1:8799/mcp`.
+The plugin points agents at two local `telegram-mcp` HTTP daemons:
 
-Recommended onboarding path is plugin source -> marketplace/cache
-materialization -> parity check -> first live facade smoke. Manual `.mcp.json`
-copying is fallback-only when plugin install/materialization is unavailable.
+- `telegram-main` -> `http://127.0.0.1:8799/mcp`
+- `telegram-pl` -> `http://127.0.0.1:8800/mcp`
 
-The default installed surface is Default Mode: read-only and preview tools for
-live dialog resolution, reading, searching, context collection, scoped media,
-voice transcription, and non-sending reply drafts.
+Both expose the full local Telegram tool surface. The package intentionally does
+not write `allowedTools`; the owner wants agents to use Telegram directly and
+quickly through MCP.
 
-Default Mode boundaries are enforced by runtime profile + plugin allowlist
-(`TELEGRAM_MCP_TOOL_PROFILE=default` and `plugin/.mcp.json`). HTTP daemon mode
-also requires a local bearer token (`TELEGRAM_MCP_AUTH_TOKEN`) configured on the
-server and client. The plugin MCP config references that variable with
-`bearer_token_env_var`; it does not store the token itself.
+For normal current/live tasks, use MCP first:
 
-What it does:
+- read/search: `telegram_read`, `telegram_search`, `global_search`,
+  `sent_media_search`, `list_forum_topics`, `get_thread_replies`,
+  `get_discussion_message`, `get_message_reactions`, `get_unread_reactions`,
+  `list_chats`, `list_contacts`
+- send: `telegram_send` or `send_message`
+- mutate: `edit_message`, `delete_messages`, `forward_messages`,
+  `set_message_pinned`, `send_reaction`
+- media/files: `telegram_inspect_media`, `download_media`, `send_file`
 
-- packages Telegram dialog skills and starter prompts into one installable plugin
-- points Codex at the live `telegram-mcp` server instead of mirror-first routing
-- exposes only the Default Mode facade allowlist for read/search/context/draft
-  work
-- keeps the plugin ready for a future real app binding if a `connector_...` or `asdk_app_...` id is provisioned later
+`telegram-confirmed` preview tools still exist as optional workflow helpers, but
+they are no longer the default route for this local owner setup.
 
-What it does not do yet:
-
-- it does not expose write, subscriber export, or admin tools in the default
-  plugin allowlist
-- it does not mint a real `app://telegram` id locally
-- it does not replace platform-side app provisioning
-
-Unified workflow: use Default Mode facade tools first for normal user tasks.
-Use Power Mode only when the user explicitly requests write/admin operations.
-Direct Telethon usage is not a normal user path; keep it for operator/debug
-workflows.
-
-Power Mode and Operator Workflows still exist in the broader local Telegram
-stack, but they require explicit non-default tooling and their own safety
-checks. Media download and voice transcription are scoped local inspection tools
-in the default allowlist.
-
-Right now this is the practical middle ground: Gmail-like plugin UX around the
-live Telegram MCP, without pretending we already have a first-class app
-connector id.
+Do not treat `8800` as failover for `8799`: it is a second account. Pick
+`telegram-main` or `telegram-pl` explicitly.

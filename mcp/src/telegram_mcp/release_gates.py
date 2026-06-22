@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .adapter_installer import plan_adapter_install, write_plan
 from .facade_manifest import default_facade_tool_names
+from .agent_doc_sync import check_agent_docs_sync
 from .plugin_package import find_package_hygiene_issues
 from .prompt_safety import (
     message_content_is_untrusted_instruction,
@@ -68,6 +69,15 @@ def audit_fresh_install_smoke() -> GateResult:
     )
 
 
+def audit_agent_doc_sync(plugin_dir: str | Path) -> GateResult:
+    result = check_agent_docs_sync(plugin_dir)
+    return GateResult(
+        name="agent_doc_sync",
+        status="ok" if not result.drift else "fail",
+        findings=list(result.drift),
+    )
+
+
 def audit_prompt_safety_rules() -> GateResult:
     findings: list[str] = []
     checks = [
@@ -92,13 +102,19 @@ def audit_prompt_safety_rules() -> GateResult:
     )
 
 
-def run_release_gates(*, package_dir: str | Path | None = None) -> dict[str, object]:
+def run_release_gates(
+    *,
+    package_dir: str | Path | None = None,
+    plugin_dir: str | Path | None = None,
+) -> dict[str, object]:
     gates = [
         audit_fresh_install_smoke(),
         audit_prompt_safety_rules(),
     ]
     if package_dir is not None:
         gates.insert(0, audit_packaging_hygiene(package_dir))
+    if plugin_dir is not None:
+        gates.append(audit_agent_doc_sync(plugin_dir))
     failures = [gate for gate in gates if gate.status != "ok"]
     return {
         "status": "ok" if not failures else "fail",
@@ -113,13 +129,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--package-dir",
         help="Portable plugin package directory for packaging hygiene checks.",
     )
+    parser.add_argument(
+        "--plugin-dir",
+        help="Plugin source root with skills/telegram/agent-docs/manifest.json for doc sync checks.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    report = run_release_gates(package_dir=args.package_dir)
+    report = run_release_gates(package_dir=args.package_dir, plugin_dir=args.plugin_dir)
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:

@@ -12,6 +12,8 @@ from telethon.tl.types import (
     User,
 )
 
+from .telethon_compat import apply_telethon_compat
+
 INVITE_LINK_RE = re.compile(
     r"^(?:https?://)?t\.me/(?:joinchat/|\+)(?P<token>[A-Za-z0-9_-]+)$",
     re.IGNORECASE,
@@ -27,6 +29,8 @@ async def resolve_entity(client: TelegramClient, chat: str | int):
 
     Accepts: numeric ID (int or str), @username, phone number, "me", or a t.me link.
     """
+    apply_telethon_compat()
+
     # Handle int directly (from MCP transport JSON coercion)
     if isinstance(chat, int):
         return await client.get_entity(chat)

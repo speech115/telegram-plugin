@@ -6,31 +6,31 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
-from .doctor import build_registry
+from .doctor import ControlPlaneDoctor
 from .paths import CONTROL_ROOT, MCP_REPO, MIRROR_ROOT, PLUGIN_CACHE, PLUGIN_CACHE_ROOT, PLUGIN_SOURCE, POLICY_DIR
 from .util import load_json
 
 AUDIT_REMEDIATION_PATH = POLICY_DIR / "audit-remediation.json"
 HOME = Path.home()
 
-DEFAULT_FINDING_TO_STEPS: dict[str, list[str]] = {
-    "managed_system_missing": ["managed-systems-inventory"],
-    "managed_system_kind_mismatch": ["managed-systems-inventory"],
-    "managed_system_marker_missing": ["managed-systems-inventory"],
-    "plugin_cache_needs_materialization": ["plugin-cache-materialize"],
-    "unexpected_write_tools": ["mcp-surface-allowlist"],
-    "non_facade_tools": ["mcp-surface-allowlist"],
-    "launchd_path_outside_allowed_roots": ["launchd-inventory-and-cold-mode"],
-    "mirror_runtime_exports_missing": ["mirror-runtime-promotion-policy"],
-    "mirror_runtime_exports_incomplete": ["mirror-runtime-promotion-policy"],
-    "telecrawl_known_gaps": ["telecrawl-archive-policy"],
-    "telecrawl_active_archives_incomplete": ["telecrawl-archive-policy"],
+_TEMPLATE_VARS = {
+    "CONTROL_ROOT": CONTROL_ROOT,
+    "MCP_REPO": MCP_REPO,
+    "MIRROR_ROOT": MIRROR_ROOT,
+    "PLUGIN_CACHE": PLUGIN_CACHE,
+    "PLUGIN_CACHE_ROOT": PLUGIN_CACHE_ROOT,
+    "PLUGIN_SOURCE": PLUGIN_SOURCE,
+    "HOME": HOME,
 }
 
 
 @lru_cache(maxsize=4)
 def load_remediation_policy(path: str = str(AUDIT_REMEDIATION_PATH)) -> dict[str, Any]:
     return load_json(Path(path)) or {}
+
+
+def build_registry() -> dict[str, Any]:
+    return ControlPlaneDoctor(profile="maintenance").build_registry()
 
 
 def clear_policy_cache() -> None:
@@ -103,11 +103,10 @@ class AuditRemediationPolicy:
 
     def steps_for_findings(self, context: RemediationContext) -> dict[str, list[str]]:
         mapping = self.payload.get("finding_to_steps")
-        merged_mapping: dict[str, Any] = dict(DEFAULT_FINDING_TO_STEPS)
-        if isinstance(mapping, dict):
-            merged_mapping.update(mapping)
+        if not isinstance(mapping, dict):
+            return {}
         result: dict[str, list[str]] = {}
-        for finding_id, step_ids in merged_mapping.items():
+        for finding_id, step_ids in mapping.items():
             if finding_id not in context.finding_ids or not isinstance(step_ids, list):
                 continue
             result[str(finding_id)] = [str(step) for step in step_ids if isinstance(step, str)]
@@ -126,6 +125,13 @@ class AuditRemediationPolicy:
         if not isinstance(recommended_order, list):
             recommended_order = [step["id"] for step in steps]
         return [str(item) for item in recommended_order if isinstance(item, str)]
+
+    def step_spec(self, step_id: str) -> dict[str, Any]:
+        specs = self.payload.get("step_specs")
+        if not isinstance(specs, dict):
+            return {}
+        spec = specs.get(step_id)
+        return spec if isinstance(spec, dict) else {}
 
     def build_plan(self, registry: dict[str, Any]) -> dict[str, Any]:
         context = RemediationContext(registry)
@@ -153,7 +159,7 @@ def steps_for_findings(registry: dict[str, Any], *, policy: dict[str, Any] | Non
 def _mcp_surface_repair_reason(registry: dict[str, Any]) -> str:
     findings = _findings_for_component(registry, "mcp_surface")
     if not findings:
-        return "Default MCP surface gate is clean."
+        return "Owner-local full MCP surface gate is clean."
     parts: list[str] = []
     for item in findings:
         finding_id = item.get("id")
@@ -196,6 +202,58 @@ def _step(
     return payload
 
 
+def _expand_template(value: str) -> str:
+    result = value
+    for name, path in _TEMPLATE_VARS.items():
+        result = result.replace("${" + name + "}", str(path))
+    return result
+
+
+def _expand_string_list(items: Any) -> list[str]:
+    if not isinstance(items, list):
+        return []
+    return [_expand_template(item) for item in items if isinstance(item, str)]
+
+
+def _expand_commands(items: Any) -> list[list[str]]:
+    if not isinstance(items, list):
+        return []
+    commands: list[list[str]] = []
+    for command in items:
+        if not isinstance(command, list):
+            continue
+        expanded = [_expand_template(str(part)) for part in command]
+        if expanded:
+            commands.append(expanded)
+    return commands
+
+
+def _step_from_policy(
+    policy: AuditRemediationPolicy,
+    *,
+    step_id: str,
+    status: str,
+    reason: str,
+    apply_commands: list[list[str]] | None = None,
+    auto_apply_allowed: bool | None = None,
+    triggered_by_findings: list[str] | None = None,
+) -> dict[str, Any]:
+    spec = policy.step_spec(step_id)
+    return _step(
+        step_id=step_id,
+        title=str(spec.get("title") or step_id),
+        status=status,
+        reason=reason,
+        touched_paths=_expand_string_list(spec.get("touched_paths")),
+        dry_run_commands=_expand_commands(spec.get("dry_run_commands")),
+        apply_commands=_expand_commands(spec.get("apply_commands")) if apply_commands is None else apply_commands,
+        rollback=_expand_string_list(spec.get("rollback")),
+        verifies=_expand_commands(spec.get("verification_commands")),
+        auto_apply_allowed=bool(spec.get("auto_apply_allowed")) if auto_apply_allowed is None else auto_apply_allowed,
+        triggered_by_findings=triggered_by_findings,
+    )
+
+
 def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) -> list[dict[str, Any]]:
     registry = context.registry
     steps: list[dict[str, Any]] = []
@@ -205,38 +263,24 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
 
     managed_blocked = context.component_status("managed_systems") == "fail"
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="managed-systems-inventory",
-            title="Verify Telegram managed systems inventory before any cleanup or repair",
             status="blocked_by_missing_or_wrong_managed_system" if managed_blocked else "already_clean",
             reason=(
                 "A registered Telegram system is missing, has the wrong kind, or lacks required marker files."
                 if managed_blocked
                 else "Managed systems inventory is clean."
             ),
-            touched_paths=[
-                str(CONTROL_ROOT / "policy/managed-systems.json"),
-                str(CONTROL_ROOT / "PROTECTION.md"),
-            ],
-            dry_run_commands=[[str(CONTROL_ROOT / "bin/telegram-managed-systems"), "--json"]],
-            apply_commands=[],
-            rollback=[
-                "Policy-only inventory changes can be reverted without touching actual Telegram systems.",
-                "Do not delete or move any registered system from this step.",
-            ],
-            verifies=[
-                [str(CONTROL_ROOT / "bin/telegram-managed-systems"), "--json"],
-                [str(CONTROL_ROOT / "bin/telegram-doctor"), "--json"],
-            ],
             triggered_by_findings=triggers("managed-systems-inventory"),
         )
     )
 
     plugin_blocked = context.component_status("plugin_drift") == "fail"
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="plugin-cache-parity",
-            title="Normalize Telegram plugin source/cache/version parity",
             status="blocked_by_current_drift" if plugin_blocked else "already_clean",
             reason=(
                 "Active plugin source/cache differ at the same version; repair must happen before trusting "
@@ -244,28 +288,6 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
                 if plugin_blocked
                 else "Plugin drift gate is clean."
             ),
-            touched_paths=[
-                str(PLUGIN_SOURCE),
-                str(PLUGIN_CACHE),
-                str(HOME / ".codex/config.toml"),
-                str(HOME / ".agents/plugins/marketplace.json"),
-            ],
-            dry_run_commands=[
-                [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
-                ["diff", "-ru", str(PLUGIN_SOURCE / "skills/telegram"), str(PLUGIN_CACHE / "skills/telegram")],
-            ],
-            apply_commands=[
-                ["codex", "plugin", "remove", "telegram@sereja-local"],
-                ["codex", "plugin", "add", "telegram@sereja-local"],
-            ],
-            rollback=[
-                "Leave older versioned cache directories intact.",
-                "If installer output is wrong, disable the new cache by restoring the previous marketplace entry.",
-            ],
-            verifies=[
-                [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
-                [str(CONTROL_ROOT / "bin/telegram-plugin-drift"), "--json"],
-            ],
             triggered_by_findings=triggers("plugin-cache-parity"),
         )
     )
@@ -284,71 +306,37 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
             "--json",
         ]
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="plugin-cache-materialize",
-            title="Materialize Codex Telegram plugin cache from canonical source",
             status="ready_to_apply" if materialize_warn else "already_clean",
             reason=(
                 "Plugin source is ahead of installed cache; copy the versioned cache tree locally."
                 if materialize_warn
                 else "Plugin cache matches source for the active version."
             ),
-            touched_paths=[str(PLUGIN_SOURCE), str(PLUGIN_CACHE_ROOT)],
-            dry_run_commands=[[str(MCP_REPO / "bin/check-plugin-drift"), "--json"]],
             apply_commands=[materialize_cmd] if materialize_warn else [],
-            rollback=["Older versioned cache directories remain intact; re-run materialize after reverting source."],
-            verifies=[
-                [str(MCP_REPO / "bin/check-plugin-drift"), "--json"],
-                [str(CONTROL_ROOT / "bin/telegram-doctor"), "--json"],
-            ],
             auto_apply_allowed=True,
             triggered_by_findings=triggers("plugin-cache-materialize") or ["plugin_cache_needs_materialization"],
         )
     )
 
     mcp_surface_blocked = context.component_status("mcp_surface") == "fail"
-    unexpected_write = next(
-        (
-            item.get("tools")
-            for item in context.findings_for_component("mcp_surface")
-            if item.get("id") == "unexpected_write_tools"
-        ),
-        None,
-    )
-    mcp_apply_commands: list[list[str]] = []
-    if mcp_surface_blocked and isinstance(unexpected_write, list) and "send_file" in unexpected_write:
-        mcp_apply_commands = [["python3", "-m", "pytest", "-q", "tests/test_registration.py"]]
     steps.append(
-        _step(
-            step_id="mcp-surface-allowlist",
-            title="Restore read-only default Telegram MCP facade surface",
-            status="blocked_by_current_surface" if mcp_surface_blocked else "already_clean",
+        _step_from_policy(
+            policy,
+            step_id="mcp-surface-contract",
+            status="needs_surface_contract_diagnosis" if mcp_surface_blocked else "already_clean",
             reason=_mcp_surface_repair_reason(registry),
-            touched_paths=[
-                str(MCP_REPO / "src/telegram_mcp/tools/__init__.py"),
-                str(MCP_REPO / "src/telegram_mcp/tools/media_tools.py"),
-                str(PLUGIN_SOURCE / ".mcp.json"),
-            ],
-            dry_run_commands=[[str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"]],
-            apply_commands=mcp_apply_commands,
-            rollback=[
-                "Revert FACADE_TOOL_NAMES and media_tools.register_facade() in telegram-mcp.",
-                "Keep plugin .mcp.json on the prior endpoint until the server-side allowlist is verified.",
-            ],
-            verifies=[
-                [str(CONTROL_ROOT / "bin/telegram-mcp-surface"), "--json"],
-                [str(MCP_REPO / "bin/contract-smoke"), "--json"],
-                ["python3", "-m", "pytest", "-q", str(CONTROL_ROOT)],
-            ],
-            triggered_by_findings=triggers("mcp-surface-allowlist"),
+            triggered_by_findings=triggers("mcp-surface-contract"),
         )
     )
 
     launchd_blocked = context.component_status("launchd") == "fail"
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="launchd-inventory-and-cold-mode",
-            title="Reconcile Telegram launchd jobs with approved roots and cold mirror mode",
             status="blocked_by_launchd_drift" if launchd_blocked else "already_clean",
             reason=(
                 "LaunchAgents reference legacy mirror paths, mirror jobs have autostart config, or loaded jobs "
@@ -356,44 +344,21 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
                 if launchd_blocked
                 else "Launchd gate is clean."
             ),
-            touched_paths=[
-                str(HOME / "Library/LaunchAgents/com.sereja.telegram-*.plist"),
-                str(HOME / "Library/LaunchAgents/com.sereja.telecrawl*.plist"),
-                str(CONTROL_ROOT / "policy/allowed-roots.json"),
-            ],
-            dry_run_commands=[
-                [str(CONTROL_ROOT / "bin/telegram-launchd-audit"), "--json"],
-                ["launchctl", "list"],
-            ],
-            apply_commands=[],
-            rollback=[
-                "Before any plist write, copy the original plist to a timestamped local backup.",
-                "Use launchctl bootout/bootstrap only from an explicit later migration step.",
-            ],
-            verifies=[[str(CONTROL_ROOT / "bin/telegram-launchd-audit"), "--json"]],
             triggered_by_findings=triggers("launchd-inventory-and-cold-mode"),
         )
     )
 
     sessions_blocked = context.component_status("sessions") == "fail"
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="session-registry",
-            title="Create external Telegram session registry/broker inputs",
             status="blocked_by_missing_registry" if sessions_blocked else "already_clean",
             reason=(
                 "Session files exist in recovery trees and no external owner/lease/schema registry exists."
                 if sessions_blocked
                 else "Session gate is clean."
             ),
-            touched_paths=[str(CONTROL_ROOT / "policy/sessions.json")],
-            dry_run_commands=[[str(CONTROL_ROOT / "bin/telegram-session-audit"), "--json"]],
-            apply_commands=[],
-            rollback=[
-                "Policy-only session registry can be removed without touching actual session files.",
-                "Do not move or copy session files in this milestone.",
-            ],
-            verifies=[[str(CONTROL_ROOT / "bin/telegram-session-audit"), "--json"]],
             triggered_by_findings=triggers("session-registry"),
         )
     )
@@ -413,9 +378,9 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
         f"{mirror_summary.get('export_missing_count')} missing"
     )
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="mirror-runtime-promotion-policy",
-            title="Keep telegram-mirror recovery-scoped until runtime preflight exists",
             status=(
                 "blocked_by_recovery_state"
                 if mirror_blocked
@@ -430,40 +395,21 @@ def _build_steps(context: RemediationContext, policy: AuditRemediationPolicy) ->
                 if mirror_exports_missing
                 else "Mirror gate is clean."
             ),
-            touched_paths=[
-                str(CONTROL_ROOT / "policy/source-routing.json"),
-                str(MIRROR_ROOT),
-            ],
-            dry_run_commands=[
-                [str(CONTROL_ROOT / "bin/telegram-mirror-audit"), "--json"],
-                [str(CONTROL_ROOT / "bin/telegram-mirror-preflight"), "--json"],
-            ],
-            apply_commands=[],
-            rollback=["Keep recovery classification until an explicit runtime preflight passes."],
-            verifies=[[str(CONTROL_ROOT / "bin/telegram-mirror-audit"), "--json"]],
             triggered_by_findings=triggers("mirror-runtime-promotion-policy"),
         )
     )
 
     telecrawl_blocked = context.component_status("telecrawl") == "fail"
     steps.append(
-        _step(
+        _step_from_policy(
+            policy,
             step_id="telecrawl-archive-policy",
-            title="Make telecrawl archive coverage explicit and non-live",
             status="blocked_by_known_gaps" if telecrawl_blocked else "already_clean",
             reason=(
                 "Telecrawl default archive has known gaps or inactive accounts; it cannot answer current/latest claims."
                 if telecrawl_blocked
                 else "Telecrawl gate is clean."
             ),
-            touched_paths=[
-                str(CONTROL_ROOT / "policy/source-routing.json"),
-                str(CONTROL_ROOT / "policy/telecrawl.json"),
-            ],
-            dry_run_commands=[[str(CONTROL_ROOT / "bin/telegram-telecrawl-status"), "--json"]],
-            apply_commands=[],
-            rollback=["Policy-only archive routing can be reverted without touching archive DBs."],
-            verifies=[[str(CONTROL_ROOT / "bin/telegram-telecrawl-status"), "--json"]],
             triggered_by_findings=triggers("telecrawl-archive-policy"),
         )
     )

@@ -9,6 +9,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .agent_doc_sync import check_agent_docs_sync, sync_agent_docs
+
 
 FORBIDDEN_NAMES = {".DS_Store", ".env", "__pycache__"}
 FORBIDDEN_SUFFIXES = {".session", ".pyc"}
@@ -22,6 +24,7 @@ class PluginPackageResult:
     output_dir: str
     file_count: int
     hygiene_issues: list[str]
+    agent_doc_sync: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -51,7 +54,17 @@ def _iter_package_files(source_dir: Path) -> list[Path]:
     return [path for path in sorted(source_dir.rglob("*")) if path.is_file()]
 
 
-def build_plugin_package(*, source_dir: str | Path, output_dir: str | Path) -> PluginPackageResult:
+def _default_mcp_repo() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def build_plugin_package(
+    *,
+    source_dir: str | Path,
+    output_dir: str | Path,
+    sync_agent_docs_to_mcp: bool = True,
+    mcp_repo_dir: str | Path | None = None,
+) -> PluginPackageResult:
     source = Path(source_dir).expanduser().resolve()
     output = Path(output_dir).expanduser()
     if not source.exists() or not source.is_dir():
@@ -69,6 +82,22 @@ def build_plugin_package(*, source_dir: str | Path, output_dir: str | Path) -> P
             hygiene_issues=issues,
         )
 
+    agent_doc_sync_payload: dict[str, object] | None = None
+    manifest_path = source / "skills" / "telegram" / "agent-docs" / "manifest.json"
+    if sync_agent_docs_to_mcp and manifest_path.is_file():
+        sync_result = sync_agent_docs(
+            source,
+            mcp_repo_dir=mcp_repo_dir or _default_mcp_repo(),
+            write_plugin_copy=True,
+        )
+        agent_doc_sync_payload = sync_result.to_dict()
+    elif sync_agent_docs_to_mcp:
+        agent_doc_sync_payload = {
+            "status": "skipped",
+            "reason": "agent-docs manifest missing",
+            "manifest": str(manifest_path),
+        }
+
     output.mkdir(parents=True, exist_ok=True)
     copied = 0
     for source_file in _iter_package_files(source):
@@ -84,6 +113,7 @@ def build_plugin_package(*, source_dir: str | Path, output_dir: str | Path) -> P
         output_dir=str(output),
         file_count=copied,
         hygiene_issues=[],
+        agent_doc_sync=agent_doc_sync_payload,
     )
 
 
@@ -92,6 +122,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-dir", required=True, help="Plugin source directory to package.")
     parser.add_argument("--output-dir", required=True, help="Empty output directory for the package.")
     parser.add_argument("--json", action="store_true", help="Print a machine-readable result.")
+    parser.add_argument(
+        "--skip-agent-doc-sync",
+        action="store_true",
+        help="Do not regenerate docs/agent from plugin references before packaging.",
+    )
+    parser.add_argument(
+        "--mcp-repo-dir",
+        default=None,
+        help="telegram-mcp repo root for docs/agent sync (defaults to this repository).",
+    )
     return parser
 
 
@@ -99,7 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
-        result = build_plugin_package(source_dir=args.source_dir, output_dir=args.output_dir)
+        result = build_plugin_package(
+            source_dir=args.source_dir,
+            output_dir=args.output_dir,
+            sync_agent_docs_to_mcp=not args.skip_agent_doc_sync,
+            mcp_repo_dir=args.mcp_repo_dir,
+        )
     except (FileExistsError, FileNotFoundError) as exc:
         result = PluginPackageResult(
             status="fail",

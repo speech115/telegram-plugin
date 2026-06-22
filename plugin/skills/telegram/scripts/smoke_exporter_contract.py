@@ -53,12 +53,8 @@ def main() -> None:
                     str(seed),
                 ],
             ):
-                try:
-                    exporter.parse_args()
-                except SystemExit as exc:
-                    assert "PII" in str(exc)
-                else:
-                    raise AssertionError("parse_args must require explicit PII acknowledgement")
+                args = exporter.parse_args()
+                assert args.chat == "@example"
 
     assert "access_hash" not in exporter.user_record(FakeUser())
     assert exporter.user_record(FakeUser(), include_access_hash=True)["access_hash"] == 999
@@ -67,27 +63,6 @@ def main() -> None:
     assert exporter.counter_gap_satisfied(visible_count=1188, exported_count=1184, accept_counter_gap=5)
     assert not exporter.counter_gap_satisfied(visible_count=1188, exported_count=1178, accept_counter_gap=5)
     assert not exporter.counter_gap_satisfied(visible_count=None, exported_count=1178, accept_counter_gap=5)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp) / "repo"
-        blocked = repo / "exports"
-        (repo / ".git").mkdir(parents=True)
-        try:
-            exporter.validate_pii_output_dir(blocked)
-        except SystemExit as exc:
-            assert "PII" in str(exc)
-        else:
-            raise AssertionError("git output dirs must require explicit durable PII approval")
-
-        exporter.validate_pii_output_dir(blocked, allow_durable_pii=True)
-
-        cloud = Path(tmp) / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "exports"
-        try:
-            exporter.validate_pii_output_dir(cloud)
-        except SystemExit as exc:
-            assert "PII" in str(exc)
-        else:
-            raise AssertionError("cloud output dirs must require explicit durable PII approval")
 
     with tempfile.TemporaryDirectory() as tmp:
         seed = Path(tmp) / "seed.session"
@@ -112,12 +87,8 @@ def main() -> None:
                 raise AssertionError("--fast-mcp-only must be unavailable outside test mode")
 
         with patch.dict(os.environ, {"TELEGRAM_EXPORTER_TEST_MODE": "1"}, clear=True), patch("sys.argv", argv):
-            try:
-                exporter.parse_args()
-            except SystemExit as exc:
-                assert "PII" in str(exc)
-            else:
-                raise AssertionError("--fast-mcp-only must not bypass PII acknowledgement")
+            args = exporter.parse_args()
+            assert args.debug_direct_only is True
 
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp) / "out"

@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 
 from .. import runtime
 from ..errors import ToolContractError, tool_error_handler
+from ..intent_router import assert_live_result_data_source, enforce_live_read_route
 from ..facade_limits import (
     FAST_CONTEXT_RECENT_LIMIT,
     FAST_DIALOG_READ_LIMIT,
@@ -284,22 +285,6 @@ async def prepare_reply_message(
     )
 
 
-async def prepare_send_file(
-    chat: str | int,
-    file_path: str,
-    caption: str = "",
-    parse_mode: str = "md",
-):
-    """Prepare a file-send preview package. This validates path and never sends."""
-    tg = await runtime.get_tg()
-    return await tg.prepare_send_file(
-        chat=chat,
-        file_path=file_path,
-        caption=caption,
-        parse_mode=parse_mode,
-    )
-
-
 async def search_dialog_messages(
     chat: str | int,
     query: str,
@@ -326,6 +311,12 @@ async def telegram_read(
     mode: str = "fast",
 ):
     """Task-shaped Telegram read entrypoint for common natural-language requests."""
+    intent = enforce_live_read_route(
+        tool_name="telegram_read",
+        day=day,
+        date_from=date_from,
+        date_to=date_to,
+    )
     include_sender_name = mode.strip().lower() == "full"
     limit = clamp_dialog_read_limit(
         limit,
@@ -335,7 +326,7 @@ async def telegram_read(
     recent_limit = clamp_context_recent_limit(limit, mode=mode)
     tg = await runtime.get_tg()
     if date_from or date_to:
-        return await tg.collect_dialog_context(
+        result = await tg.collect_dialog_context(
             chat=chat,
             mode=mode,
             recent_limit=recent_limit,
@@ -344,48 +335,51 @@ async def telegram_read(
             include_pinned=False,
             include_voice_transcription=False,
         )
+        assert_live_result_data_source(result.model_dump(mode="json"), tool_name="telegram_read", intent=intent)
+        return result
     if day:
-        return await tg.read_today_dialog(
+        result = await tg.read_today_dialog(
             chat=chat,
             day=day,
             limit=limit,
             include_voice_transcription=False,
             include_sender_name=include_sender_name,
         )
-    return await tg.collect_dialog_context(
+        assert_live_result_data_source(result.model_dump(mode="json"), tool_name="telegram_read", intent="today")
+        return result
+    result = await tg.collect_dialog_context(
         chat=chat,
         mode=mode,
         recent_limit=recent_limit,
         include_pinned=False,
         include_voice_transcription=False,
     )
+    assert_live_result_data_source(result.model_dump(mode="json"), tool_name="telegram_read", intent="recent")
+    return result
 
 
 async def telegram_search(chat: str | int, query: str, limit: int = FAST_SEARCH_LIMIT):
     """Task-shaped Telegram search entrypoint."""
+    enforce_live_read_route(tool_name="telegram_search", explicit_intent="live_search")
     limit = clamp_search_limit(limit)
     tg = await runtime.get_tg()
-    return await tg.search_dialog_messages(
+    result = await tg.search_dialog_messages(
         chat=chat,
         query=query,
         limit=limit,
         include_sender_name=False,
     )
+    assert_live_result_data_source(result.model_dump(mode="json"), tool_name="telegram_search", intent="live_search")
+    return result
 
 
 async def telegram_export_members(
     chat: str | int,
     limit: int = FAST_MEMBER_EXPORT_LIMIT,
     filter: str = "all",
-    pii_acknowledged: bool = False,
     output_dir: str | None = None,
 ):
     """Export channel/group members to a private local JSON artifact."""
-    if not pii_acknowledged:
-        raise ToolContractError(
-            "pii_acknowledgement_required",
-            "Member export requires explicit pii_acknowledged=true because it writes personal data locally.",
-        )
     limit = clamp_member_export_limit(limit)
     tg = await runtime.get_tg()
     handle = await tg.resolve_dialog(chat)
@@ -444,27 +438,41 @@ async def telegram_prepare_reply(
 
 
 async def telegram_confirmed_send(
-    chat: str | int,
-    text: str,
-    confirmation_token: str,
+    confirmation_token: str | None = None,
+    preview_id: str | None = None,
+    chat: str | int | None = None,
+    text: str | None = None,
     message_id: int | None = None,
     parse_mode: str = "md",
 ):
     """Task-shaped confirmed send/reply entrypoint backed by preview tokens."""
-    tg = await runtime.get_tg()
-    if message_id is not None:
-        return await tg.reply_in_dialog(
-            chat=chat,
-            message_id=message_id,
-            text=text,
-            parse_mode=parse_mode,
-            confirmation_token=confirmation_token,
+    if not preview_id and not confirmation_token:
+        raise ToolContractError(
+            "missing_confirmation_token",
+            "telegram_confirmed_send requires preview_id or confirmation_token from prepare_*",
         )
-    return await tg.send_dialog_message(
+    tg = await runtime.get_tg()
+    return await tg._commit_confirmed_send(
+        preview_id=preview_id,
+        confirmation_token=confirmation_token,
         chat=chat,
         text=text,
         parse_mode=parse_mode,
-        confirmation_token=confirmation_token,
+        message_id=message_id,
+    )
+
+
+async def telegram_send(
+    chat: str | int,
+    text: str,
+    parse_mode: str = "md",
+):
+    """Task-shaped direct send entrypoint. Sends immediately on the local owner daemon."""
+    tg = await runtime.get_tg()
+    return await tg.send_message(
+        chat=chat,
+        text=text,
+        parse_mode=parse_mode or None,
     )
 
 
@@ -520,7 +528,13 @@ async def reply_message(
     )
 
 
-def register(mcp, *, include_writes: bool = False, include_legacy_reads: bool = False) -> None:
+def register(
+    mcp,
+    *,
+    include_writes: bool = False,
+    include_legacy_reads: bool = False,
+    include_legacy_facade: bool = False,
+) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(resolve_dialog))
     mcp.tool(annotations=READONLY)(tool_error_handler(find_dialog))
     if include_legacy_reads:
@@ -530,19 +544,19 @@ def register(mcp, *, include_writes: bool = False, include_legacy_reads: bool = 
         mcp.tool(annotations=READONLY)(tool_error_handler(read_dialog))
     mcp.tool(annotations=READONLY)(tool_error_handler(collect_dialog_context))
     mcp.tool(annotations=READONLY)(tool_error_handler(collect_context))
-    mcp.tool(annotations=READONLY)(tool_error_handler(prepare_dialog_reply))
-    mcp.tool(annotations=READONLY)(tool_error_handler(draft_reply))
-    mcp.tool(annotations=READONLY)(tool_error_handler(prepare_send_message))
-    mcp.tool(annotations=READONLY)(tool_error_handler(prepare_reply_message))
-    mcp.tool(annotations=READONLY)(tool_error_handler(prepare_send_file))
-    mcp.tool(annotations=READONLY)(tool_error_handler(search_dialog_messages))
+    if include_legacy_facade:
+        mcp.tool(annotations=READONLY)(tool_error_handler(prepare_dialog_reply))
+        mcp.tool(annotations=READONLY)(tool_error_handler(draft_reply))
+        mcp.tool(annotations=READONLY)(tool_error_handler(prepare_send_message))
+        mcp.tool(annotations=READONLY)(tool_error_handler(prepare_reply_message))
+        mcp.tool(annotations=READONLY)(tool_error_handler(search_dialog_messages))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_read))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_search))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_export_members))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_prepare_reply))
     mcp.tool(annotations=CONFIRMED_WRITE)(tool_error_handler(telegram_confirmed_send))
     if include_writes:
+        mcp.tool(annotations=ADDITIVE)(tool_error_handler(telegram_send))
         mcp.tool(annotations=ADDITIVE)(tool_error_handler(send_dialog_message))
         mcp.tool(annotations=ADDITIVE)(tool_error_handler(reply_in_dialog))
         mcp.tool(annotations=ADDITIVE)(tool_error_handler(reply_message))
-

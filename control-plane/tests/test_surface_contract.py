@@ -23,6 +23,11 @@ def test_surface_contract_policy_matches_task_shaped_allowlist() -> None:
         str(surface_contract.SURFACE_CONTRACT_PATH),
         str(surface_contract.WRITE_POLICY_PATH),
     )
+    assert policy.active_profile == "owner_local_full_mcp"
+    assert "telegram_send" in policy.owner_local_required_tools
+    assert "delete_messages" in policy.owner_local_direct_write_tools
+    assert policy.owner_local_direct_write_tools_allowed is True
+    assert policy.owner_local_plugin_allowlists_allowed is False
     assert "telegram_read" in policy.approved_facade_tools
     assert "telegram_search" in policy.approved_facade_tools
     assert "telegram_confirmed_send" in policy.confirmed_write_facade_tools
@@ -89,16 +94,12 @@ def test_plugin_allowlist_matches_surface_contract_policy() -> None:
     plugin_mcp = load_json(PLUGIN_SOURCE / ".mcp.json") or {}
     servers = plugin_mcp.get("mcpServers")
     assert isinstance(servers, dict)
-    server = servers.get("telegram-local")
-    assert isinstance(server, dict)
-    allowlist = server.get("allowedTools")
-    assert isinstance(allowlist, list)
-
-    drift = evaluate_plugin_allowlist_contract(set(str(item) for item in allowlist))
-
-    assert drift["matches_contract"] is True
-    assert drift["extra_tools"] == []
-    assert drift["missing_tools"] == []
+    assert {"telegram-main", "telegram-pl"} <= set(servers)
+    for server in servers.values():
+        assert isinstance(server, dict)
+        assert "allowedTools" not in server
+        assert "allowTools" not in server
+        assert isinstance(server.get("url"), str)
 
 
 def test_agents_md_surface_tool_count_matches_policy() -> None:
@@ -141,11 +142,30 @@ def test_mcp_surface_flags_plugin_allowlist_drift(monkeypatch) -> None:
 
     assert report["status"] == "fail"
     assert any(
-        item["id"] == "plugin_allowlist_surface_contract_drift" for item in report["findings"]
+        item["id"] == "mcp_endpoint_has_legacy_allowlist" for item in report["findings"]
     )
 
 
 def test_mcp_surface_includes_surface_contract_summary() -> None:
-    report = audit_mcp_surface()
-    assert report["surface_contract"]["approved_facade_tool_count"] == 16
+    report = audit_mcp_surface(include_live_probe=False)
+    assert report["status"] == "ok"
+    assert report["surface_mode"] == "owner_local_full_mcp"
+    assert report["active_surface_tools"] == report["default_surface_tools"]
+    assert "owner_local_full_mcp" in report["compatibility_note"]
+    assert "telegram_send" in report["required_full_surface_tools"]
+    assert "delete_messages" in report["default_surface_tools"]
+    assert "delete_messages" in report["legacy_default_surface_evaluation"]["unexpected_write_or_destructive_tools"]
+    assert report["missing_required_full_surface_tools"] == []
+    assert report["surface_contract"]["active_profile"] == "owner_local_full_mcp"
     assert report["surface_contract"]["policy_path"].endswith("surface-contract.json")
+
+
+def test_context_describes_owner_local_full_surface() -> None:
+    root = Path(__file__).resolve().parents[1]
+    context = (root / "CONTEXT.md").read_text(encoding="utf-8")
+    mcp_surface = (root / "docs/agents/mcp-surface.md").read_text(encoding="utf-8")
+
+    assert "owner_local_full_mcp" in context
+    assert "owner_local_full_mcp" in mcp_surface
+    assert "restricted tool profile" not in context
+    assert "Legacy facade allowlist" in context

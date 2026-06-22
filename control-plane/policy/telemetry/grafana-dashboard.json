@@ -77,6 +77,28 @@
           "expr": "sum(rate(telegram_mcp_events_total{event=\"seconds_to_first_read\"}[5m])) * 60"
         }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Write ops / min",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by (operation, status) (rate(telegram_mcp_write_operations_total[5m])) * 60",
+          "legendFormat": "{{operation}} {{status}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Write p95 (ms)",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (operation, le) (rate(telegram_mcp_write_duration_ms_bucket[15m])))",
+          "legendFormat": "{{operation}}"
+        }
+      ]
     }
   ]
 }
