@@ -342,7 +342,7 @@ def sync_agent_docs(
     *,
     mcp_repo_dir: str | Path | None = None,
     write_plugin_copy: bool = True,
-    restart_mcp: bool = True,
+    restart_mcp: bool = False,
 ) -> AgentDocSyncResult:
     plugin = Path(plugin_dir).expanduser().resolve()
     mcp_repo = Path(mcp_repo_dir or DEFAULT_MCP_REPO).expanduser().resolve()
@@ -419,9 +419,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--check", action="store_true", help="Fail when docs/agent drifts from manifest.")
     parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="Restart local MCP HTTP daemons with launchctl after a successful sync.",
+    )
+    parser.add_argument(
         "--no-restart",
         action="store_true",
-        help="Skip launchctl restart of local MCP HTTP daemons after a successful sync.",
+        help="Compatibility no-op: sync does not restart MCP daemons unless --restart is set.",
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     return parser
@@ -436,7 +441,7 @@ def main(argv: list[str] | None = None) -> int:
             result = sync_agent_docs(
                 args.plugin_dir,
                 mcp_repo_dir=args.mcp_repo_dir,
-                restart_mcp=not args.no_restart,
+                restart_mcp=args.restart and not args.no_restart,
             )
     except (FileNotFoundError, ValueError) as exc:
         payload = {
