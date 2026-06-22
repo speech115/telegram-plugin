@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from telegram_mcp.metadata_tools_spec import COUNT_SPECS_BY_CLI
-from telegram_mcp.tg_cli import _wrap_ok, cmd_count_metadata, cmd_count_posts, route_task
+from telegram_mcp.metadata_tools_spec import COUNT_SPECS_BY_CLI, LIST_SPECS_BY_CLI
+from telegram_mcp.tg_cli import _wrap_ok, cmd_count_metadata, cmd_count_posts, cmd_list_metadata, route_task
 
 
 class TgCliTests(unittest.TestCase):
@@ -35,6 +35,13 @@ class TgCliTests(unittest.TestCase):
         self.assertEqual(payload["intent"], "count_channel_videos")
         self.assertEqual(payload["tool"], "telegram_count_videos")
         self.assertEqual(payload["execute"], ["tg", "count", "videos", "@sral_v_nastav", "--json"])
+
+    def test_route_task_plans_bounded_metadata_list(self):
+        payload = route_task("@sral_v_nastav покажи ссылки")
+
+        self.assertEqual(payload["intent"], "list_channel_links")
+        self.assertEqual(payload["tool"], "telegram_list_links")
+        self.assertEqual(payload["execute"], ["tg", "list", "links", "@sral_v_nastav", "--limit", "20", "--json"])
 
     def test_route_task_plans_latest_info_and_message_by_id(self):
         latest = route_task("@sral_v_nastav последний пост")
@@ -108,3 +115,33 @@ class TgCliTests(unittest.TestCase):
 
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["intent"], "count_channel_videos")
+
+    def test_list_metadata_uses_spec_tool(self):
+        async def fake_call_tool_with_failover(**kwargs):
+            self.assertEqual(kwargs["tool_name"], "telegram_list_links")
+            self.assertEqual(kwargs["arguments"], {"chat": "@sral_v_nastav", "limit": 10, "offset_id": 42})
+            return (
+                {"message_count": 2, "data_source": "live_telegram"},
+                0.1,
+                type("Attempt", (), {"endpoint": "http://127.0.0.1:8799/mcp", "port": 8799})(),
+            )
+
+        with patch("telegram_mcp.tg_cli.call_tool_with_failover", AsyncMock(side_effect=fake_call_tool_with_failover)):
+            with patch("telegram_mcp.tg_cli.record_telemetry"):
+                import asyncio
+
+                payload = asyncio.run(
+                    cmd_list_metadata(
+                        chat="@sral_v_nastav",
+                        spec=LIST_SPECS_BY_CLI["links"],
+                        limit=10,
+                        offset_id=42,
+                        timeout=5,
+                        endpoint=None,
+                        env_file=None,
+                        account="main",
+                    )
+                )
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["intent"], "list_channel_links")

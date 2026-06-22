@@ -21,10 +21,11 @@ from ..facade_limits import (
     clamp_search_limit,
 )
 from ..member_export_paths import resolve_member_export_dir
-from ..metadata_tools_spec import METADATA_COUNT_SPECS
+from ..metadata_tools_spec import METADATA_COUNT_SPECS, METADATA_LIST_SPECS
 from ..types import (
     DialogLatestMessageResult,
     DialogMessageByIdResult,
+    DialogMetadataListResult,
     DialogMetadataResult,
     DialogPostCountResult,
     ParticipantsResult,
@@ -422,6 +423,120 @@ async def telegram_count_pinned(chat: str | int) -> DialogPostCountResult:
     return await _telegram_count_metadata(chat=chat, count_type="pinned", tool_name="telegram_count_pinned")
 
 
+async def telegram_count_gifs(chat: str | int) -> DialogPostCountResult:
+    """Return total visible GIF messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="gifs", tool_name="telegram_count_gifs")
+
+
+async def telegram_count_music(chat: str | int) -> DialogPostCountResult:
+    """Return total visible music/audio messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="music", tool_name="telegram_count_music")
+
+
+async def telegram_count_links(chat: str | int) -> DialogPostCountResult:
+    """Return total visible messages with links without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="links", tool_name="telegram_count_links")
+
+
+async def telegram_count_polls(chat: str | int) -> DialogPostCountResult:
+    """Return total visible poll messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="polls", tool_name="telegram_count_polls")
+
+
+async def telegram_count_geo(chat: str | int) -> DialogPostCountResult:
+    """Return total visible geo/location messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="geo", tool_name="telegram_count_geo")
+
+
+async def telegram_count_round_video(chat: str | int) -> DialogPostCountResult:
+    """Return total visible round video messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="round_video", tool_name="telegram_count_round_video")
+
+
+async def telegram_count_round_voice(chat: str | int) -> DialogPostCountResult:
+    """Return total visible round voice messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="round_voice", tool_name="telegram_count_round_voice")
+
+
+async def telegram_count_chat_photos(chat: str | int) -> DialogPostCountResult:
+    """Return total visible chat photo messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="chat_photos", tool_name="telegram_count_chat_photos")
+
+
+async def telegram_count_mentions(chat: str | int) -> DialogPostCountResult:
+    """Return total visible mention messages without downloading history."""
+    return await _telegram_count_metadata(chat=chat, count_type="mentions", tool_name="telegram_count_mentions")
+
+
+async def _telegram_list_metadata(
+    chat: str | int,
+    list_type: str,
+    tool_name: str,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    enforce_live_read_route(tool_name=tool_name, explicit_intent="live_read")
+    tg = await runtime.get_tg()
+    result = await tg.list_dialog_metadata(
+        chat=chat,
+        list_type=list_type,
+        limit=clamp_dialog_read_limit(limit, include_voice_transcription=False, include_sender_name=False),
+        offset_id=offset_id,
+        include_sender_name=False,
+    )
+    assert_live_result_data_source(
+        result.model_dump(mode="json"),
+        tool_name=tool_name,
+        intent="live_read",
+    )
+    return result
+
+
+async def telegram_list_gifs(
+    chat: str | int,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    """Return a bounded GIF message slice without scanning the whole dialog."""
+    return await _telegram_list_metadata(chat=chat, list_type="gifs", tool_name="telegram_list_gifs", limit=limit, offset_id=offset_id)
+
+
+async def telegram_list_music(
+    chat: str | int,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    """Return a bounded music/audio message slice without scanning the whole dialog."""
+    return await _telegram_list_metadata(chat=chat, list_type="music", tool_name="telegram_list_music", limit=limit, offset_id=offset_id)
+
+
+async def telegram_list_links(
+    chat: str | int,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    """Return a bounded link message slice without scanning the whole dialog."""
+    return await _telegram_list_metadata(chat=chat, list_type="links", tool_name="telegram_list_links", limit=limit, offset_id=offset_id)
+
+
+async def telegram_list_polls(
+    chat: str | int,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    """Return a bounded poll message slice without scanning the whole dialog."""
+    return await _telegram_list_metadata(chat=chat, list_type="polls", tool_name="telegram_list_polls", limit=limit, offset_id=offset_id)
+
+
+async def telegram_list_geo(
+    chat: str | int,
+    limit: int = FAST_DIALOG_READ_LIMIT,
+    offset_id: int = 0,
+) -> DialogMetadataListResult:
+    """Return a bounded geo/location message slice without scanning the whole dialog."""
+    return await _telegram_list_metadata(chat=chat, list_type="geo", tool_name="telegram_list_geo", limit=limit, offset_id=offset_id)
+
+
 async def telegram_latest_message(chat: str | int) -> DialogLatestMessageResult:
     """Return the latest visible message metadata for a dialog."""
     enforce_live_read_route(tool_name="telegram_latest_message", explicit_intent="live_read")
@@ -642,6 +757,8 @@ def register(
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_search))
     for spec in METADATA_COUNT_SPECS:
         mcp.tool(annotations=READONLY)(tool_error_handler(globals()[spec.tool_name]))
+    for spec in METADATA_LIST_SPECS:
+        mcp.tool(annotations=READONLY)(tool_error_handler(globals()[spec.list_tool_name]))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_latest_message))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_dialog_metadata))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_get_message))

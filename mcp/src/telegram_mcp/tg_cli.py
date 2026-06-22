@@ -9,7 +9,13 @@ import re
 import sys
 from datetime import date
 
-from .metadata_tools_spec import COUNT_SPECS_BY_CLI, METADATA_COUNT_SPECS, MetadataCountSpec
+from .metadata_tools_spec import (
+    COUNT_SPECS_BY_CLI,
+    LIST_SPECS_BY_CLI,
+    METADATA_COUNT_SPECS,
+    METADATA_LIST_SPECS,
+    MetadataCountSpec,
+)
 from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover
 from .telemetry import record_telemetry, telemetry_fields_from_result
 
@@ -79,6 +85,7 @@ COUNT_POSTS_RE = re.compile(
     re.IGNORECASE,
 )
 COUNT_RE = re.compile(r"(сколько|count|how many|total)", re.IGNORECASE)
+LIST_RE = re.compile(r"(list|show|дай|покажи|выведи|список)", re.IGNORECASE)
 LATEST_RE = re.compile(r"(latest|last|последн)", re.IGNORECASE)
 INFO_RE = re.compile(r"(info|metadata|about|инфо|метадан|о канале|о чате)", re.IGNORECASE)
 MESSAGE_ID_RE = re.compile(r"(?:message|msg|сообщени[ея]|пост)\s*(?:id)?\s*#?(?P<message_id>\d+)", re.IGNORECASE)
@@ -96,6 +103,13 @@ def _count_spec_from_text(text: str) -> MetadataCountSpec:
         if any(term.lower() in text.lower() for term in spec.route_terms):
             return spec
     return COUNT_SPECS_BY_CLI["posts"]
+
+
+def _list_spec_from_text(text: str) -> MetadataCountSpec | None:
+    for spec in METADATA_LIST_SPECS:
+        if any(term.lower() in text.lower() for term in spec.route_terms):
+            return spec
+    return None
 
 
 def route_task(intent_text: str) -> dict[str, object]:
@@ -137,6 +151,27 @@ def route_task(intent_text: str) -> dict[str, object]:
             "next_action": "run_execute_command" if chat else "ask_for_chat",
             "notes": ["Uses Telegram history metadata; does not download the channel history."],
         }
+    if LIST_RE.search(text):
+        spec = _list_spec_from_text(text)
+        if spec and spec.list_cli_name and spec.list_tool_name:
+            execute = ["tg", "list", spec.list_cli_name]
+            if chat:
+                execute.append(chat)
+            execute.extend(["--limit", "20", "--json"])
+            return {
+                "ok": True,
+                "command": "route",
+                "intent": f"list_channel_{spec.key}",
+                "data_source": "live_telegram",
+                "safety": "read-only",
+                "confidence": 0.88 if chat else 0.68,
+                "chat": chat,
+                "tool": spec.list_tool_name,
+                "execute": execute,
+                "needs_user_input": chat is None,
+                "next_action": "run_execute_command" if chat else "ask_for_chat",
+                "notes": ["Uses Telegram server-side filter and bounded limit; does not export full history."],
+            }
     if LATEST_RE.search(text):
         return {
             "ok": True,
@@ -398,6 +433,48 @@ async def cmd_count_posts(
     )
 
 
+async def cmd_list_metadata(
+    *,
+    chat: str,
+    spec: MetadataCountSpec,
+    limit: int,
+    offset_id: int,
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+) -> dict[str, object]:
+    if not spec.list_tool_name:
+        raise McpCliError(f"{spec.cli_name} does not support bounded list")
+    payload, elapsed, attempt = await call_tool_with_failover(
+        tool_name=spec.list_tool_name,
+        arguments={"chat": chat, "limit": limit, "offset_id": offset_id},
+        timeout=timeout,
+        explicit_endpoint=endpoint,
+        env_file=env_file,
+        account=account,
+    )
+    record_telemetry(
+        f"tg_list_{spec.key}",
+        status="ok",
+        duration_ms=round(elapsed * 1000, 3),
+        source="tg_cli",
+        endpoint_port=attempt.port or None,
+        arg_chat=chat,
+        arg_limit=limit,
+        arg_offset_id=offset_id,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
+    return _wrap_ok(
+        command=f"list {spec.list_cli_name}",
+        endpoint=attempt.endpoint,
+        endpoint_port=attempt.port or None,
+        elapsed_seconds=elapsed,
+        payload=payload,
+        intent=f"list_channel_{spec.key}",
+    )
+
+
 async def cmd_latest(
     *,
     chat: str,
@@ -560,6 +637,16 @@ def build_parser() -> argparse.ArgumentParser:
         count_parser.add_argument("chat")
         count_parser.set_defaults(handler="count_metadata", count_kind=spec.cli_name)
 
+    list_parser = sub.add_parser("list", parents=[common], help="Bounded read-only Telegram filtered message slices")
+    list_sub = list_parser.add_subparsers(dest="list_mode", required=True)
+
+    for spec in METADATA_LIST_SPECS:
+        list_mode = list_sub.add_parser(spec.list_cli_name, parents=[common], help=f"Recent visible {spec.label}")
+        list_mode.add_argument("chat")
+        list_mode.add_argument("--limit", type=int, default=20)
+        list_mode.add_argument("--offset-id", type=int, default=0)
+        list_mode.set_defaults(handler="list_metadata", list_kind=spec.list_cli_name)
+
     latest = sub.add_parser("latest", parents=[common], help="Latest visible message metadata")
     latest.add_argument("chat")
     latest.set_defaults(handler="latest")
@@ -619,6 +706,17 @@ async def run_command(args: argparse.Namespace) -> dict[str, object]:
         return await cmd_count_metadata(
             chat=args.chat,
             spec=COUNT_SPECS_BY_CLI[args.count_kind],
+            timeout=timeout,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+    if args.handler == "list_metadata":
+        return await cmd_list_metadata(
+            chat=args.chat,
+            spec=LIST_SPECS_BY_CLI[args.list_kind],
+            limit=args.limit,
+            offset_id=args.offset_id,
             timeout=timeout,
             endpoint=endpoint,
             env_file=env_file,

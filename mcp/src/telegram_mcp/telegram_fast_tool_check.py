@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .metadata_tools_spec import COUNT_SPECS_BY_TOOL
+from .metadata_tools_spec import COUNT_SPECS_BY_TOOL, LIST_SPECS_BY_TOOL
 
 
 def _repo_root() -> Path:
@@ -34,6 +34,9 @@ def _live_argv(tool: str, chat: str, message_id: int | None) -> list[str]:
     if tool in COUNT_SPECS_BY_TOOL:
         spec = COUNT_SPECS_BY_TOOL[tool]
         return ["bin/tg", "count", spec.cli_name, chat, "--json"]
+    if tool in LIST_SPECS_BY_TOOL:
+        spec = LIST_SPECS_BY_TOOL[tool]
+        return ["bin/tg", "list", spec.list_cli_name, chat, "--limit", "5", "--json"]
     if tool == "telegram_latest_message":
         return ["bin/tg", "latest", chat, "--json"]
     if tool == "telegram_dialog_metadata":
@@ -64,6 +67,24 @@ def build_report(*, tool: str, live_chat: str | None, message_id: int | None) ->
             cwd=root,
         ),
     ]
+    plugin_dir = root.parent / "plugin"
+    if plugin_dir.is_dir() and (root / "bin/sync-agent-docs").exists():
+        steps.append(
+            _run_step(
+                "agent-docs-sync-check",
+                [str(root / "bin/sync-agent-docs"), "--plugin-dir", str(plugin_dir), "--check", "--no-restart", "--json"],
+                cwd=root,
+            )
+        )
+    control_root = root.parent / "control-plane"
+    if (control_root / "bin/telegram-feature-status").exists():
+        steps.append(
+            _run_step(
+                "feature-status-dry-run",
+                [str(control_root / "bin/telegram-feature-status"), "--json"],
+                cwd=control_root,
+            )
+        )
     if live_chat:
         steps.append(_run_step("live-smoke", _live_argv(tool, live_chat, message_id), cwd=root))
     return {

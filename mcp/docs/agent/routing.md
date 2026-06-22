@@ -98,8 +98,12 @@ Install `tg`: `<control-plane>/bin/telegram-kit --local` → `~/bin/tg`.
 - Do not download a channel timeline just to answer "how many posts/messages".
   Use `tg count posts <chat> --json` or MCP `telegram_count_posts`.
 - Do not broad-read a channel just to count photos, videos, documents, voice,
-  or pinned messages. Use `tg count photos|videos|documents|voice|pinned
+  pinned messages, gifs, music, links, polls, geo, round video/voice, chat
+  photos, or mentions. Use `tg count photos|videos|documents|voice|pinned|gifs|music|links|polls|geo|round-video|round-voice|chat-photos|mentions
   <chat> --json` or the matching `telegram_count_*` MCP tool.
+- Do not broad-read just to show recent links, polls, gifs, music, or geo
+  messages. Use `tg list links|polls|gifs|music|geo <chat> --limit 20 --json`
+  or the matching `telegram_list_*` MCP tool.
 - Do not broad-read just to inspect one message id or the latest message. Use
   `tg message <chat> <message_id> --json` or `tg latest <chat> --json`.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.

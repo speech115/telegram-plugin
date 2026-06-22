@@ -31,12 +31,14 @@ def test_surface_contract_policy_matches_task_shaped_allowlist() -> None:
     assert "telegram_read" in policy.approved_facade_tools
     assert "telegram_count_posts" in policy.approved_facade_tools
     assert "telegram_count_videos" in policy.approved_facade_tools
+    assert "telegram_count_links" in policy.approved_facade_tools
+    assert "telegram_list_links" in policy.approved_facade_tools
     assert "telegram_latest_message" in policy.approved_facade_tools
     assert "telegram_search" in policy.approved_facade_tools
     assert "telegram_confirmed_send" in policy.confirmed_write_facade_tools
     assert "send_dialog_message" not in policy.approved_facade_tools
     assert policy.legacy_tool_aliases["read_today_dialog"] == "telegram_read"
-    assert len(policy.approved_facade_tools) == 25
+    assert len(policy.approved_facade_tools) == 39
 
 
 def test_canonical_tool_name_resolves_legacy_aliases() -> None:

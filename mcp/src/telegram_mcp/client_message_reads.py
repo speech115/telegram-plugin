@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .metadata_tools_spec import count_spec_for_key
+from .metadata_tools_spec import LIST_SPECS_BY_CLI, count_spec_for_key
 from .types import (
     DialogLatestMessageResult,
+    DialogMetadataListResult,
     DialogMessageByIdResult,
     DialogMetadataResult,
     DialogPostCountResult,
@@ -90,6 +91,44 @@ class MessageReadMixin:
             total=total,
             count_type=spec.key,
             filter=spec.telethon_filter,
+        )
+
+    async def list_dialog_metadata(
+        self,
+        chat: str | int,
+        list_type: str,
+        limit: int = 20,
+        offset_id: int = 0,
+        include_sender_name: bool = True,
+    ) -> DialogMetadataListResult:
+        started_at = time.perf_counter()
+        spec = LIST_SPECS_BY_CLI[list_type]
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        bounded_limit, truncated = self._bounded_read_limit(limit)
+        filter_arg = self._metadata_count_filter(spec.telethon_filter)
+        fetched = await self._run_read(
+            f"list_dialog_{spec.key}",
+            lambda: self.client.get_messages(entity, limit=bounded_limit + 1, offset_id=offset_id, filter=filter_arg),
+        )
+        raw_messages = list(fetched or [])
+        has_more_before = len(raw_messages) > bounded_limit
+        selected = raw_messages[:bounded_limit]
+        messages = [self._message_to_info(message, default_chat_id=handle.id) for message in selected]
+        next_offset_id = messages[-1].id if has_more_before and messages else None
+        self._emit_read_timing(
+            f"list_dialog_{spec.key}",
+            started_at,
+            item_count=len(messages),
+        )
+        return DialogMetadataListResult(
+            chat=handle,
+            messages=messages,
+            list_type=spec.key,
+            filter=spec.telethon_filter,
+            limit=bounded_limit,
+            message_count=len(messages),
+            has_more_before=has_more_before or truncated,
+            next_offset_id=next_offset_id,
         )
 
     def _metadata_count_filter(self, filter_name: str | None):

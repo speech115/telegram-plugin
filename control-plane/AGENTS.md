@@ -19,7 +19,8 @@ Default operation is direct full-surface local MCP for the owner's Telegram acco
 | --- | --- | --- |
 | Что нового / прочитай чат за сегодня | `tg read today <chat> --limit 30 --json` | Live only; never mirror/archive. Fallback: MCP `telegram_read` `mode="fast"` |
 | Сколько постов / metadata count | `tg count posts <chat> --json` | Live metadata only; does not download history. Use `tg route '<task>' --json` when unsure |
-| Сколько фото/видео/файлов/войсов/закрепов | `tg count photos|videos|documents|voice|pinned <chat> --json` | Live metadata filters only; no broad history read |
+| Сколько фото/видео/файлов/войсов/закрепов/ссылок/опросов/gif/music/geo | `tg count photos|videos|documents|voice|pinned|gifs|music|links|polls|geo|round-video|round-voice|chat-photos|mentions <chat> --json` | Live metadata filters only; no broad history read |
+| Покажи ссылки/опросы/gif/music/geo | `tg list links|polls|gifs|music|geo <chat> --limit 20 --json` | Bounded filtered slice; page only if needed |
 | Последний пост / инфо / message id | `tg latest <chat> --json`; `tg info <chat> --json`; `tg message <chat> <id> --json` | Bounded live metadata/message lookup |
 | Keyword in dialog | MCP `telegram_search` | Then fetch context only for hits |
 | Full today, nothing missed | MCP `telegram_read` `mode="full"` + page | Report `truncated` / `has_more_before` |

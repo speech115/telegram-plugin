@@ -190,6 +190,19 @@ class DialogPostCountResult(BaseModel):
     method: str = "get_messages_limit_0"
 
 
+class DialogMetadataListResult(BaseModel):
+    chat: DialogHandle
+    messages: list[MessageInfo]
+    list_type: str
+    filter: str | None = None
+    limit: int = 20
+    message_count: int = 0
+    has_more_before: bool = False
+    next_offset_id: int | None = None
+    data_source: str = "live_telegram"
+    method: str = "get_messages_filtered_limit"
+
+
 class DialogLatestMessageResult(BaseModel):
     chat: DialogHandle
     message: MessageInfo | None = None

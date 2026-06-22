@@ -9,6 +9,7 @@ from telegram_mcp.types import (
     DialogHandle,
     DialogLatestMessageResult,
     DialogMessageByIdResult,
+    DialogMetadataListResult,
     DialogMetadataResult,
     DialogReadRange,
     DialogReadResult,
@@ -106,6 +107,34 @@ class DialogFacadeToolTests(unittest.TestCase):
         self.assertEqual(result.total, 5)
         self.assertEqual(result.count_type, "videos")
         wrapper.count_dialog_metadata.assert_awaited_once_with(chat="@targetchannel", count_type="videos")
+
+    def test_filtered_metadata_lists_use_shared_helper(self):
+        wrapper = AsyncMock()
+        wrapper.list_dialog_metadata.return_value = DialogMetadataListResult(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/channel/1",
+                id=1,
+                name="Channel",
+                type="channel",
+                username="targetchannel",
+                resolved_from="@targetchannel",
+            ),
+            messages=[],
+            list_type="links",
+            filter="InputMessagesFilterUrl",
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(server.telegram_list_links("@targetchannel", limit=10, offset_id=42))
+
+        self.assertEqual(result.list_type, "links")
+        wrapper.list_dialog_metadata.assert_awaited_once_with(
+            chat="@targetchannel",
+            list_type="links",
+            limit=10,
+            offset_id=42,
+            include_sender_name=False,
+        )
 
     def test_metadata_latest_info_and_message_tools(self):
         handle = DialogHandle(

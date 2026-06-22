@@ -31,7 +31,8 @@ Telegram path instead:
 tg read today <chat> --limit 30 --json
 tg route 'сколько постов в @channel всего?' --json
 tg count posts @channel --json
-tg count photos|videos|documents|voice|pinned @channel --json
+tg count photos|videos|documents|voice|pinned|gifs|music|links|polls|geo|round-video|round-voice|chat-photos|mentions @channel --json
+tg list gifs|music|links|polls|geo @channel --limit 20 --json
 tg latest @channel --json
 tg info @channel --json
 tg message @channel <message_id> --json

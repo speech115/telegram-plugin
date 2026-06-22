@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .metadata_tools_spec import METADATA_COUNT_SPECS, METADATA_TOOL_NAMES
+from .metadata_tools_spec import METADATA_COUNT_SPECS, METADATA_LIST_SPECS, METADATA_TOOL_NAMES
 
 
 CHECKED_FILES = (
@@ -23,6 +23,8 @@ CHECKED_FILES = (
     "tests/test_tg_cli.py",
     "tests/test_dialog_facade_tools.py",
     "tests/test_registration.py",
+    "docs/agent/tools.md",
+    "docs/agent/routing.md",
 )
 
 
@@ -44,7 +46,8 @@ def build_report() -> dict[str, Any]:
             findings.append({"id": "missing_facade_tool", "tool": tool_name})
         if tool_name not in files.get("src/telegram_mcp/tools/__init__.py", ""):
             findings.append({"id": "missing_registration_export", "tool": tool_name})
-        if tool_name not in files.get("tests/test_registration.py", ""):
+        registration_test = files.get("tests/test_registration.py", "")
+        if tool_name not in registration_test and "METADATA_TOOL_NAMES" not in registration_test:
             findings.append({"id": "missing_registration_test", "tool": tool_name})
 
     for spec in METADATA_COUNT_SPECS:
@@ -52,6 +55,15 @@ def build_report() -> dict[str, Any]:
             findings.append({"id": "missing_cli_spec_loop", "tool": spec.tool_name})
         if "COUNT_SPECS_BY_CLI" not in files.get("tests/test_tg_cli.py", ""):
             findings.append({"id": "missing_cli_spec_test", "tool": spec.tool_name})
+
+    for spec in METADATA_LIST_SPECS:
+        if "METADATA_LIST_SPECS" not in files.get("src/telegram_mcp/tg_cli.py", ""):
+            findings.append({"id": "missing_cli_list_spec_loop", "tool": spec.list_tool_name or spec.key})
+        if "LIST_SPECS_BY_CLI" not in files.get("tests/test_tg_cli.py", ""):
+            findings.append({"id": "missing_cli_list_spec_test", "tool": spec.list_tool_name or spec.key})
+        docs_blob = files.get("docs/agent/tools.md", "") + "\n" + files.get("docs/agent/routing.md", "")
+        if spec.list_tool_name and spec.list_tool_name not in docs_blob:
+            findings.append({"id": "missing_list_docs", "tool": spec.list_tool_name})
 
     return {
         "status": "ok" if not findings else "fail",
@@ -62,6 +74,8 @@ def build_report() -> dict[str, Any]:
                 "tool_name": spec.tool_name,
                 "cli": f"tg count {spec.cli_name} <chat> --json",
                 "filter": spec.telethon_filter,
+                "list_tool_name": spec.list_tool_name,
+                "list_cli": f"tg list {spec.list_cli_name} <chat> --limit 20 --json" if spec.list_cli_name else None,
             }
             for spec in METADATA_COUNT_SPECS
         ]

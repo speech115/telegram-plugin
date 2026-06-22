@@ -24,3 +24,12 @@ def test_fast_tool_check_maps_live_argv_without_running_live():
         "@channel",
         "--json",
     ]
+    assert _live_argv("telegram_list_links", "@channel", None) == [
+        "bin/tg",
+        "list",
+        "links",
+        "@channel",
+        "--limit",
+        "5",
+        "--json",
+    ]

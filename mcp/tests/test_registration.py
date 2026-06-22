@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
 
+from telegram_mcp.metadata_tools_spec import METADATA_TOOL_NAMES
 from telegram_mcp.tools import FACADE_TOOL_NAMES, register_all_tools
 
 
@@ -101,15 +102,7 @@ class RegistrationTests(unittest.TestCase):
                 "reply_message",
                 "telegram_confirmed_send",
                 "telegram_export_members",
-                "telegram_count_documents",
-                "telegram_count_photos",
-                "telegram_count_pinned",
-                "telegram_count_posts",
-                "telegram_count_videos",
-                "telegram_count_voice",
-                "telegram_latest_message",
-                "telegram_dialog_metadata",
-                "telegram_get_message",
+                *METADATA_TOOL_NAMES,
                 # Contacts
                 "list_contacts",
                 "search_contacts",
