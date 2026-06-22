@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import telegram_control_plane.music_autoclean as music_autoclean
 from telegram_control_plane.music_autoclean import (
     AudioMetadata,
     CodeEntity,
@@ -135,29 +136,8 @@ def test_apply_requires_explicit_delete_gate() -> None:
 
 class FakeRaw:
     def __init__(self, message_id: int, *, file_name: str) -> None:
-        from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeFilename
-
         self.id = message_id
-        self.message = "bot caption"
-        self.audio = True
-        self.media = object()
-        self.entities = ()
-        self.document = type(
-            "Document",
-            (),
-            {
-                "mime_type": "audio/mp4",
-                "thumbs": [],
-                "attributes": [
-                    DocumentAttributeAudio(
-                        duration=123,
-                        title=f"Song {message_id}",
-                        performer="Artist",
-                    ),
-                    DocumentAttributeFilename(file_name=file_name),
-                ],
-            },
-        )()
+        self.file_name = file_name
 
 
 class FakeLedger:
@@ -165,7 +145,16 @@ class FakeLedger:
         return None
 
 
-def test_candidate_jobs_are_processed_in_playlist_order() -> None:
+def test_candidate_jobs_are_processed_in_playlist_order(monkeypatch) -> None:
+    def fake_raw_to_music_message(raw: FakeRaw) -> MusicMessage:
+        return message(
+            message_id=raw.id,
+            text="bot caption",
+            file_name=raw.file_name,
+            title=f"Song {raw.id}",
+        )
+
+    monkeypatch.setattr(music_autoclean, "raw_to_music_message", fake_raw_to_music_message)
     raw_messages = [
         FakeRaw(53, file_name="x+CCCCCCCCCCC.m4a"),
         FakeRaw(52, file_name="x+BBBBBBBBBBB.m4a"),
