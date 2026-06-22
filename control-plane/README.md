@@ -6,27 +6,45 @@ This is not a monorepo migration and not a new source of truth. It observes the
 existing live components and fails closed when their state disagrees with the
 desired policy.
 
-## Commands
+## Quick Start
 
 ```bash
-./bin/telegram-doctor --json
+./bin/tgc next --json       # doctor triage as prioritized actions with exact commands
+./bin/tgc commands --json   # machine-readable registry of every command
 ./bin/telegram-status --json
-./bin/telegram-fast-read-today me --limit 1
-./bin/telegram-managed-systems --json
-./bin/telegram-plugin-drift --json
-./bin/telegram-mcp-surface --json
-./bin/telegram-launchd-audit --json
-./bin/telegram-session-audit --json
-./bin/telegram-mirror-preflight --json
-./bin/telegram-telecrawl-status --json
-./bin/telegram-repair-plan --json
-./bin/telegram-repair-plan-apply --json
-./bin/telegram-telemetry-status --json
-./bin/telegram-docs-audit --json
-./bin/telegram-release-gates --json
-./bin/telegram-install-adapters --json
-./bin/telegram-release-gate
+./bin/telegram-operator-status
+./bin/telegram-doctor --json
+./bin/telegram-maintenance-doctor --json
+./bin/telegram-feature-status --json
 ```
+
+`tgc` is the agent entrypoint: `next` answers "what should I do right now",
+`commands` lists every public command with purpose, level
+(daily/live/mirror/drilldown/maintenance/release), and safety class. The
+registry is unit-tested against `bin/`, so it cannot drift.
+
+Use `telegram-status`/`telegram-doctor` for quick local health. They run the
+single-user core profile by default. For low-stakes current reads, use the live
+Telegram path instead:
+
+```bash
+tg read today <chat> --limit 30 --json
+```
+
+For local mirror work, use the mirror fast path/status first; full mirror
+promotion, export completeness, and recovery checks belong to maintenance.
+
+```bash
+./bin/telegram-mirror-fast status --json
+./bin/telegram-mirror-fast read <channel-or-chat> --limit 30 --json
+./bin/telegram-mirror-fast search <text> --target <channel-or-chat> --limit 30 --json
+```
+
+Run component commands such as `telegram-mcp-surface`,
+`telegram-telemetry-status`, `telegram-telecrawl-status`, `telegram-docs-audit`,
+or `telegram-managed-systems` only as drill-down after a core or maintenance
+check points at that component. `telegram-release-gate` is the release path, not
+the daily path.
 
 ## Plugin Packaging
 
@@ -65,7 +83,8 @@ The builder fails closed if the package would contain private paths, `.env`,
 enters through `/Users/sereja/plugins/telegram`, but that path is now a symlink
 alias to the portable package root, not the canonical artifact source.
 
-After rebuilding the package, materialize Codex's local plugin cache with:
+After rebuilding the package, materialize Codex's local plugin cache only as an
+explicit maintenance/release step:
 
 ```bash
 codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-local
@@ -78,20 +97,41 @@ codex plugin remove telegram@sereja-local && codex plugin add telegram@sereja-lo
 - `MAP.md` explains where every Telegram-related system lives.
 - `PLAN.md` records the current control-plane rollout strategy.
 - `PROTECTION.md` defines the cleanup and deletion safety contract.
+- `docs/agents/system-map.md` is the compact map of repos, runtime ports,
+  source routing, and verification order.
 - `docs/telegram-kit-explainer.html` is a self-contained Russian explainer for
   how the Telegram agent kit fits together (open locally in a browser).
 
-`telegram-doctor --json` writes the runtime-only
+`telegram-doctor --json` writes the runtime-only core-profile
 `generated/observed-registry.json` snapshot and exits non-zero while blocking
 defects are present. The snapshot is intentionally ignored by git because it
 contains live PIDs, timestamps, and host inventory state.
+
+Use `telegram-doctor --profile maintenance --json` or
+`telegram-maintenance-doctor --json` for the broad estate audit that includes
+release, plugin, archive, telemetry, and recovery checks.
+
+`telegram-feature-status --json` dry-runs a refresh of
+`docs/agents/feature-status.csv` from the current maintenance doctor output.
+Use `--write` only when you intentionally want to update the canonical feature
+spreadsheet.
+
+`telegram-operator-status` is the fastest human status view across live MCP,
+telemetry, runtime schema compatibility, docs sync, feature CSV freshness, and
+maintenance doctor health.
+
+`telegram-regression-loop --include-live --json` runs the safe sequential gate
+order after meaningful changes: control-plane tests, runtime tests, daemon
+restart, golden live smoke, maintenance doctor, and feature-status dry-run. Do
+not run live smoke in parallel with runtime test suites.
 
 `telegram-repair-plan --json` is dry-run planning only. It describes ordered
 repair steps, touched paths, verification commands, and rollback notes without
 applying changes.
 
 `telegram-repair-plan-apply --json` runs only allowlisted safe apply steps (today:
-`plugin-cache-materialize` when drift reports installer-ready cache lag).
+`plugin-cache-materialize` when drift reports installer-ready cache lag). Do not
+run it from a general status/read task.
 
 `telegram-telemetry-status --json` summarizes daily JSONL logs, checks Prometheus
 `/metrics` targets (9109/9110), and applies thresholds from
@@ -100,15 +140,16 @@ into Grafana and include `policy/telemetry/prometheus-scrape.yml` in Prometheus.
 
 ## Surface Contract
 
-The default Telegram MCP endpoint is read-only toward external Telegram state.
-It may resolve, read, search, collect context, and prepare send/reply previews,
-but it must not send, reply, edit, delete, mark, create, invite, promote, or
-otherwise mutate Telegram.
+The healthy local surface is `owner_local_full_mcp`. This single-owner machine
+intentionally exposes the full Telegram MCP runtime on explicit owner account
+daemons (`telegram-main`/`telegram-crwddy`, `telegram-recklessou`,
+`telegram-teamsyncsage`, and `telegram-vermassov`). Direct write tools are
+allowed on that owner-local surface; external or restricted environments must
+use their own facade policy.
 
-Write-capable tools such as `send_dialog_message`, `reply_in_dialog`, and
-`reply_message` are allowed only in an explicit `full` or `admin` tool profile.
-The control-plane treats any write-capable tool in the default profile or plugin
-allowlist as a blocking defect.
+The legacy 16-tool facade remains documented only for compatibility and
+restricted-profile installs. It is no longer the healthy default target for this
+host.
 
 For simple low-stakes "read today" tasks, `bin/telegram-fast-read-today` is the
 supported first path on this host. It talks directly to the local MCP HTTP daemon
@@ -138,15 +179,42 @@ tests, and live smokes. Use `./bin/telegram-release-gate --ci` in GitHub Actions
 (agent-docs check, docs audit, pytest only). Integration smokes stay manual:
 `python3 -m pytest -q -m integration`.
 
-`telegram-doctor` includes the docs audit via the `docs` registry component.
+`telegram-maintenance-doctor` includes the docs audit via the `docs` registry
+component.
+
+## Command Levels
+
+- Daily: `telegram-status`, `telegram-doctor`.
+- Live read: `tg read today <chat> --limit 30 --json`.
+- Mirror fast path: `telegram-mirror-fast status/read/search`; full mirror
+  preflight is maintenance only.
+- Drill-down: component audits such as `telegram-mcp-surface`,
+  `telegram-telemetry-status`, `telegram-telecrawl-status`,
+  `telegram-managed-systems`, `telegram-runtime-compat`, and
+  `telegram-docs-audit`.
+- Release/maintenance: `telegram-maintenance-doctor`, `telegram-regression-loop`,
+  `telegram-release-gate`, `telegram-agent-docs-sync`, `telegram-install-adapters`, plugin cache
+  materialization, `telegram-feature-status`, `telegram-repair-plan`, and
+  `telegram-repair-plan-apply`.
 
 ## Current Status
 
-- Healthy control-plane target: `telegram-doctor --json` returns `warn` with
-  `0` blocking findings; any blocking finding is a release blocker (`exit 1`).
-- Expected operational warning: `telecrawl_known_gaps` when the default archive
-  still has retryable import gaps (`TimeoutError` backlog). This is documented
-  in `policy/telecrawl.json` and is not a release blocker.
+- Healthy core target: `telegram-doctor --json` returns `ok` with
+  `0` blocking findings and does not run release/archive/telemetry checks.
+- Healthy maintenance target: `telegram-maintenance-doctor --json` returns
+  `ok` when there are no active maintenance findings; any blocking finding is a
+  release blocker (`exit 1`).
+- A maintenance `warn` with `0` blocking findings is an active operational
+  warning, not a reason to start broad repair. Read `findings[].component`
+  first, then run `telegram-repair-plan --json` only when a concrete repair is
+  needed.
+- Accepted archive limitation: `telecrawl_known_gaps` belongs in
+  `accepted_findings`, not active `findings`, when the default archive still has
+  documented import gaps. This is documented in `policy/telecrawl.json`, remains
+  visible for archive-evidence work, and is not a core/live Telegram blocker.
+- Expected maintenance warning: `mcp_telemetry` when recent tool errors or error
+  rate cross local telemetry thresholds. Check `telegram-telemetry-status --json`
+  before changing runtime routing.
 - `telegram-fast-read-today me --limit 1` is the local fast smoke for the
   supported simple-read shortcut.
 - `telegram-managed-systems --json` is the canonical inventory of Telegram
@@ -154,8 +222,16 @@ tests, and live smokes. Use `./bin/telegram-release-gate --ci` in GitHub Actions
   A missing blocking-protected path is a fail-closed defect.
 - Portable plugin package, marketplace alias, live skill, and installed cache are
   aligned at local Telegram plugin version `0.1.10`.
-- The default MCP tool profile is the restricted facade profile. Admin/channel
-  management tools require an explicit full/admin profile.
+- The active MCP tool profile is `owner_local_full_mcp`: this single-owner local
+  setup intentionally exposes the full local MCP surface on explicit owner
+  account daemons: `telegram-main`/`telegram-crwddy`, `telegram-recklessou`,
+  `telegram-teamsyncsage`, and `telegram-vermassov`. The legacy `telegram-pl`
+  daemon may also exist, but it is not one of the four owner aliases.
+- `telegram-mcp-surface --json` is healthy when `surface_mode` is
+  `owner_local_full_mcp`, the four owner account aliases pass the live probe,
+  the plugin config has no hard `allowedTools`/`allowTools`, and the
+  policy-required full-surface tools are present. The old 16-tool facade list
+  remains only as a legacy reference, not as the active default target.
 - Active MCP LaunchAgent plists no longer contain Telegram API secrets; they
   load credentials through `TELEGRAM_MCP_ENV_FILE` pointing at private `0600`
   env files under the MCP session directories.
@@ -172,6 +248,11 @@ tests, and live smokes. Use `./bin/telegram-release-gate --ci` in GitHub Actions
 - Do not move repos.
 - Do not delete Telegram-related paths directly. Start from
   `policy/managed-systems.json` and create a dry-run repair/cleanup plan first.
+- For any doctor warning that looks actionable, run
+  `./bin/telegram-repair-plan --json` and inspect the dry-run before applying
+  anything.
+- Do not run plugin cache materialization, adapter installs, docs sync restarts,
+  or `telegram-repair-plan-apply` without an explicit maintenance/release task.
 - Do not start mirror watchers, backfills, sync jobs, or LaunchAgents.
 - Do not copy Telegram sessions into this tree.
 - Do not store secrets, session strings, subscriber exports, media payloads, or

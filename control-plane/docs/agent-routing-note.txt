@@ -1,1 +1,1 @@
-For Telegram: use the telegram skill. For live reads (today/recent/search), run `tg` first — do not require @telegram. Use MCP only for media, sends, or fallback.
+Codex live read: tg read today <chat> --limit 30 --json first. Do not use mcporter/tool_search/README/doctor before read. Fallback: telegram-fast-read-today → telegram_read mode=fast. See tools/telegram/generated/adapters/codex/telegram-codex-entry.md

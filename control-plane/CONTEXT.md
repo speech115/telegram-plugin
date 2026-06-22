@@ -17,14 +17,19 @@ allowlist parity, and checks control-plane docs for stale surface claims.
 _Avoid_: Allowlist file, tool list in Python
 
 **Default MCP surface**:
-The restricted tool profile agents see through the installed plugin and local MCP
-facade — read/search/prepare/confirmed-send only, never raw send/reply on default.
-_Avoid_: Full MCP, admin profile (when meaning default)
+The owner-local full MCP surface exposed on this single-user machine. The active
+contract is `policy/surface-contract.json` with `owner_local_full_mcp`, so local
+agents may use reads, writes, media, contacts, groups, reactions, pins, polls,
+stories, privacy and profile tools directly when the task and safety rules allow
+it.
+_Avoid_: Legacy facade allowlist, restricted profile (when meaning the current
+owner-local default)
 
 **Confirmed write**:
-A facade tool that may mutate Telegram only after an explicit preview token
-(`telegram_confirmed_send`), not raw `send_*` / `reply_*` on the default surface.
-_Avoid_: Write tool, send helper
+A legacy facade write path that may mutate Telegram only after an explicit
+preview token (`telegram_confirmed_send`). It remains relevant for compatibility
+and tests, but it is not the current owner-local full-surface boundary.
+_Avoid_: Treating confirmed-send facade rules as the full owner-local MCP surface
 
 **Live MCP**:
 The `telegram-mcp` backend used for current/today/recent reads — not mirror or

@@ -5,9 +5,8 @@ from pathlib import Path
 
 from .managed_systems import resolve_topology
 
-_TOPOLOGY = resolve_topology()
-
 HOME = Path.home()
+_TOPOLOGY = resolve_topology()
 CONTROL_ROOT = _TOPOLOGY["control_root"]
 MCP_REPO = _TOPOLOGY["mcp_repo"]
 PLUGIN_SOURCE = _TOPOLOGY["plugin_source"]

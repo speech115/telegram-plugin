@@ -6,6 +6,7 @@ from telegram_control_plane.source_routing import (
     recommend_route,
     score_intent,
 )
+from telegram_control_plane.source_evidence import source_evidence_rules
 
 
 def test_today_intent_routes_live_mcp() -> None:
@@ -75,14 +76,71 @@ def test_source_routing_policy_matchers_are_policy_backed() -> None:
 def test_route_warnings_include_unready_archive_and_mirror_preflight() -> None:
     archive = recommend_route("найди в архиве docker", archive_ready=False, archive_has_gaps=True)
     assert archive["primary_source"] == "telecrawl_archive"
-    assert {"archive_not_ready", "archive_has_known_gaps"}.issubset(archive["warnings"])
+    assert {"archive_not_ready", "archive_has_known_gaps", "do_not_use_for_current_claims"}.issubset(
+        archive["warnings"]
+    )
 
     mirror = recommend_route("mirror allowlist export", mirror_preflight_ok=False)
     assert mirror["primary_source"] == "telegram_mirror"
     assert "mirror_preflight_required" in mirror["warnings"]
 
 
-def test_source_routing_audit_flags_live_route_mismatch(monkeypatch) -> None:
+def test_source_evidence_rules_own_live_archive_invariant() -> None:
+    rules = source_evidence_rules()
+
+    assert rules.live_route_target == "live_mcp"
+    assert "telecrawl_archive" in rules.live_blocked_sources
+    assert rules.telecrawl_is_archive_evidence is True
+    assert rules.telecrawl_blocks_current_claims is True
+    assert rules.negative_archive_claim == "no matches in this archive coverage"
+    assert rules.audit_findings() == []
+
+
+def test_ambiguous_route_fallback_uses_source_evidence_rules() -> None:
+    policy = {
+        "sources": {
+            "live_mcp": {"tools_first": ["live"]},
+            "telecrawl_archive": {"tools_first": ["archive"]},
+            "telegram_mirror": {"tools_first": ["mirror"]},
+        },
+        "rules": {
+            "route_current_latest_today_send_reply_media_to": "telegram_mirror",
+            "never_route_live_intents_to": ["telecrawl_archive"],
+        },
+        "claims": {"negative_archive_results": "fixture", "never_infer_absence_from_archive_only": True},
+    }
+
+    route = SourceRoutingPolicy(policy).recommend_route("без явного intent")
+
+    assert route["primary_source"] == source_evidence_rules(source_routing_policy=policy).live_route_target
+
+
+def test_source_routing_audit_uses_single_missing_source_finding() -> None:
+    policy = SourceRoutingPolicy(
+        {
+            "sources": {"live_mcp": {}},
+            "rules": {
+                "route_current_latest_today_send_reply_media_to": "live_mcp",
+                "never_route_live_intents_to": ["telecrawl_archive"],
+            },
+            "claims": {"negative_archive_results": "same", "never_infer_absence_from_archive_only": True},
+        }
+    )
+
+    report = policy.audit()
+    missing = [item for item in report["findings"] if "missing_source" in item["id"]]
+
+    assert missing == [
+        {
+            "id": "source_evidence_missing_source",
+            "severity": "blocking",
+            "sources": ["telecrawl_archive", "telegram_mirror"],
+            "message": "Source evidence policy is missing required source definitions.",
+        }
+    ]
+
+
+def test_source_routing_audit_flags_live_route_not_live_mcp() -> None:
     policy = SourceRoutingPolicy(
         {
             "sources": {"live_mcp": {}, "telecrawl_archive": {}, "telegram_mirror": {}},
@@ -90,15 +148,8 @@ def test_source_routing_audit_flags_live_route_mismatch(monkeypatch) -> None:
             "claims": {"negative_archive_results": "same"},
         }
     )
-    monkeypatch.setattr(
-        "telegram_control_plane.source_routing.telecrawl_gap.load_telecrawl_policy",
-        lambda: {
-            "route_current_latest_today_send_reply_media_to": "live_mcp",
-            "negative_results_claim": "same",
-        },
-    )
 
     report = policy.audit()
 
     assert report["status"] == "fail"
-    assert any(item["id"] == "source_routing_live_route_mismatch" for item in report["findings"])
+    assert any(item["id"] == "source_evidence_live_route_not_live_mcp" for item in report["findings"])

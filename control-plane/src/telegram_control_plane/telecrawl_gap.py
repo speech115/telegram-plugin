@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from . import source_evidence
 from .paths import POLICY_DIR, TELECRAWL_DEFAULT_DB
 from .util import load_json, status_from_findings
 
@@ -200,13 +201,15 @@ def known_gaps_findings(
 
 def gap_policy_summary(policy: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = policy if policy is not None else load_telecrawl_policy()
+    evidence_rules = source_evidence.source_evidence_rules(telecrawl_policy=payload)
     return {
         "classification": payload.get("classification"),
         "is_live": payload.get("is_live"),
         "known_gaps_are_blocking_for_archive_search": payload.get("known_gaps_are_blocking_for_archive_search"),
         "known_gaps_are_blocking_for_current_claims": payload.get("known_gaps_are_blocking_for_current_claims"),
-        "route_current_latest_today_send_reply_media_to": payload.get("route_current_latest_today_send_reply_media_to"),
-        "negative_results_claim": payload.get("negative_results_claim"),
+        "route_current_latest_today_send_reply_media_to": evidence_rules.live_route_target,
+        "negative_results_claim": evidence_rules.negative_archive_claim,
+        "never_infer_absence_from_archive_only": evidence_rules.never_infer_absence_from_archive_only,
     }
 
 
@@ -218,6 +221,7 @@ def evaluate_archive_readiness(
 ) -> dict[str, Any]:
     payload = policy if policy is not None else load_telecrawl_policy()
     findings: list[dict[str, Any]] = []
+    accepted_findings: list[dict[str, Any]] = []
     account_rows = accounts.get("accounts") if isinstance(accounts.get("accounts"), list) else []
     active_incomplete = [
         row
@@ -233,8 +237,16 @@ def evaluate_archive_readiness(
                 "count": len(active_incomplete),
             }
         )
-    import_gaps_payload = archive_status.get("import_gaps") if isinstance(archive_status.get("import_gaps"), dict) else {}
-    findings.extend(known_gaps_findings(payload, import_gaps_payload))
+    import_gaps_payload = (
+        archive_status.get("import_gaps")
+        if isinstance(archive_status.get("import_gaps"), dict)
+        else {}
+    )
+    for finding in known_gaps_findings(payload, import_gaps_payload):
+        if finding.get("expected_operational_warning") is True:
+            accepted_findings.append(finding)
+        else:
+            findings.append(finding)
     if archive_status.get("source_kind") != "archive_snapshot":
         findings.append(
             {
@@ -246,5 +258,6 @@ def evaluate_archive_readiness(
     return {
         "status": status_from_findings(findings),
         "findings": findings,
+        "accepted_findings": accepted_findings,
         "gap_policy": gap_policy_summary(payload),
     }

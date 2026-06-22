@@ -15,6 +15,5 @@
     "InviteHashInvalidError"
   ],
   "retry_terminal_access_errors": false,
-  "negative_results_claim": "no matches in this archive coverage",
-  "route_current_latest_today_send_reply_media_to": "live_mcp"
+  "source_evidence_owner": "policy/source-routing.json"
 }
