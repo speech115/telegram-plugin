@@ -397,7 +397,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                 ),
             }
         )
-    elif kit_wrapper.is_file():
+    elif tg_on_path and kit_wrapper.is_file():
         try:
             path_tg = Path(tg_on_path).resolve()
             kit_tg = kit_wrapper.resolve()

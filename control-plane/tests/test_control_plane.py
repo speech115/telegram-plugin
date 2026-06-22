@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import shutil
 import importlib.machinery
 import importlib.util
 from pathlib import Path
@@ -401,6 +402,17 @@ def test_fast_read_adapter_is_registered_as_safe_first_path() -> None:
     assert report["routing"]["codex_hot_path_doc"] == (
         "generated/adapters/codex/telegram-codex-entry.md"
     )
+
+
+def test_fast_read_adapter_allows_missing_path_tg_in_portable_ci(monkeypatch) -> None:
+    monkeypatch.setenv("TELEGRAM_CI_PORTABLE", "1")
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+
+    report = audits.audit_fast_read_adapter()
+
+    assert report["status"] == "ok"
+    assert report["tg_on_path"] is None
+    assert report["adapter"]["help_probe"]["skipped_reason"] == "portable_ci_source_checked"
 
 
 def test_fast_read_adapter_calls_task_shaped_tool() -> None:
