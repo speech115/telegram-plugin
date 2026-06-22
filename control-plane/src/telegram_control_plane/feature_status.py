@@ -38,6 +38,10 @@ def _update_row(row: dict[str, str], *, component: str, report: dict[str, Any]) 
     updated["errors"] = "" if is_ok else _finding_ids(findings)
     updated["next_action"] = "keep covered" if is_ok else f"run {updated.get('verification_command', '').strip()}"
     updated["expected_failure_class"] = "none" if is_ok else "operational_finding"
+    if is_ok and updated.get("optimization_verdict") == "blocked":
+        updated["optimization_verdict"] = "acceptable"
+    elif not is_ok:
+        updated["optimization_verdict"] = "blocked"
     return updated
 
 

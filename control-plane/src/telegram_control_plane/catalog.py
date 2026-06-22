@@ -54,10 +54,10 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         name="tg",
-        purpose="Live Telegram CLI (read/search/today); first path for current reads",
+        purpose="Live Telegram CLI (route/read/search/count); first path for current reads and metadata counts",
         level="live",
         safety="read-only",
-        example="tg read today <chat> --limit 30 --json",
+        example="tg route 'сколько постов в @channel всего?' --json",
     ),
     CommandSpec(
         name="telegram-fast-read-today",

@@ -101,5 +101,5 @@ def test_refresh_feature_status_write_updates_component_rows(tmp_path: Path) -> 
     assert row["last_result"] == "plugin_drift ok"
     assert row["errors"] == ""
     assert row["next_action"] == "keep covered"
-    assert row["optimization_verdict"] == "blocked"
+    assert row["optimization_verdict"] == "acceptable"
     assert row["expected_failure_class"] == "none"

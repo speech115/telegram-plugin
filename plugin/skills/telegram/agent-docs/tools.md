@@ -6,6 +6,7 @@ The restricted plugin profile exposes task-shaped tools only. Prefer these names
 
 - `telegram_read`
 - `telegram_search`
+- `telegram_count_posts`
 - `resolve_dialog`
 - `find_dialog`
 - `collect_dialog_context`

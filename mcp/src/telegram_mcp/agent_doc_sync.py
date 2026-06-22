@@ -190,6 +190,7 @@ def generate_tools_doc() -> str:
     read_tools = [
         "telegram_read",
         "telegram_search",
+        "telegram_count_posts",
         "resolve_dialog",
         "find_dialog",
         "collect_dialog_context",
@@ -280,7 +281,8 @@ def generate_index_doc(topics: list[str]) -> str:
             "1. Classify: live vs historical vs write.",
             '2. Low-stakes today read: `telegram_read(mode="fast")` or host fast adapter.',
             "3. Search: `telegram_search` — not broad reads.",
-            '4. Escalate to `mode="full"` or paging only when the user needs completeness.',
+            "4. Count channel posts: `telegram_count_posts` — metadata only, no history download.",
+            '5. Escalate to `mode="full"` or paging only when the user needs completeness.',
             "",
             "## Live data",
             "",

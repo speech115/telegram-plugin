@@ -92,6 +92,7 @@ from .tools import (
     search_public_chats,
     sent_media_search,
     telegram_confirmed_send,
+    telegram_count_posts,
     telegram_inspect_media,
     telegram_prepare_reply,
     telegram_read,

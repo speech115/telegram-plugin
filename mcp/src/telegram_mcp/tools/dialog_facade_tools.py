@@ -21,7 +21,7 @@ from ..facade_limits import (
     clamp_search_limit,
 )
 from ..member_export_paths import resolve_member_export_dir
-from ..types import ParticipantsResult
+from ..types import DialogPostCountResult, ParticipantsResult
 
 READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
@@ -373,6 +373,19 @@ async def telegram_search(chat: str | int, query: str, limit: int = FAST_SEARCH_
     return result
 
 
+async def telegram_count_posts(chat: str | int) -> DialogPostCountResult:
+    """Return total visible posts/messages in a dialog without downloading history."""
+    enforce_live_read_route(tool_name="telegram_count_posts", explicit_intent="live_read")
+    tg = await runtime.get_tg()
+    result = await tg.count_dialog_posts(chat=chat)
+    assert_live_result_data_source(
+        result.model_dump(mode="json"),
+        tool_name="telegram_count_posts",
+        intent="live_read",
+    )
+    return result
+
+
 async def telegram_export_members(
     chat: str | int,
     limit: int = FAST_MEMBER_EXPORT_LIMIT,
@@ -552,6 +565,7 @@ def register(
         mcp.tool(annotations=READONLY)(tool_error_handler(search_dialog_messages))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_read))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_search))
+    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_count_posts))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_export_members))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_prepare_reply))
     mcp.tool(annotations=CONFIRMED_WRITE)(tool_error_handler(telegram_confirmed_send))

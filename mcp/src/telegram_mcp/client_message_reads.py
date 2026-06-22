@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .types import DialogSliceResult, MessageInfo, TranscriptionResult
+from .types import DialogPostCountResult, DialogSliceResult, MessageInfo, TranscriptionResult
 
 
 class MessageReadMixin:
@@ -57,6 +57,21 @@ class MessageReadMixin:
                 include_sender_name=include_sender_name,
             ),
         )
+
+    async def count_dialog_posts(self, chat: str | int) -> DialogPostCountResult:
+        started_at = time.perf_counter()
+        handle, entity = await self._resolve_dialog_with_entity(chat)
+        result = await self._run_read(
+            "count_dialog_posts",
+            lambda: self.client.get_messages(entity, limit=0),
+        )
+        total = int(getattr(result, "total", 0) or 0)
+        self._emit_read_timing(
+            "count_dialog_posts",
+            started_at,
+            item_count=0,
+        )
+        return DialogPostCountResult(chat=handle, total=total)
 
     async def _list_messages_uncached(
         self,

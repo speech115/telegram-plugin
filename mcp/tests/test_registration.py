@@ -101,6 +101,7 @@ class RegistrationTests(unittest.TestCase):
                 "reply_message",
                 "telegram_confirmed_send",
                 "telegram_export_members",
+                "telegram_count_posts",
                 # Contacts
                 "list_contacts",
                 "search_contacts",

@@ -18,6 +18,7 @@ Default operation is direct full-surface local MCP for the owner's Telegram acco
 | Intent | Command | Notes |
 | --- | --- | --- |
 | Что нового / прочитай чат за сегодня | `tg read today <chat> --limit 30 --json` | Live only; never mirror/archive. Fallback: MCP `telegram_read` `mode="fast"` |
+| Сколько постов / metadata count | `tg count posts <chat> --json` | Live metadata only; does not download history. Use `tg route '<task>' --json` when unsure |
 | Keyword in dialog | MCP `telegram_search` | Then fetch context only for hits |
 | Full today, nothing missed | MCP `telegram_read` `mode="full"` + page | Report `truncated` / `has_more_before` |
 | Draft reply | MCP `telegram_prepare_reply` | No send without explicit user text |

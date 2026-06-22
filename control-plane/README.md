@@ -29,6 +29,8 @@ Telegram path instead:
 
 ```bash
 tg read today <chat> --limit 30 --json
+tg route 'сколько постов в @channel всего?' --json
+tg count posts @channel --json
 ```
 
 For local mirror work, use the mirror fast path/status first; full mirror
@@ -157,6 +159,12 @@ with the same bearer token env file, skips `mcporter` process/discovery overhead
 and falls back conceptually to the normal live MCP facade when unavailable. It
 is read-only and must not be used for send/reply, media inspection, subscriber
 export, or any workflow that needs the full facade.
+
+For ambiguous live Telegram requests, `tg route '<task>' --json` is the safe
+plan-only entrypoint. It does not send, delete, mark read, or fetch history. For
+channel history-size questions, use `tg count posts <chat> --json`; it calls the
+read-only `telegram_count_posts` MCP tool and uses Telegram metadata instead of
+downloading the channel timeline.
 
 `generated/observed-registry.json` is an allowlist-only runtime snapshot. It must
 not contain Telegram user IDs, Telegram handles, phone numbers, exact session

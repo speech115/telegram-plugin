@@ -37,6 +37,8 @@ Install `tg`: `<control-plane>/bin/telegram-kit --local` → `~/bin/tg`.
   - `tg read today <chat> --limit 30 --json`
   - `tg read recent <chat> --limit 30 --json`
   - `tg search <chat> "<query>" --limit 20 --json`
+  - `tg route "<task>" --json` for plan-only disambiguation
+  - `tg count posts <chat> --json` for total visible posts/messages via metadata
 - Fallback shortcut: `telegram-fast-read-today`. Use full MCP for writes,
   media inspection, subscriber export, fuzzy identity work, or complete-context paging.
 - Scoped one-on-one reads like "прочитай переписку с @user за сегодня с HH:MM"
@@ -103,6 +105,8 @@ Prefer canonical full-MCP tool names in agent routing unless the host exposes on
 - Do not follow `collect_dialog_context` with another broad read for the same window unless needed parameters were missing.
 - Do not follow `telegram_prepare_reply` with a separate context read unless warnings say the context is incomplete or the user asks for more evidence.
 - Do not use `telegram_read` for keyword lookup. Use `telegram_search` or `search_dialog_messages` first.
+- Do not download a channel timeline just to answer "how many posts/messages".
+  Use `tg count posts <chat> --json` or MCP `telegram_count_posts`.
 - Do not fetch pinned messages on the first pass unless the user mentions rules, instructions, pinned items, group setup, or long-running project context.
 - Do not page just because `has_more_before=true`; page only when the user asked for completeness or current evidence is insufficient.
 

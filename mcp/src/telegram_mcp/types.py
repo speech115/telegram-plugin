@@ -181,6 +181,13 @@ class DialogReadResult(BaseModel):
     result_cache_ttl_seconds: int | None = None
 
 
+class DialogPostCountResult(BaseModel):
+    chat: DialogHandle
+    total: int
+    data_source: str = "live_telegram"
+    method: str = "get_messages_limit_0"
+
+
 class DialogContextResult(BaseModel):
     chat: DialogHandle
     messages: list[MessageInfo]

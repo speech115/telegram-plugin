@@ -11,6 +11,7 @@ from telegram_mcp.types import (
     DialogReadResult,
     DialogReplyPreparation,
     DialogSendPreparation,
+    DialogPostCountResult,
     MessageInfo,
     Participant,
 )
@@ -57,6 +58,27 @@ class DialogFacadeToolTests(unittest.TestCase):
 
         self.assertEqual(result.dialog_ref, "tg://dialog/user/1")
         wrapper.resolve_dialog.assert_awaited_once_with("@targetdaddy")
+
+    def test_telegram_count_posts_returns_metadata_without_history_download(self):
+        wrapper = AsyncMock()
+        wrapper.count_dialog_posts.return_value = DialogPostCountResult(
+            chat=DialogHandle(
+                dialog_ref="tg://dialog/channel/1",
+                id=1,
+                name="Channel",
+                type="channel",
+                username="targetchannel",
+                resolved_from="@targetchannel",
+            ),
+            total=123,
+        )
+
+        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
+            result = _run(server.telegram_count_posts("@targetchannel"))
+
+        self.assertEqual(result.total, 123)
+        self.assertEqual(result.data_source, "live_telegram")
+        wrapper.count_dialog_posts.assert_awaited_once_with(chat="@targetchannel")
 
     def test_read_dialog_by_date_returns_dialog_read_result(self):
         wrapper = AsyncMock()
