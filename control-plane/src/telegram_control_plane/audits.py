@@ -50,7 +50,18 @@ SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
 
 
 def audit_plugin_drift() -> dict[str, Any]:
-    command = [str(MCP_REPO / "bin/check-plugin-drift"), "--json"]
+    command = [
+        str(MCP_REPO / "bin/check-plugin-drift"),
+        "--live-skill",
+        str(LIVE_SKILL / "SKILL.md"),
+        "--plugin-source-skill",
+        str(PLUGIN_SOURCE / "skills/telegram/SKILL.md"),
+        "--plugin-source-mcp",
+        str(PLUGIN_SOURCE / ".mcp.json"),
+        "--plugin-cache-root",
+        str(PLUGIN_CACHE_ROOT),
+        "--json",
+    ]
     raw = run_json(command, timeout=30)
     findings: list[dict[str, Any]] = []
     status = raw.get("status")

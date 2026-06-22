@@ -20,7 +20,7 @@ Details: [references/facade-routing.md](references/facade-routing.md) (Codex ent
 ---
 
 Use this skill as the live Telegram entrypoint. The portable package under
-`generated/telegram-plugin-package` is the local materialization source of
+`plugin` is the local materialization source of
 truth. The live standalone skill under `$HOME/.agents/skills/telegram` should be
 a symlink to this package's `skills/telegram` tree. If package, live skill, and
 installed cache differ, repair parity before install, materialization, or cache

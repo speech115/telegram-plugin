@@ -51,7 +51,7 @@ the daily path.
 The canonical portable Telegram plugin package is:
 
 ```bash
-generated/telegram-plugin-package
+plugin
 ```
 
 This directory is the editable package source for local materialization. The
@@ -74,7 +74,7 @@ files. To check or refresh docs without packaging:
 
 ```bash
 /Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp/bin/sync-agent-docs \
-  --plugin-dir /Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package \
+  --plugin-dir /Users/sereja/Projects/tools/telegram/plugin \
   --check --json
 ```
 

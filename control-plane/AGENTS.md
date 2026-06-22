@@ -55,7 +55,7 @@ debugging the MCP server itself.
 - Doc sync skill ↔ MCP resources: `docs/agents/doc-sync.md`
 - Human map: `MAP.md`; roadmap: `TELEGRAM_AGENT_KIT_ROADMAP.md`
 - Live MCP backend location: `policy/managed-systems.json` → `telegram-mcp`
-- Portable plugin: `generated/telegram-plugin-package`
+- Portable plugin: `plugin`
 
 ## Verification on this host
 

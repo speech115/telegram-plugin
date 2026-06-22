@@ -9,7 +9,7 @@ This is the short operational map for the local Telegram stack.
 - `/Users/sereja/Projects/families/telegram/telegram-digest/telegram-mcp` is the
   runtime. It owns Telethon sessions, MCP tools, live reads/writes, media,
   exports, telemetry emission, and launchd daemon code.
-- `/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package` is
+- `/Users/sereja/Projects/tools/telegram/plugin` is
   the portable plugin package generated from the control-plane.
 - `/Users/sereja/Projects/runtime/telegram-mirror` is mirror runtime data. Treat
   it as recovery/historical context unless a task explicitly promotes mirror

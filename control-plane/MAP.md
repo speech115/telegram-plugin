@@ -19,7 +19,7 @@ Start here when working on local Telegram tooling.
 
 ## User-Facing Plugin And Skills
 
-- `/Users/sereja/Projects/tools/telegram/generated/telegram-plugin-package`
+- `/Users/sereja/Projects/tools/telegram/plugin`
   - role: canonical portable Telegram plugin package
   - use for: release/package source, plugin metadata, MCP allowlist, assets,
     user-facing skill
@@ -34,7 +34,7 @@ Start here when working on local Telegram tooling.
 
 - `/Users/sereja/.agents/skills/telegram`
   - role: live Telegram skill facade
-  - note: symlink to `generated/telegram-plugin-package/skills/telegram`
+  - note: symlink to `plugin/skills/telegram`
   - use for: normal live dialog work, media/voice inspection, draft/send flows
 
 - `/Users/sereja/Projects/.codex/skills/telegram-local-mirror`

@@ -234,7 +234,7 @@ selecting explicit message ids; it delegates to `download_media_batch`.
   the current agent-routing layer and prove the installer flow before touching
   managed cache files.
 - The Codex plugin apply path for the local Telegram plugin is
-  source-first: update `/Users/sereja/plugins/telegram`, bump its plugin
+  source-first: update `/Users/sereja/Projects/tools/telegram/plugin`, bump its plugin
   manifest version, re-add the local marketplace if Codex still points at a stale
   staged root, and materialize only the new versioned cache from that canonical
   source. Leave older cache versions intact. Do not run any apply path while

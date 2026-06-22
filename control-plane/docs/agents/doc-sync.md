@@ -1,6 +1,6 @@
 # Doc Sync (skill ↔ MCP resources)
 
-Edit `generated/telegram-plugin-package/skills/telegram/references/`, then:
+Edit `plugin/skills/telegram/references/`, then:
 
 ```bash
 ./bin/telegram-agent-docs-sync

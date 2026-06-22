@@ -51,8 +51,8 @@ def main(argv: list[str]) -> int:
         {
             "TELEGRAM_CONTROL_ROOT": str(root),
             "TELEGRAM_MCP_REPO": str(mcp_repo),
-            "TELEGRAM_PLUGIN_PACKAGE": str(root / "generated/telegram-plugin-package"),
-            "TELEGRAM_PLUGIN_SOURCE": str(home / "plugins/telegram"),
+            "TELEGRAM_PLUGIN_PACKAGE": str(root.parent / "plugin"),
+            "TELEGRAM_PLUGIN_SOURCE": str(root.parent / "plugin"),
             "TELEGRAM_PLUGIN_CACHE_ROOT": str(home / ".codex/plugins/cache/sereja-local/telegram"),
             "TELEGRAM_LIVE_SKILL": str(home / ".agents/skills/telegram"),
             "TELEGRAM_LOCAL_MIRROR_SKILL": str(home / "Projects/.codex/skills/telegram-local-mirror"),

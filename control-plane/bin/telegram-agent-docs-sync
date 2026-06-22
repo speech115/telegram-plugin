@@ -4,7 +4,7 @@ set -euo pipefail
 # shellcheck source=telegram-env.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/telegram-env.sh"
 
-PLUGIN_DIR="${TELEGRAM_CONTROL_ROOT}/generated/telegram-plugin-package"
+PLUGIN_DIR="${TELEGRAM_CONTROL_ROOT}/../plugin"
 PYTHON="${TELEGRAM_MCP_REPO}/.venv/bin/python"
 
 if [ ! -x "${PYTHON}" ]; then
