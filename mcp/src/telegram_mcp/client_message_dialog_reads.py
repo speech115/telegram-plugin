@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from datetime import date
 
+from .dialog_read_cache_meta import annotate_dialog_read_cache_meta
 from .types import DialogReadRange, DialogReadResult
 
 
@@ -87,7 +88,12 @@ class MessageDialogReadMixin:
         )
         cached = self._dialog_read_cache_get(cache_key)
         if cached is not None:
-            return cached
+            return annotate_dialog_read_cache_meta(
+                self,
+                cached,
+                cache_key=cache_key,
+                cache_hit=True,
+            )
 
         return await self._dedupe_read_call(
             (
@@ -139,7 +145,12 @@ class MessageDialogReadMixin:
         )
         if result.voice_transcription_status not in {"failed", "partial", "pending"}:
             self._dialog_read_cache_set(cache_key, result)
-        return result
+        return annotate_dialog_read_cache_meta(
+            self,
+            result,
+            cache_key=cache_key,
+            cache_hit=False,
+        )
 
     async def _read_dialog_by_date_uncached(
         self,
@@ -218,7 +229,12 @@ class MessageDialogReadMixin:
         )
         cached = self._dialog_read_cache_get(cache_key)
         if cached is not None:
-            return cached
+            return annotate_dialog_read_cache_meta(
+                self,
+                cached,
+                cache_key=cache_key,
+                cache_hit=True,
+            )
 
         return await self._dedupe_read_call(
             (
@@ -262,7 +278,12 @@ class MessageDialogReadMixin:
         )
         if result.voice_transcription_status not in {"failed", "partial", "pending"}:
             self._dialog_read_cache_set(cache_key, result)
-        return result
+        return annotate_dialog_read_cache_meta(
+            self,
+            result,
+            cache_key=cache_key,
+            cache_hit=False,
+        )
 
     async def _read_recent_dialog_uncached(
         self,

@@ -8,9 +8,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .paths import MIRROR_RUNTIME_ROOT
+
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - exercised in portable CI without PyYAML
+    yaml = None
 
 EXPORT_ROOT = MIRROR_RUNTIME_ROOT / "runtime/ingest/telegram/exports"
 CONFIG_ROOT = MIRROR_RUNTIME_ROOT / "config"
@@ -72,14 +75,56 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _parse_scalar(value: str) -> str:
+    value = value.strip()
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+
+def _load_channel_config(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if yaml is not None:
+        return yaml.safe_load(text) or {}
+
+    channels: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    in_channels = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped == "channels:":
+            in_channels = True
+            continue
+        if not in_channels:
+            continue
+        if stripped.startswith("- "):
+            if current:
+                channels.append(current)
+            current = {}
+            remainder = stripped[2:].strip()
+            if ":" in remainder:
+                key, value = remainder.split(":", 1)
+                current[key.strip()] = _parse_scalar(value)
+            continue
+        if current is not None and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            current[key.strip()] = _parse_scalar(value)
+    if current:
+        channels.append(current)
+    return {"channels": channels}
+
+
 def _config_rows(config_root: Path = CONFIG_ROOT) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not config_root.exists():
         return rows
     for path in sorted(config_root.glob("telegram_channels*.yaml")):
         try:
-            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except (OSError, yaml.YAMLError):
+            payload = _load_channel_config(path)
+        except OSError:
             continue
         for row in payload.get("channels", []):
             if not isinstance(row, dict):

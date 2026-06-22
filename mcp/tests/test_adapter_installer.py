@@ -16,14 +16,21 @@ class AdapterInstallerTests(unittest.TestCase):
 
             self.assertTrue(plan.dry_run)
             self.assertEqual(plan.status, "ok")
-            self.assertEqual(plan.hosts, ["codex", "claude", "opencode", "standalone"])
+            self.assertEqual(plan.hosts, ["codex", "claude", "opencode", "cursor", "standalone"])
             self.assertEqual(
                 {item.path for item in plan.planned_files},
                 {
                     "adapters/codex/telegram.mcp.json",
+                    "adapters/codex/telegram-codex-entry.md",
+                    "adapters/codex/telegram-routing-note.txt",
                     "adapters/claude/telegram.mcp.json",
+                    "adapters/claude/telegram-routing-note.txt",
                     "adapters/opencode/opencode.json",
+                    "adapters/opencode/telegram-routing-note.txt",
+                    "adapters/cursor/telegram-routing.mdc",
+                    "adapters/cursor/telegram-routing-note.txt",
                     "skills/telegram/INSTALL.md",
+                    "adapters/standalone/telegram-routing-note.txt",
                 },
             )
             self.assertEqual(list(root.iterdir()), [])

@@ -5,12 +5,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
-import shutil
 import sys
 import time
 from dataclasses import dataclass
 from typing import Any
+
+from .mcp_http_client import call_tool_with_failover
 
 
 READONLY_CALLS = {
@@ -67,57 +67,76 @@ def _build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Query for telegram.search_dialog_messages stress calls.",
     )
+    parser.add_argument("--endpoint", default=None)
+    parser.add_argument("--env-file", default="~/.telegram-mcp/launchd.env")
+    parser.add_argument("--account", choices=("main", "pl"), default="main")
     parser.add_argument("--json", action="store_true")
     return parser
 
 
-async def _run_mcporter_call(
-    mcporter_bin: str,
+def _coerce_arg_value(value: str) -> object:
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _parse_tool_args(args: tuple[str, ...]) -> dict[str, object]:
+    parsed: dict[str, object] = {}
+    index = 0
+    while index < len(args):
+        item = args[index]
+        if item in {"--timeout", "--output"}:
+            index += 2
+            continue
+        if "=" in item:
+            key, value = item.split("=", 1)
+            parsed[key] = _coerce_arg_value(value)
+        index += 1
+    return parsed
+
+
+async def _run_mcp_call(
     spec: _CallSpec,
+    *,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> dict[str, Any]:
     if spec.tool not in READONLY_CALLS:
         raise ValueError(f"Unsafe stress tool: {spec.tool}")
 
     started_at = time.perf_counter()
-    process = await asyncio.create_subprocess_exec(
-        mcporter_bin,
-        "call",
-        spec.tool,
-        *spec.args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     process_timeout = _process_timeout_seconds(spec.args)
     try:
-        if process_timeout is None:
-            stdout, stderr = await process.communicate()
-        else:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=process_timeout,
-            )
-    except TimeoutError:
-        process.kill()
-        stdout, stderr = await process.communicate()
-        duration_ms = (time.perf_counter() - started_at) * 1000
-        return {
-            "tool": spec.tool,
-            "ok": False,
-            "exit_code": -1,
-            "duration_ms": round(duration_ms, 3),
-            "stdout_bytes": len(stdout),
-            "stderr": f"mcporter process timed out after {process_timeout:g}s",
-            "stdout": stdout.decode("utf-8", errors="replace").strip(),
-        }
+        payload, _elapsed, _attempt = await call_tool_with_failover(
+            tool_name=spec.tool.removeprefix("telegram."),
+            arguments=_parse_tool_args(spec.args),
+            timeout=process_timeout or 30.0,
+            explicit_endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+        stdout_text = json.dumps(payload, ensure_ascii=False)
+        stderr_text = ""
+        exit_code = 0
+        ok = True
+    except Exception as exc:
+        stdout_text = ""
+        stderr_text = f"{type(exc).__name__}: {exc}"
+        exit_code = -1
+        ok = False
     duration_ms = (time.perf_counter() - started_at) * 1000
-    stderr_text = stderr.decode("utf-8", errors="replace").strip()
-    stdout_text = stdout.decode("utf-8", errors="replace").strip()
     return {
         "tool": spec.tool,
-        "ok": process.returncode == 0,
-        "exit_code": process.returncode,
+        "ok": ok,
+        "exit_code": exit_code,
         "duration_ms": round(duration_ms, 3),
-        "stdout_bytes": len(stdout),
+        "stdout_bytes": len(stdout_text.encode("utf-8")),
         "stderr": stderr_text[-1000:] if stderr_text else "",
         "stdout": stdout_text,
     }
@@ -133,16 +152,20 @@ def _process_timeout_seconds(args: tuple[str, ...]) -> float | None:
 
 
 async def _discover_chat(
-    mcporter_bin: str,
     *,
     timeout: int,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> tuple[str | None, str | None]:
-    result = await _run_mcporter_call(
-        mcporter_bin,
+    result = await _run_mcp_call(
         _CallSpec(
             "telegram.resolve_dialog",
             ("query=me", "--timeout", str(timeout), "--output", "json"),
         ),
+        endpoint=endpoint,
+        env_file=env_file,
+        account=account,
     )
     if not result["ok"]:
         return None, "telegram.resolve_dialog discovery failed"
@@ -285,28 +308,40 @@ def _build_cache_pair_plan(
 
 
 async def _run_plan(
-    mcporter_bin: str,
-    *,
     call_plan: list[_CallSpec],
     concurrency: int,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def run_one(spec: _CallSpec) -> dict[str, Any]:
         async with semaphore:
-            return await _run_mcporter_call(mcporter_bin, spec)
+            return await _run_mcp_call(
+                spec,
+                endpoint=endpoint,
+                env_file=env_file,
+                account=account,
+            )
 
     return await asyncio.gather(*(run_one(spec) for spec in call_plan))
 
 
 async def _run_cache_pair_plan(
-    mcporter_bin: str,
-    *,
     call_plan: list[_CallSpec],
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> list[_CallResult]:
     results: list[_CallResult] = []
     for index, spec in enumerate(call_plan):
-        result = await _run_mcporter_call(mcporter_bin, spec)
+        result = await _run_mcp_call(
+            spec,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
         results.append(
             _CallResult(
                 result=result,
@@ -435,22 +470,15 @@ def _print_text_summary(summary: dict[str, Any]) -> None:
 
 
 async def _main_async(args: argparse.Namespace) -> int:
-    mcporter_bin = os.environ.get("MCPORTER_BIN") or shutil.which("mcporter")
-    if not mcporter_bin:
-        payload = {
-            "status": "error",
-            "error": "mcporter not found. Set MCPORTER_BIN or add mcporter to PATH.",
-        }
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(payload["error"], file=sys.stderr)
-        return 1
-
     warnings: list[str] = []
     chat = args.chat
     if chat is None:
-        chat, warning = await _discover_chat(mcporter_bin, timeout=args.timeout)
+        chat, warning = await _discover_chat(
+            timeout=args.timeout,
+            endpoint=args.endpoint,
+            env_file=args.env_file,
+            account=args.account,
+        )
         if warning:
             warnings.append(warning)
 
@@ -462,7 +490,12 @@ async def _main_async(args: argparse.Namespace) -> int:
             search_query=args.search_query,
         )
         warnings.extend(pair_warnings)
-        results = await _run_cache_pair_plan(mcporter_bin, call_plan=call_plan)
+        results = await _run_cache_pair_plan(
+            call_plan=call_plan,
+            endpoint=args.endpoint,
+            env_file=args.env_file,
+            account=args.account,
+        )
     else:
         call_plan = _build_call_plan(
             iterations=args.iterations,
@@ -471,9 +504,11 @@ async def _main_async(args: argparse.Namespace) -> int:
             search_query=args.search_query,
         )
         plain_results = await _run_plan(
-            mcporter_bin,
             call_plan=call_plan,
             concurrency=args.concurrency,
+            endpoint=args.endpoint,
+            env_file=args.env_file,
+            account=args.account,
         )
         results = [_CallResult(result=result) for result in plain_results]
     summary = _summarize(

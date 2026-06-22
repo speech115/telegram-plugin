@@ -116,3 +116,5 @@ def register_facade(mcp) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(download_dialog_media))
     mcp.tool(annotations=READONLY)(tool_error_handler(prepare_media_inspection_manifest))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_inspect_media))
+    # notes-runner assemble delivery uses digest-runner send-file -> MCP send_file.
+    mcp.tool(annotations=ADDITIVE)(tool_error_handler(send_file))

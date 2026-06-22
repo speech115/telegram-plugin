@@ -1,4 +1,5 @@
 from contextlib import suppress
+from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
 
@@ -41,8 +42,15 @@ class ServerLifespanTests(IsolatedAsyncioTestCase):
                     "telegram_mcp.runtime._disconnect_shared_wrapper",
                     AsyncMock(),
                 ) as disconnect_wrapper:
-                    async with server.lifespan(server.mcp) as context:
-                        self.assertIs(context["tg"], wrapper)
+                    with patch(
+                        "telegram_mcp.runtime.get_settings",
+                        return_value=SimpleNamespace(
+                            telemetry_prometheus_enabled=False,
+                            write_approval_required=False,
+                        ),
+                    ):
+                        async with server.lifespan(server.mcp) as context:
+                            self.assertIs(context["tg"], wrapper)
 
         get_wrapper.assert_awaited_once()
         disconnect_wrapper.assert_not_awaited()

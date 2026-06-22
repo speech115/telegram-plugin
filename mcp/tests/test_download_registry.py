@@ -27,6 +27,7 @@ class DownloadRegistryTests(unittest.TestCase):
                 chat_ref="@targetdaddy",
                 message_id=7,
                 local_path=media_path,
+                remote_media_ref="document:1007:dc4:size5",
                 downloaded_at=datetime(2026, 5, 9, 12, 0, tzinfo=UTC),
             )
 
@@ -34,6 +35,7 @@ class DownloadRegistryTests(unittest.TestCase):
             self.assertEqual(entry.chat_ref, "@targetdaddy")
             self.assertEqual(entry.message_id, 7)
             self.assertEqual(entry.local_path, str(media_path))
+            self.assertEqual(entry.remote_media_ref, "document:1007:dc4:size5")
             self.assertEqual(entry.size, 5)
             self.assertEqual(
                 entry.sha256,
@@ -102,6 +104,49 @@ class DownloadRegistryTests(unittest.TestCase):
 
             self.assertEqual(registry.get(chat_id=11, message_id=7), original)
 
+    def test_existing_registry_without_remote_ref_is_migrated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            registry_path = root / "downloads.sqlite3"
+            media_path = root / "voice.oga"
+            media_path.write_bytes(b"voice")
+            with sqlite3.connect(registry_path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE media_downloads (
+                        chat_id TEXT NOT NULL,
+                        chat_ref TEXT NOT NULL,
+                        message_id INTEGER NOT NULL,
+                        local_path TEXT NOT NULL,
+                        size INTEGER NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        downloaded_at TEXT NOT NULL,
+                        PRIMARY KEY (chat_id, message_id)
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO media_downloads (
+                        chat_id, chat_ref, message_id, local_path, size, sha256, downloaded_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "11",
+                        "@targetdaddy",
+                        7,
+                        str(media_path),
+                        5,
+                        "legacy-sha",
+                        "2026-05-09T12:00:00+00:00",
+                    ),
+                )
+
+            entry = DownloadRegistry(registry_path).get(chat_id=11, message_id=7)
+
+            self.assertIsNotNone(entry)
+            self.assertIsNone(entry.remote_media_ref)
+
     def test_media_operations_records_download_without_public_output_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -125,6 +170,7 @@ class DownloadRegistryTests(unittest.TestCase):
                 chat_ref="@targetdaddy",
                 message_id=7,
                 path=result.local_path,
+                remote_media_ref="document:7:dc1:size3",
             )
 
             entry = DownloadRegistry(
@@ -132,6 +178,7 @@ class DownloadRegistryTests(unittest.TestCase):
             ).get(chat_id=1, message_id=7)
             self.assertIsNotNone(entry)
             self.assertEqual(entry.chat_ref, "@targetdaddy")
+            self.assertEqual(entry.remote_media_ref, "document:7:dc1:size3")
             self.assertEqual(entry.local_path, str(media_path))
             self.assertEqual(entry.size, 3)
             self.assertEqual(result.local_path, str(media_path))

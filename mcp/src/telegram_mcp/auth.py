@@ -3,7 +3,7 @@
 import asyncio
 import json
 import sys
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -334,11 +334,17 @@ async def _probe_mcp_session(
 ) -> dict[str, object] | None:
     await session.initialize()
     result = await session.call_tool(
-        "get_me",
+        "telegram_read",
+        {
+            "chat": "me",
+            "day": date.today().isoformat(),
+            "limit": 1,
+            "mode": "fast",
+        },
         read_timeout_seconds=read_timeout,
     )
     if result.isError:
-        raise RuntimeError("daemon get_me probe returned isError=true")
+        raise RuntimeError("daemon telegram_read probe returned isError=true")
     if not include_doctor:
         return None
 

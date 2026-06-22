@@ -15,6 +15,7 @@ class DownloadRegistryEntry:
     chat_ref: str
     message_id: int
     local_path: str
+    remote_media_ref: str | None
     size: int
     sha256: str
     downloaded_at: str
@@ -31,6 +32,7 @@ class DownloadRegistry:
         chat_ref: str,
         message_id: int,
         local_path: Path,
+        remote_media_ref: str | None = None,
         downloaded_at: datetime | None = None,
     ) -> DownloadRegistryEntry:
         path = local_path.expanduser()
@@ -40,6 +42,7 @@ class DownloadRegistry:
             chat_ref=chat_ref,
             message_id=message_id,
             local_path=str(path),
+            remote_media_ref=remote_media_ref,
             size=stat.st_size,
             sha256=_sha256(path),
             downloaded_at=_format_downloaded_at(downloaded_at),
@@ -58,14 +61,16 @@ class DownloadRegistry:
                     chat_ref,
                     message_id,
                     local_path,
+                    remote_media_ref,
                     size,
                     sha256,
                     downloaded_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(chat_id, message_id) DO UPDATE SET
                     chat_ref = excluded.chat_ref,
                     local_path = excluded.local_path,
+                    remote_media_ref = excluded.remote_media_ref,
                     size = excluded.size,
                     sha256 = excluded.sha256,
                     downloaded_at = excluded.downloaded_at
@@ -75,6 +80,7 @@ class DownloadRegistry:
                     entry.chat_ref,
                     entry.message_id,
                     entry.local_path,
+                    entry.remote_media_ref,
                     entry.size,
                     entry.sha256,
                     entry.downloaded_at,
@@ -90,7 +96,7 @@ class DownloadRegistry:
             _ensure_schema(conn)
             row = conn.execute(
                 """
-                SELECT chat_id, chat_ref, message_id, local_path, size, sha256, downloaded_at
+                SELECT chat_id, chat_ref, message_id, local_path, remote_media_ref, size, sha256, downloaded_at
                 FROM media_downloads
                 WHERE chat_id = ? AND message_id = ?
                 """,
@@ -103,6 +109,7 @@ class DownloadRegistry:
             chat_ref=row["chat_ref"],
             message_id=row["message_id"],
             local_path=row["local_path"],
+            remote_media_ref=row["remote_media_ref"],
             size=row["size"],
             sha256=row["sha256"],
             downloaded_at=row["downloaded_at"],
@@ -117,6 +124,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             chat_ref TEXT NOT NULL,
             message_id INTEGER NOT NULL,
             local_path TEXT NOT NULL,
+            remote_media_ref TEXT,
             size INTEGER NOT NULL,
             sha256 TEXT NOT NULL,
             downloaded_at TEXT NOT NULL,
@@ -124,6 +132,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(media_downloads)").fetchall()
+    }
+    if "remote_media_ref" not in columns:
+        conn.execute("ALTER TABLE media_downloads ADD COLUMN remote_media_ref TEXT")
 
 
 def _sha256(path: Path) -> str:

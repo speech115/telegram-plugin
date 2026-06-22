@@ -39,7 +39,7 @@ def print_sanitized_tool_error(payload: dict[str, object] | None = None, tool: s
 
 def main(argv: list[str]) -> int:
     root = Path(__file__).resolve().parents[1]
-    home = Path(os.environ.get("HOME") or "/Users/sereja")
+    home = Path(os.environ.get("HOME") or str(Path.home()))
     mcp_repo = home / "Projects/families/telegram/telegram-digest/telegram-mcp"
     python = mcp_repo / ".venv/bin/python"
     if not python.exists():

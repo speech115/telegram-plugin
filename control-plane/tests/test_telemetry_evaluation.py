@@ -43,3 +43,40 @@ def test_evaluate_mcp_telemetry_is_pure_warning_engine() -> None:
     }.issubset(finding_ids)
     assert report["events_in_window"] == 30
     assert report["top_slow_tools"][0]["tool"] == "telegram_read"
+
+
+def test_evaluate_mcp_telemetry_ignores_synthetic_tool_error_buckets() -> None:
+    report = evaluate_mcp_telemetry(
+        {
+            "status": "ok",
+            "events_in_window": 40,
+            "event_counts": {"tool_call": 40},
+            "tool_errors": 14,
+            "tool_error_buckets": [
+                {"tool": "broken_tool", "error_type": "RuntimeError", "count": 12},
+                {"tool": "telegram_read", "error_type": "ToolContractError", "count": 2},
+            ],
+        },
+        thresholds={
+            "min_events_for_rate_checks": 10,
+            "max_tool_errors": 10,
+            "max_tool_error_rate": 0.25,
+            "max_telegram_read_p95_ms": 5000,
+            "max_read_floodwait_events": 0,
+            "max_stats_age_seconds": 60,
+            "max_lane_rate_limited": 0,
+        },
+        effective_window=1,
+        stats_file_age_seconds=10,
+        stats_lanes={},
+        metrics_targets=[],
+    )
+
+    finding_ids = {item["id"] for item in report["findings"]}
+    assert "telemetry_high_tool_error_count" not in finding_ids
+    assert report["raw_tool_errors"] == 14
+    assert report["ignored_tool_errors"] == 12
+    assert report["tool_errors"] == 2
+    assert report["top_tool_error_buckets"] == [
+        {"tool": "telegram_read", "error_type": "ToolContractError", "count": 2}
+    ]

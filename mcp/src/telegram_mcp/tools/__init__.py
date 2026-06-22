@@ -23,7 +23,6 @@ from .dialog_facade_tools import (
     draft_reply,
     find_dialog,
     prepare_reply_message,
-    prepare_send_file,
     prepare_send_message,
     prepare_dialog_reply,
     read_dialog,
@@ -41,6 +40,7 @@ from .dialog_facade_tools import (
     telegram_prepare_reply,
     telegram_read,
     telegram_search,
+    telegram_send,
 )
 from .group_tools import (
     create_channel,
@@ -72,6 +72,7 @@ from .message_tools import (
     delete_messages,
     edit_message,
     forward_messages,
+    global_search,
     get_message_link,
     get_pinned_messages,
     list_messages,
@@ -80,6 +81,7 @@ from .message_tools import (
     register as register_message_tools,
     reply_to_message,
     search_messages,
+    sent_media_search,
     send_message,
     send_message_with_buttons,
     send_reaction,
@@ -94,12 +96,15 @@ from .privacy_tools import (
 )
 from .profile_tools import (
     delete_profile_photo,
-    download_profile_photo,
     get_user_photos,
     get_user_status,
     register as register_profile_tools,
-    register_facade as register_profile_facade_tools,
     update_profile,
+)
+from .reaction_tools import (
+    get_message_reactions,
+    get_unread_reactions,
+    register as register_reaction_tools,
 )
 from .story_tools import (
     export_story_link,
@@ -111,6 +116,13 @@ from .story_tools import (
     get_story_views,
     register as register_story_tools,
 )
+from .thread_tools import (
+    get_discussion_message,
+    get_forum_topics_by_id,
+    get_thread_replies,
+    list_forum_topics,
+    register as register_thread_tools,
+)
 from .user_tools import (
     doctor_check,
     get_me,
@@ -119,31 +131,26 @@ from .user_tools import (
 )
 
 FACADE_TOOL_NAMES = {
-    "doctor_check",
-    "get_me",
     "collect_context",
     "collect_dialog_context",
-    "draft_reply",
+    "doctor_check",
     "download_dialog_media",
     "download_media",
     "download_media_batch",
-    "download_profile_photo",
     "find_dialog",
-    "prepare_dialog_reply",
+    "get_me",
     "prepare_media_inspection_manifest",
-    "prepare_reply_message",
-    "prepare_send_file",
-    "prepare_send_message",
     "resolve_dialog",
-    "search_dialog_messages",
     "telegram_confirmed_send",
     "telegram_export_members",
     "telegram_inspect_media",
     "telegram_prepare_reply",
     "telegram_read",
     "telegram_search",
+    "send_file",
 }
 
+FACADE_TOOL_PROFILES = {"facade", "safe", "restricted"}
 FULL_TOOL_PROFILES = {"all", "full", "admin", "legacy"}
 POWER_MODE_ENV = "TELEGRAM_MCP_POWER_MODE"
 
@@ -151,29 +158,28 @@ POWER_MODE_ENV = "TELEGRAM_MCP_POWER_MODE"
 def register_all_tools(mcp, *, profile: str | None = None) -> None:
     from os import getenv
 
-    selected_profile = (profile or getenv("TELEGRAM_MCP_TOOL_PROFILE", "facade")).strip().lower()
-    if profile is None and selected_profile in FULL_TOOL_PROFILES:
-        power_mode = getenv(POWER_MODE_ENV, "").strip().lower()
-        if power_mode not in {"1", "true", "yes", "enabled"}:
-            raise ValueError(
-                "Power Mode tool profiles require TELEGRAM_MCP_POWER_MODE=enabled "
-                "and must not be enabled on the default daemon."
-            )
-    if selected_profile not in FULL_TOOL_PROFILES:
+    selected_profile = (profile or getenv("TELEGRAM_MCP_TOOL_PROFILE", "full")).strip().lower()
+    if selected_profile in FACADE_TOOL_PROFILES:
         register_user_tools(mcp)
         register_dialog_facade_tools(mcp)
         register_media_facade_tools(mcp)
-        register_profile_facade_tools(mcp)
         return
 
     register_user_tools(mcp)
     register_chat_tools(mcp)
     register_group_tools(mcp)
     register_message_tools(mcp)
-    register_dialog_facade_tools(mcp, include_writes=True, include_legacy_reads=True)
+    register_dialog_facade_tools(
+        mcp,
+        include_writes=True,
+        include_legacy_reads=True,
+        include_legacy_facade=True,
+    )
     register_message_tools(mcp, facade_only=True)
     register_contact_tools(mcp)
     register_media_tools(mcp)
     register_story_tools(mcp)
+    register_thread_tools(mcp)
+    register_reaction_tools(mcp)
     register_profile_tools(mcp)
     register_privacy_tools(mcp)

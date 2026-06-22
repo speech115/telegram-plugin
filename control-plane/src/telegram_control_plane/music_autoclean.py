@@ -13,7 +13,7 @@ from typing import Any
 
 DEFAULT_CHAT_ID = -1003717342967
 DEFAULT_ENV_FILE = Path.home() / ".telegram-mcp" / "launchd.env"
-DEFAULT_RUNTIME_ROOT = Path("/Users/sereja/Projects/runtime/telegram-music-autoclean")
+DEFAULT_RUNTIME_ROOT = Path.home() / "Projects/runtime/telegram-music-autoclean"
 DEFAULT_SESSION = DEFAULT_RUNTIME_ROOT / "session" / "music_autoclean"
 DEFAULT_STATE_DIR = DEFAULT_RUNTIME_ROOT / "state"
 YOUTUBE_ID_RE = re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])")

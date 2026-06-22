@@ -105,6 +105,50 @@ async def search_messages(
     )
 
 
+async def global_search(
+    query: str,
+    limit: int = 20,
+    include_sender_name: bool = True,
+) -> MessagesResult:
+    """Search messages across all available chats."""
+    tg = await runtime.get_tg()
+    result = await tg.global_search(
+        query=query,
+        limit=limit,
+        include_sender_name=include_sender_name,
+    )
+    return MessagesResult(
+        messages=result.messages,
+        sender_resolution_count=result.sender_resolution_count,
+        truncated=result.truncated,
+        truncated_reason=result.truncated_reason,
+    )
+
+
+async def sent_media_search(
+    media_type: str = "photo_video",
+    query: str | None = None,
+    limit: int = 20,
+    max_dialogs: int = 20,
+    include_sender_name: bool = True,
+) -> MessagesResult:
+    """Find outgoing media messages across recent chats. media_type: photo_video/photo/video/document/gif/audio/voice."""
+    tg = await runtime.get_tg()
+    result = await tg.sent_media_search(
+        media_type=media_type,
+        query=query,
+        limit=limit,
+        max_dialogs=max_dialogs,
+        include_sender_name=include_sender_name,
+    )
+    return MessagesResult(
+        messages=result.messages,
+        sender_resolution_count=result.sender_resolution_count,
+        truncated=result.truncated,
+        truncated_reason=result.truncated_reason,
+    )
+
+
 async def send_message(
     chat: str | int,
     text: str,
@@ -284,6 +328,8 @@ def register(mcp, *, facade_only: bool = False) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(list_messages))
     mcp.tool(annotations=READONLY)(tool_error_handler(read_dialog_slice))
     mcp.tool(annotations=READONLY)(tool_error_handler(search_messages))
+    mcp.tool(annotations=READONLY)(tool_error_handler(global_search))
+    mcp.tool(annotations=READONLY)(tool_error_handler(sent_media_search))
     mcp.tool(annotations=ADDITIVE)(tool_error_handler(send_message))
     mcp.tool(annotations=ADDITIVE)(tool_error_handler(reply_to_message))
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(edit_message))

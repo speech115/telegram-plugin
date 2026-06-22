@@ -1,158 +1,110 @@
 import io
 import json
-import os
-import stat
-import tempfile
-import textwrap
 import unittest
 from contextlib import redirect_stdout
-from pathlib import Path
 from unittest.mock import patch
 
 from telegram_mcp import stress_readonly
 
 
+class FakeMcp:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def call_tool(self, *, tool_name, arguments, **_kwargs):
+        self.calls.append((tool_name, dict(arguments)))
+        if tool_name == "resolve_dialog":
+            return {
+                "id": 123,
+                "dialog_ref": "tg://dialog/user/123",
+                "name": "Smoke Chat",
+                "type": "user",
+                "resolved_from": "me",
+                "match_confidence": 1.0,
+            }, 0.01, None
+        if tool_name == "get_me":
+            return {"id": 1, "first_name": "Test"}, 0.01, None
+        if tool_name == "collect_dialog_context":
+            return {"messages": [], "message_count": 0, "collection_mode": "fast"}, 0.01, None
+        if tool_name == "read_today_dialog":
+            return {"messages": [], "message_count": 0}, 0.01, None
+        if tool_name == "search_dialog_messages":
+            return {"messages": [], "message_count": 0, "query": "."}, 0.01, None
+        raise AssertionError(f"unexpected tool: {tool_name}")
+
+
 class StressReadonlyTests(unittest.TestCase):
-    def _write_fake_mcporter(self, root: Path) -> Path:
-        fake = root / "mcporter"
-        fake.write_text(
-            textwrap.dedent(
-                """\
-                #!/bin/sh
-                printf '%s\\n' "$*" >> "${CALL_LOG}"
-                if [ "$1" = "call" ] && [ "$2" = "telegram.resolve_dialog" ]; then
-                  echo '{"id":123,"dialog_ref":"tg://dialog/user/123","name":"Smoke Chat","type":"user","resolved_from":"me","match_confidence":1.0}'
-                  exit 0
-                fi
-                if [ "$1" = "call" ] && [ "$2" = "telegram.collect_dialog_context" ]; then
-                  echo '{"messages":[],"message_count":0,"collection_mode":"fast"}'
-                  exit 0
-                fi
-                if [ "$1" = "call" ] && [ "$2" = "telegram.read_today_dialog" ]; then
-                  echo '{"messages":[],"message_count":0}'
-                  exit 0
-                fi
-                if [ "$1" = "call" ] && [ "$2" = "telegram.search_dialog_messages" ]; then
-                  echo '{"messages":[],"message_count":0,"query":"."}'
-                  exit 0
-                fi
-                if [ "$1" = "call" ] && [ "$2" = "telegram.get_me" ]; then
-                  echo '{"id":1,"first_name":"Test"}'
-                  exit 0
-                fi
-                echo "unexpected args: $*" >&2
-                exit 64
-                """
-            ),
-            encoding="utf-8",
-        )
-        fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
-        return fake
-
     def test_stress_readonly_uses_only_safe_readonly_calls(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            fake_mcporter = self._write_fake_mcporter(root)
-            call_log = root / "calls.log"
-            stdout = io.StringIO()
+        fake = FakeMcp()
+        stdout = io.StringIO()
 
-            with patch.dict(
-                os.environ,
-                {
-                    "MCPORTER_BIN": str(fake_mcporter),
-                    "CALL_LOG": str(call_log),
-                },
-            ):
-                with redirect_stdout(stdout):
-                    exit_code = stress_readonly.main(
-                        ["--iterations", "5", "--concurrency", "2", "--json"]
-                    )
+        with patch(
+            "telegram_mcp.stress_readonly.call_tool_with_failover",
+            side_effect=fake.call_tool,
+        ):
+            with redirect_stdout(stdout):
+                exit_code = stress_readonly.main(
+                    ["--iterations", "5", "--concurrency", "2", "--json"]
+                )
 
-            self.assertEqual(exit_code, 0)
-            payload = json.loads(stdout.getvalue())
-            self.assertEqual(payload["status"], "ok")
-            self.assertEqual(payload["total_calls"], 5)
-            lines = call_log.read_text(encoding="utf-8").strip().splitlines()
-            self.assertTrue(lines)
-            for line in lines:
-                self.assertRegex(
-                    line,
-                    r"^call telegram\.(get_me|resolve_dialog|collect_dialog_context|read_today_dialog|search_dialog_messages)\b",
-                )
-            self.assertTrue(
-                any(
-                    "telegram.collect_dialog_context" in line
-                    and "mode=fast" in line
-                    and "recent_limit=1" in line
-                    and "include_pinned=false" in line
-                    and "include_voice_transcription=false" in line
-                    for line in lines
-                )
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["total_calls"], 5)
+        for tool_name, _args in fake.calls:
+            self.assertIn(
+                f"telegram.{tool_name}",
+                stress_readonly.READONLY_CALLS,
             )
-            self.assertTrue(
-                any(
-                    "telegram.read_today_dialog" in line
-                    and "include_voice_transcription=false" in line
-                    and "include_sender_name=false" in line
-                    for line in lines
-                )
-            )
-            self.assertTrue(
-                any(
-                    "telegram.search_dialog_messages" in line
-                    and "query=." in line
-                    and "limit=1" in line
-                    and "include_sender_name=false" in line
-                    for line in lines
-                )
-            )
+        collect_args = [args for name, args in fake.calls if name == "collect_dialog_context"]
+        self.assertTrue(collect_args)
+        self.assertEqual(collect_args[0]["mode"], "fast")
+        self.assertEqual(collect_args[0]["recent_limit"], 1)
+        self.assertFalse(collect_args[0]["include_pinned"])
+        self.assertFalse(collect_args[0]["include_voice_transcription"])
 
     def test_cache_pair_mode_repeats_identical_facade_calls(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            fake_mcporter = self._write_fake_mcporter(root)
-            call_log = root / "calls.log"
-            stdout = io.StringIO()
+        fake = FakeMcp()
+        stdout = io.StringIO()
 
-            with patch.dict(
-                os.environ,
-                {
-                    "MCPORTER_BIN": str(fake_mcporter),
-                    "CALL_LOG": str(call_log),
-                },
-            ):
-                with redirect_stdout(stdout):
-                    exit_code = stress_readonly.main(
-                        [
-                            "--iterations",
-                            "6",
-                            "--mode",
-                            "cache-pair",
-                            "--concurrency",
-                            "4",
-                            "--json",
-                        ]
-                    )
+        with patch(
+            "telegram_mcp.stress_readonly.call_tool_with_failover",
+            side_effect=fake.call_tool,
+        ):
+            with redirect_stdout(stdout):
+                exit_code = stress_readonly.main(
+                    [
+                        "--iterations",
+                        "6",
+                        "--mode",
+                        "cache-pair",
+                        "--concurrency",
+                        "4",
+                        "--json",
+                    ]
+                )
 
-            self.assertEqual(exit_code, 0)
-            payload = json.loads(stdout.getvalue())
-            self.assertEqual(payload["status"], "ok")
-            self.assertEqual(payload["mode"], "cache-pair")
-            self.assertEqual(payload["total_calls"], 6)
-            self.assertEqual(len(payload["cache_pairs"]), 3)
-            for pair in payload["cache_pairs"]:
-                self.assertIn("first", pair)
-                self.assertIn("second", pair)
-                self.assertIn("delta_ms", pair)
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["mode"], "cache-pair")
+        self.assertEqual(payload["total_calls"], 6)
+        self.assertEqual(len(payload["cache_pairs"]), 3)
+        for pair in payload["cache_pairs"]:
+            self.assertIn("first", pair)
+            self.assertIn("second", pair)
+            self.assertIn("delta_ms", pair)
 
-            lines = [
-                line
-                for line in call_log.read_text(encoding="utf-8").strip().splitlines()
-                if not line.startswith("call telegram.resolve_dialog")
-            ]
-            self.assertEqual(len(lines), 6)
-            for first, second in zip(lines[0::2], lines[1::2], strict=True):
-                self.assertEqual(first, second)
-            self.assertIn("telegram.collect_dialog_context", lines[0])
-            self.assertIn("telegram.read_today_dialog", lines[2])
-            self.assertIn("telegram.search_dialog_messages", lines[4])
+        calls_without_discovery = [
+            item for item in fake.calls if item[0] != "resolve_dialog"
+        ]
+        self.assertEqual(len(calls_without_discovery), 6)
+        for first, second in zip(calls_without_discovery[0::2], calls_without_discovery[1::2], strict=True):
+            self.assertEqual(first, second)
+        self.assertEqual(calls_without_discovery[0][0], "collect_dialog_context")
+        self.assertEqual(calls_without_discovery[2][0], "read_today_dialog")
+        self.assertEqual(calls_without_discovery[4][0], "search_dialog_messages")
+
+
+if __name__ == "__main__":
+    unittest.main()

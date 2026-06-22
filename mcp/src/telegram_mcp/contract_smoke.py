@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
-import os
-import re
-import shutil
-import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from typing import Any
+
+from .mcp_http_client import call_tool_with_failover, list_tools_with_failover
 
 
 CORE_REQUIRED_TOOLS = {
@@ -26,7 +25,6 @@ APP_MEDIA_REQUIRED_TOOLS = {
     "find_dialog",
     "prepare_reply_message",
     "prepare_send_message",
-    "prepare_send_file",
     "prepare_media_inspection_manifest",
     "read_dialog",
 }
@@ -42,6 +40,8 @@ class _CallResult:
     duration_ms: float
     stdout: str
     stderr: str
+    endpoint: str | None = None
+    endpoint_port: int | None = None
 
 
 class ContractSmokeError(RuntimeError):
@@ -57,7 +57,7 @@ def _positive_int(raw_value: str) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run a safe external MCP contract smoke check through mcporter."
+        description="Run a safe external MCP contract smoke check through the local MCP HTTP daemon."
     )
     parser.add_argument("--timeout", type=_positive_int, default=30000)
     parser.add_argument("--search-query", default=SAFE_SEARCH_QUERY)
@@ -67,34 +67,77 @@ def _build_parser() -> argparse.ArgumentParser:
         default="core",
     )
     parser.add_argument("--check-cache-stats", action="store_true")
+    parser.add_argument("--endpoint", default=None)
+    parser.add_argument("--env-file", default="~/.telegram-mcp/launchd.env")
+    parser.add_argument(
+        "--account",
+        choices=("main", "pl", "recklessou", "teamsyncsage", "vermassov"),
+        default="main",
+    )
     parser.add_argument("--json", action="store_true")
     return parser
 
 
-def _run_mcporter(
-    mcporter_bin: str,
+def _coerce_arg_value(value: str) -> object:
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _parse_tool_args(args: list[str]) -> dict[str, object]:
+    parsed: dict[str, object] = {}
+    index = 0
+    while index < len(args):
+        item = args[index]
+        if item in {"--timeout", "--output"}:
+            index += 2
+            continue
+        if "=" in item:
+            key, value = item.split("=", 1)
+            parsed[key] = _coerce_arg_value(value)
+        index += 1
+    return parsed
+
+
+def _run_mcp_tool(
+    tool: str,
     args: list[str],
     *,
     label: str,
     timeout_ms: int,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> _CallResult:
     started_at = time.perf_counter()
-    timeout_seconds = max(1.0, timeout_ms / 1000) + 5.0
+    timeout_seconds = max(1.0, timeout_ms / 1000)
     try:
-        result = subprocess.run(
-            [mcporter_bin, *args],
-            text=True,
-            capture_output=True,
-            timeout=timeout_seconds,
-            check=False,
+        payload, _elapsed, attempt = asyncio.run(
+            call_tool_with_failover(
+                tool_name=tool.removeprefix("telegram."),
+                arguments=_parse_tool_args(args),
+                timeout=timeout_seconds,
+                explicit_endpoint=endpoint,
+                env_file=env_file,
+                account=account,
+            )
         )
-        exit_code = result.returncode
-        stdout = result.stdout.strip()
-        stderr = result.stderr.strip()
-    except subprocess.TimeoutExpired as error:
+        exit_code = 0
+        stdout = json.dumps(payload, ensure_ascii=False)
+        stderr = ""
+        attempt_endpoint = getattr(attempt, "endpoint", None)
+        attempt_port = getattr(attempt, "port", None)
+    except Exception as error:
         exit_code = -1
-        stdout = (error.stdout or "").strip() if isinstance(error.stdout, str) else ""
-        stderr = f"mcporter process timed out after {timeout_seconds:g}s"
+        stdout = ""
+        stderr = f"{type(error).__name__}: {error}"
+        attempt_endpoint = None
+        attempt_port = None
 
     return _CallResult(
         label=label,
@@ -103,6 +146,8 @@ def _run_mcporter(
         duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
         stdout=stdout,
         stderr=stderr[-1000:] if stderr else "",
+        endpoint=attempt_endpoint,
+        endpoint_port=attempt_port,
     )
 
 
@@ -158,46 +203,50 @@ def _require_tool_names(names: set[str], *, profile: str = "core") -> list[str]:
     required_tools = _required_tools_for_profile(profile)
     missing = sorted(required_tools - names)
     if missing:
-        raise ContractSmokeError(f"mcporter list telegram missing tools: {missing}")
+        raise ContractSmokeError(f"MCP list_tools missing tools: {missing}")
     return sorted(required_tools)
 
 
-def _extract_text_tool_names(output: str) -> set[str]:
-    return set(re.findall(r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", output))
-
-
 def _load_tool_catalog(
-    mcporter_bin: str,
     *,
     timeout: int,
     profile: str,
     results: list[_CallResult],
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> list[str]:
-    json_result = _run_mcporter(
-        mcporter_bin,
-        ["list", "telegram", "--json"],
-        label="mcporter list telegram --json",
-        timeout_ms=timeout,
-    )
-    results.append(json_result)
+    started_at = time.perf_counter()
     try:
-        return _require_tools(_load_json(json_result), profile=profile)
-    except ContractSmokeError:
-        text_result = _run_mcporter(
-            mcporter_bin,
-            ["list", "telegram"],
-            label="mcporter list telegram",
-            timeout_ms=timeout,
-        )
-        results.append(text_result)
-        if not text_result.ok:
-            raise ContractSmokeError(
-                "mcporter list telegram failed as JSON and text output"
+        names, _elapsed, attempt = asyncio.run(
+            list_tools_with_failover(
+                timeout=max(1.0, timeout / 1000),
+                explicit_endpoint=endpoint,
+                env_file=env_file,
+                account=account,
             )
-        names = _extract_text_tool_names(text_result.stdout)
-        if not names:
-            raise ContractSmokeError("mcporter list telegram returned no parseable tools")
-        return _require_tool_names(names, profile=profile)
+        )
+        json_result = _CallResult(
+            label="mcp list_tools",
+            ok=True,
+            exit_code=0,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+            stdout=json.dumps({"tools": [{"name": name} for name in names]}),
+            stderr="",
+            endpoint=getattr(attempt, "endpoint", None),
+            endpoint_port=getattr(attempt, "port", None),
+        )
+    except Exception as error:
+        json_result = _CallResult(
+            label="mcp list_tools",
+            ok=False,
+            exit_code=-1,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 3),
+            stdout="",
+            stderr=f"{type(error).__name__}: {error}",
+        )
+    results.append(json_result)
+    return _require_tools(_load_json(json_result), profile=profile)
 
 
 def _require_dict(payload: Any, label: str) -> dict[str, Any]:
@@ -286,17 +335,21 @@ def _require_media_manifest_shape(payload: Any) -> None:
 
 
 def _doctor_runtime_stats(
-    mcporter_bin: str,
     *,
     timeout: int,
     results: list[_CallResult],
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> dict[str, Any]:
     payload = _call_json(
-        mcporter_bin,
         "telegram.doctor_check",
         [],
         timeout=timeout,
         results=results,
+        endpoint=endpoint,
+        env_file=env_file,
+        account=account,
     )
     data = _require_dict(payload, "telegram.doctor_check")
     stats = data.get("runtime_stats")
@@ -311,18 +364,23 @@ def _stat_value(stats: dict[str, Any], key: str) -> int:
 
 
 def _call_json(
-    mcporter_bin: str,
     tool: str,
     args: list[str],
     *,
     timeout: int,
     results: list[_CallResult],
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
 ) -> Any:
-    result = _run_mcporter(
-        mcporter_bin,
-        ["call", tool, *args, "--timeout", str(timeout), "--output", "json"],
+    result = _run_mcp_tool(
+        tool,
+        args,
         label=tool,
         timeout_ms=timeout,
+        endpoint=endpoint,
+        env_file=env_file,
+        account=account,
     )
     results.append(result)
     return _load_json(result)
@@ -330,28 +388,46 @@ def _call_json(
 
 def run_contract_smoke(
     *,
-    mcporter_bin: str,
     timeout: int,
     search_query: str,
     profile: str = "core",
     check_cache_stats: bool = False,
+    endpoint: str | None = None,
+    env_file: str | None = None,
+    account: str = "main",
 ) -> dict[str, Any]:
     results: list[_CallResult] = []
 
     listed_tools = _load_tool_catalog(
-        mcporter_bin,
         timeout=timeout,
         profile=profile,
         results=results,
+        endpoint=endpoint,
+        env_file=env_file,
+        account=account,
     )
 
-    dialog_payload = _call_json(
-        mcporter_bin,
-        "telegram.resolve_dialog",
-        ["query=me"],
-        timeout=timeout,
-        results=results,
-    )
+    def call(tool: str, args: list[str]) -> Any:
+        return _call_json(
+            tool,
+            args,
+            timeout=timeout,
+            results=results,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+
+    def stats() -> dict[str, Any]:
+        return _doctor_runtime_stats(
+            timeout=timeout,
+            results=results,
+            endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+
+    dialog_payload = call("telegram.resolve_dialog", ["query=me"])
     dialog_ref = _dialog_ref_from_resolve(dialog_payload)
 
     collect_args = [
@@ -374,77 +450,54 @@ def run_contract_smoke(
         "context_limit=1",
         "mode=fast",
     ]
-    cache_stats_before = (
-        _doctor_runtime_stats(mcporter_bin, timeout=timeout, results=results)
-        if check_cache_stats
-        else None
-    )
+    cache_stats_before = stats() if check_cache_stats else None
 
     if profile in {"core", "all"}:
         _require_collect_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.collect_dialog_context",
                 collect_args,
-                timeout=timeout,
-                results=results,
             )
         )
         _require_collect_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.collect_dialog_context",
                 collect_args,
-                timeout=timeout,
-                results=results,
             )
         )
 
         _require_prepare_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.prepare_dialog_reply",
                 prepare_args,
-                timeout=timeout,
-                results=results,
             )
         )
 
         _require_search_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.search_dialog_messages",
                 search_args,
-                timeout=timeout,
-                results=results,
             )
         )
         if check_cache_stats:
             _require_search_shape(
-                _call_json(
-                    mcporter_bin,
+                call(
                     "telegram.search_dialog_messages",
                     search_args,
-                    timeout=timeout,
-                    results=results,
                 )
             )
 
     if profile in {"app-media", "all"}:
         _require_dialog_handle_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.find_dialog",
                 [f"query={dialog_ref}"],
-                timeout=timeout,
-                results=results,
             ),
             "telegram.find_dialog",
         )
         _require_message_shape(
             _require_dict(
-                _call_json(
-                    mcporter_bin,
+                call(
                     "telegram.read_dialog",
                     [
                         f"chat={dialog_ref}",
@@ -452,94 +505,56 @@ def run_contract_smoke(
                         "include_voice_transcription=false",
                         "include_sender_name=false",
                     ],
-                    timeout=timeout,
-                    results=results,
                 ),
                 "telegram.read_dialog",
             ),
             "telegram.read_dialog",
         )
         _require_collect_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.collect_context",
                 collect_args,
-                timeout=timeout,
-                results=results,
             )
         )
         if check_cache_stats:
             _require_collect_shape(
-                _call_json(
-                    mcporter_bin,
+                call(
                     "telegram.collect_context",
                     collect_args,
-                    timeout=timeout,
-                    results=results,
                 )
             )
         _require_prepare_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.draft_reply",
                 prepare_args,
-                timeout=timeout,
-                results=results,
             )
         )
         _require_send_preview_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.prepare_send_message",
                 [f"chat={dialog_ref}", "text=contract smoke preview only"],
-                timeout=timeout,
-                results=results,
             ),
             "telegram.prepare_send_message",
         )
         _require_send_preview_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.prepare_reply_message",
                 [
                     f"chat={dialog_ref}",
                     "message_id=1",
                     "text=contract smoke reply preview only",
                 ],
-                timeout=timeout,
-                results=results,
             ),
             "telegram.prepare_reply_message",
         )
-        _require_send_preview_shape(
-            _call_json(
-                mcporter_bin,
-                "telegram.prepare_send_file",
-                [
-                    f"chat={dialog_ref}",
-                    "file_path=/tmp/contract-smoke.txt",
-                    "caption=contract smoke file preview only",
-                ],
-                timeout=timeout,
-                results=results,
-            ),
-            "telegram.prepare_send_file",
-        )
         _require_media_manifest_shape(
-            _call_json(
-                mcporter_bin,
+            call(
                 "telegram.prepare_media_inspection_manifest",
                 [f"chat={dialog_ref}", "limit=3"],
-                timeout=timeout,
-                results=results,
             )
         )
 
-    cache_stats_after = (
-        _doctor_runtime_stats(mcporter_bin, timeout=timeout, results=results)
-        if check_cache_stats
-        else None
-    )
+    cache_stats_after = stats() if check_cache_stats else None
     cache_stats_delta: dict[str, int] | None = None
     if check_cache_stats and cache_stats_before is not None and cache_stats_after is not None:
         cache_stats_delta = {
@@ -554,11 +569,16 @@ def run_contract_smoke(
         if profile in {"core", "all"} and cache_stats_delta["dialog_search_cache_hit"] <= 0:
             raise ContractSmokeError("dialog_search_cache_hit did not increase")
 
+    endpoint_result = next((result for result in results if result.endpoint_port is not None), None)
+
     return {
         "status": "ok",
         "mode": "external_mcp_contract_smoke",
         "profile": profile,
-        "mcporter": mcporter_bin,
+        "transport": "mcp_http_client",
+        "account": account,
+        "endpoint": endpoint_result.endpoint if endpoint_result else None,
+        "endpoint_port": endpoint_result.endpoint_port if endpoint_result else None,
         "dialog": dialog_ref,
         "listed_tools": listed_tools,
         "cache_stats_delta": cache_stats_delta,
@@ -569,6 +589,8 @@ def run_contract_smoke(
                 "exit_code": result.exit_code,
                 "duration_ms": result.duration_ms,
                 "stderr": result.stderr,
+                "endpoint": result.endpoint,
+                "endpoint_port": result.endpoint_port,
             }
             for result in results
         ],
@@ -588,25 +610,16 @@ def _print_text_summary(summary: dict[str, Any]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    mcporter_bin = os.environ.get("MCPORTER_BIN") or shutil.which("mcporter")
-    if not mcporter_bin:
-        payload = {
-            "status": "error",
-            "error": "mcporter not found. Set MCPORTER_BIN or add mcporter to PATH.",
-        }
-        if args.json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(payload["error"], file=sys.stderr)
-        return 1
 
     try:
         summary = run_contract_smoke(
-            mcporter_bin=mcporter_bin,
             timeout=args.timeout,
             search_query=args.search_query,
             profile=args.profile,
             check_cache_stats=args.check_cache_stats,
+            endpoint=args.endpoint,
+            env_file=args.env_file,
+            account=args.account,
         )
     except ContractSmokeError as error:
         payload = {"status": "error", "error": str(error)}

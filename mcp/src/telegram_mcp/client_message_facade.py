@@ -3,16 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import secrets
-import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from .errors import ToolContractError
-from .file_path_policy import validate_outbound_media_path
 from .types import (
     DialogContextResult,
-    DialogFileSendPreparation,
     DialogReplyPreparation,
     DialogSendPreparation,
     MessageInfo,
@@ -22,7 +17,13 @@ from .types import (
 class MessageFacadeMixin:
     """Agent-facing dialog facade and preview helpers."""
 
-    _send_confirmation_ttl_seconds = 300
+    def _write_approval_required(self) -> bool:
+        return bool(getattr(self.settings, "write_approval_required", True))
+
+    def _approval_url(self, token: str) -> str:
+        host = getattr(self.settings, "approval_host", "127.0.0.1")
+        port = int(getattr(self.settings, "approval_port", 8798))
+        return f"http://{host}:{port}/telegram/approve?token={token}"
 
     def _text_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -51,29 +52,33 @@ class MessageFacadeMixin:
             payload["message_id"] = message_id
         return payload
 
-    def _mint_send_confirmation(self, payload: dict[str, object]) -> tuple[str, datetime]:
-        token = secrets.token_urlsafe(24)
-        expires_at = time.time() + self._send_confirmation_ttl_seconds
-        self._dialog_send_confirmations[token] = (expires_at, payload)
-        return token, datetime.fromtimestamp(expires_at, tz=timezone.utc)
+    def _mint_send_confirmation(
+        self,
+        payload: dict[str, object],
+        *,
+        preview_text: str,
+    ) -> tuple[str, str, datetime, str | None]:
+        preview_id, token, expires_at = self._send_confirmation_store.mint(
+            payload,
+            preview_text=preview_text,
+        )
+        approval_url = self._approval_url(token) if self._write_approval_required() else None
+        return preview_id, token, expires_at, approval_url
 
-    def _consume_send_confirmation(self, token: str | None, expected: dict[str, object]) -> None:
-        if not token:
-            raise ToolContractError(
-                "missing_confirmation_token",
-                "send/reply requires a fresh preview confirmation token",
-            )
-        stored = self._dialog_send_confirmations.pop(token, None)
-        if stored is None:
-            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown or already used")
-        expires_at, actual = stored
-        if time.time() > expires_at:
-            raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
-        if actual != expected:
-            raise ToolContractError(
-                "confirmation_payload_mismatch",
-                "send/reply arguments do not match the preview confirmation",
-            )
+    def _consume_send_confirmation(
+        self,
+        key: str | None,
+        expected: dict[str, object] | None,
+        *,
+        preview_id_only: bool = False,
+    ) -> dict[str, object]:
+        record = self._send_confirmation_store.consume(
+            key,
+            expected,
+            approval_required=self._write_approval_required(),
+            preview_id_only=preview_id_only,
+        )
+        return dict(record.payload)
 
     async def collect_dialog_context(
         self,
@@ -161,6 +166,9 @@ class MessageFacadeMixin:
             sender_resolution_count=read_result.sender_resolution_count,
             truncated=read_result.truncated,
             truncated_reason=read_result.truncated_reason,
+            result_cache_hit=read_result.result_cache_hit,
+            result_cache_age_seconds=read_result.result_cache_age_seconds,
+            result_cache_ttl_seconds=read_result.result_cache_ttl_seconds,
         )
 
     async def prepare_dialog_reply(
@@ -187,6 +195,7 @@ class MessageFacadeMixin:
         }
         confirmation_token: str | None = None
         confirmation_expires_at: datetime | None = None
+        preview_id: str | None = None
         if draft:
             account_id = await self._confirmation_account_id()
             storage_payload = self._send_confirmation_payload(
@@ -197,14 +206,21 @@ class MessageFacadeMixin:
                 parse_mode="md",
                 message_id=reply_to_message_id,
             )
-            confirmation_token, confirmation_expires_at = self._mint_send_confirmation(storage_payload)
+            preview_id, confirmation_token, confirmation_expires_at, approval_url = self._mint_send_confirmation(
+                storage_payload,
+                preview_text=draft,
+            )
             send_args_preview["confirmation_token"] = confirmation_token
             if reply_to_message_id is not None:
                 send_args_preview["message_id"] = reply_to_message_id
+        else:
+            approval_url = None
 
         warnings = [
             "preview_only: this tool never sends messages; use telegram_confirmed_send with the preview token after review."
         ]
+        if approval_url:
+            warnings.append(f"human_approval_required: open {approval_url} and click Approve before sending.")
         if context.truncated or context.has_more_before:
             warnings.append(
                 "context_incomplete: fetch the next page before relying on this as complete context."
@@ -223,6 +239,8 @@ class MessageFacadeMixin:
             warnings=warnings,
             confirmation_token=confirmation_token,
             confirmation_expires_at=confirmation_expires_at,
+            preview_id=preview_id,
+            human_approval_url=approval_url if draft else None,
         )
 
     async def prepare_send_message(
@@ -240,7 +258,10 @@ class MessageFacadeMixin:
             text=text,
             parse_mode=parse_mode or None,
         )
-        confirmation_token, confirmation_expires_at = self._mint_send_confirmation(storage_payload)
+        preview_id, confirmation_token, confirmation_expires_at, approval_url = self._mint_send_confirmation(
+            storage_payload,
+            preview_text=text,
+        )
         return DialogSendPreparation(
             chat=handle,
             text=text,
@@ -255,6 +276,8 @@ class MessageFacadeMixin:
             },
             confirmation_token=confirmation_token,
             confirmation_expires_at=confirmation_expires_at,
+            preview_id=preview_id,
+            human_approval_url=approval_url,
         )
 
     async def prepare_reply_message(
@@ -275,7 +298,10 @@ class MessageFacadeMixin:
             parse_mode=parse_mode or None,
             message_id=message_id,
         )
-        confirmation_token, confirmation_expires_at = self._mint_send_confirmation(storage_payload)
+        preview_id, confirmation_token, confirmation_expires_at, approval_url = self._mint_send_confirmation(
+            storage_payload,
+            preview_text=text,
+        )
         return DialogSendPreparation(
             chat=handle,
             text=text,
@@ -292,38 +318,77 @@ class MessageFacadeMixin:
             },
             confirmation_token=confirmation_token,
             confirmation_expires_at=confirmation_expires_at,
+            preview_id=preview_id,
+            human_approval_url=approval_url,
         )
 
-    async def prepare_send_file(
+    async def _commit_confirmed_send(
         self,
-        chat: str | int,
-        file_path: str,
-        caption: str = "",
-        parse_mode: str = "md",
-    ) -> DialogFileSendPreparation:
-        validated_path = validate_outbound_media_path(file_path)
-        handle = await self.resolve_dialog(chat)
-        media_path = Path(validated_path)
-        preview_token = secrets.token_urlsafe(12)[:16]
-        warnings = [
-            "preview_only: this tool never sends files; it validates and prepares send arguments only."
-        ]
-        return DialogFileSendPreparation(
-            chat=handle,
-            file_path=validated_path,
-            file_name=media_path.name,
-            caption=caption,
-            parse_mode=parse_mode or None,
-            preview_only=True,
-            send_tool="send_file",
-            send_args_preview={
-                "chat": handle.dialog_ref,
-                "file_path": validated_path,
-                "caption": caption,
-                "parse_mode": parse_mode or None,
-            },
-            preview_token=preview_token,
-            warnings=warnings,
+        *,
+        preview_id: str | None,
+        confirmation_token: str | None,
+        chat: str | int | None,
+        text: str | None,
+        parse_mode: str | None,
+        message_id: int | None,
+    ) -> MessageInfo:
+        if preview_id:
+            record = self._send_confirmation_store.consume(
+                preview_id,
+                None,
+                approval_required=self._write_approval_required(),
+                preview_id_only=True,
+            )
+            payload = record.payload
+            resolved_chat = payload["chat"]
+            resolved_text = record.preview_text
+            resolved_parse = str(payload.get("parse_mode") or "md")
+            resolved_message_id = payload.get("message_id")
+            if resolved_message_id is not None:
+                return await self.reply_in_dialog(
+                    chat=resolved_chat,
+                    message_id=int(resolved_message_id),
+                    text=resolved_text,
+                    parse_mode=resolved_parse,
+                    confirmation_token=None,
+                    _skip_confirmation=True,
+                )
+            return await self.send_dialog_message(
+                chat=resolved_chat,
+                text=resolved_text,
+                parse_mode=resolved_parse,
+                confirmation_token=None,
+                _skip_confirmation=True,
+            )
+
+        if chat is None or text is None:
+            raise ToolContractError("missing_send_target", "chat and text are required without preview_id")
+        if self._write_approval_required() or confirmation_token:
+            account_id = await self._confirmation_account_id()
+            self._consume_send_confirmation(
+                confirmation_token,
+                self._send_confirmation_payload(
+                    account_id=account_id,
+                    send_tool="reply_in_dialog" if message_id is not None else "send_dialog_message",
+                    chat=chat,
+                    text=text,
+                    parse_mode=parse_mode or None,
+                    message_id=message_id,
+                ),
+            )
+        if message_id is not None:
+            return await self.reply_in_dialog(
+                chat=chat,
+                message_id=message_id,
+                text=text,
+                parse_mode=parse_mode or "md",
+                confirmation_token=None,
+                _skip_confirmation=True,
+            )
+        return await self.send_message(
+            chat=self._coerce_dialog_query(chat),
+            text=text,
+            parse_mode=parse_mode or "md",
         )
 
     async def send_dialog_message(
@@ -332,18 +397,21 @@ class MessageFacadeMixin:
         text: str,
         parse_mode: str = "md",
         confirmation_token: str | None = None,
+        *,
+        _skip_confirmation: bool = False,
     ) -> MessageInfo:
-        account_id = await self._confirmation_account_id()
-        self._consume_send_confirmation(
-            confirmation_token,
-            self._send_confirmation_payload(
-                account_id=account_id,
-                send_tool="send_dialog_message",
-                chat=chat,
-                text=text,
-                parse_mode=parse_mode or None,
-            ),
-        )
+        if not _skip_confirmation and (self._write_approval_required() or confirmation_token):
+            account_id = await self._confirmation_account_id()
+            self._consume_send_confirmation(
+                confirmation_token,
+                self._send_confirmation_payload(
+                    account_id=account_id,
+                    send_tool="send_dialog_message",
+                    chat=chat,
+                    text=text,
+                    parse_mode=parse_mode or None,
+                ),
+            )
         return await self.send_message(
             chat=self._coerce_dialog_query(chat),
             text=text,
@@ -357,19 +425,22 @@ class MessageFacadeMixin:
         text: str,
         parse_mode: str = "md",
         confirmation_token: str | None = None,
+        *,
+        _skip_confirmation: bool = False,
     ) -> MessageInfo:
-        account_id = await self._confirmation_account_id()
-        self._consume_send_confirmation(
-            confirmation_token,
-            self._send_confirmation_payload(
-                account_id=account_id,
-                send_tool="reply_in_dialog",
-                chat=chat,
-                text=text,
-                parse_mode=parse_mode or None,
-                message_id=message_id,
-            ),
-        )
+        if not _skip_confirmation and (self._write_approval_required() or confirmation_token):
+            account_id = await self._confirmation_account_id()
+            self._consume_send_confirmation(
+                confirmation_token,
+                self._send_confirmation_payload(
+                    account_id=account_id,
+                    send_tool="reply_in_dialog",
+                    chat=chat,
+                    text=text,
+                    parse_mode=parse_mode or None,
+                    message_id=message_id,
+                ),
+            )
         return await self.reply_to_message(
             chat=self._coerce_dialog_query(chat),
             message_id=message_id,

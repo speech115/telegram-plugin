@@ -52,10 +52,6 @@ load_env_file() {
         exit 1
         ;;
     esac
-    if [ "${key}" = "TELEGRAM_MCP_TOOL_PROFILE" ]; then
-      printf 'Refusing TELEGRAM_MCP_TOOL_PROFILE in default launchd env file\n' >&2
-      exit 1
-    fi
     reject_unsafe_env_value "${key}" "${value}"
     export "${key}=${value}"
   done < "${ENV_FILE}"

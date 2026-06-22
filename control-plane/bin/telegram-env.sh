@@ -6,7 +6,7 @@
 set -euo pipefail
 
 _TELEGRAM_ENV_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-_TELEGRAM_HOME="${HOME:-/Users/sereja}"
+_TELEGRAM_HOME="${HOME:?HOME must be set}"
 
 export TELEGRAM_CONTROL_ROOT="${_TELEGRAM_ENV_ROOT}"
 export TELEGRAM_MCP_REPO="${_TELEGRAM_HOME}/Projects/families/telegram/telegram-digest/telegram-mcp"

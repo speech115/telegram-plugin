@@ -20,7 +20,9 @@ from .client_media import MediaOperationsMixin
 from .client_messages import MessageOperationsMixin
 from .client_privacy import PrivacyOperationsMixin
 from .client_profile import ProfileOperationsMixin
+from .client_reactions import ReactionOperationsMixin
 from .client_stories import StoryOperationsMixin
+from .client_threads import ThreadOperationsMixin
 from .config import Settings
 from .download_cleanup import cleanup_download_dir, estimate_download_cleanup
 from .errors import ToolContractError
@@ -43,6 +45,8 @@ class TelegramWrapper(
     MediaOperationsMixin,
     ContactOperationsMixin,
     StoryOperationsMixin,
+    ThreadOperationsMixin,
+    ReactionOperationsMixin,
     ProfileOperationsMixin,
     PrivacyOperationsMixin,
 ):
@@ -97,7 +101,12 @@ class TelegramWrapper(
             "download_media_batch_dedupe_count": 0,
             "download_media_batch_effective_concurrency": 0,
         }
-        self._dialog_send_confirmations: dict[str, tuple[float, dict[str, object]]] = {}
+        from .send_confirmation import SendConfirmationStore, bind_confirmation_store
+
+        self._send_confirmation_store = SendConfirmationStore(
+            ttl_seconds=max(60, int(getattr(settings, "write_confirmation_ttl_seconds", 600))),
+        )
+        bind_confirmation_store(self._send_confirmation_store)
         self._last_download_cleanup_at: float = 0.0
         self._connect_lock = asyncio.Lock()
         self._scheduler = TelegramOperationScheduler(
@@ -122,6 +131,9 @@ class TelegramWrapper(
             return default
 
     def _emit_diagnostic(self, event: str, **fields: Any) -> None:
+        from .telemetry import record_telemetry
+
+        record_telemetry(event, **fields)
         if not self.settings.mcp_include_diagnostics:
             return
         log.info(event, **fields)
@@ -158,7 +170,18 @@ class TelegramWrapper(
         return snapshot
 
     def _record_cache_access_stat(self, key: str, *, hit: bool) -> None:
+        from .telemetry import record_telemetry
+
         outcome = "hit" if hit else "miss"
+        cache_kind = "dialog_read" if key.startswith("dialog_read:") else (
+            "dialog_search" if key.startswith("dialog_search:") else "other"
+        )
+        record_telemetry(
+            "cache_access",
+            cache_kind=cache_kind,
+            outcome=outcome,
+            cache_key_prefix=key.split(":", 1)[0] if ":" in key else key[:32],
+        )
         if key.startswith("dialog_read:"):
             self._increment_runtime_stat(f"dialog_read_cache_{outcome}")
         elif key.startswith("dialog_search:"):
@@ -241,7 +264,8 @@ class TelegramWrapper(
                     timeout=self.settings.connect_timeout_seconds,
                 )
                 if not await self.client.is_user_authorized():
-                    raise RuntimeError(
+                    raise ToolContractError(
+                        "auth_required",
                         "Not authorized. Run 'telegram-mcp login' first."
                     )
         except asyncio.TimeoutError as exc:
@@ -272,7 +296,8 @@ class TelegramWrapper(
                     f"{self.settings.connect_timeout_seconds:g}s"
                 ) from exc
             if not await self.client.is_user_authorized():
-                raise RuntimeError(
+                raise ToolContractError(
+                    "auth_required",
                     "Telegram session expired after reconnect. "
                     "Run 'telegram-mcp login' to re-authenticate."
                 )
@@ -407,6 +432,12 @@ class TelegramWrapper(
             if isinstance(error, ToolContractError):
                 event["error_code"] = error.code
 
+        from .telemetry import record_telemetry
+
+        telemetry_fields = dict(event)
+        telemetry_kind = telemetry_fields.pop("event", "telegram_write")
+        record_telemetry("write_operation", audit_event=telemetry_kind, **telemetry_fields)
+
         try:
             audit_path = Path(self.settings.write_audit_log_path)
             audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -443,6 +474,16 @@ class TelegramWrapper(
             factory,
         )
 
+    def _telemetry_summary(self) -> dict[str, object]:
+        from .telemetry import summarize_telemetry_log
+
+        if not self.settings.telemetry_enabled:
+            return {"status": "disabled"}
+        return summarize_telemetry_log(
+            self.settings.telemetry_log_path,
+            log_dir=self.settings.telemetry_log_dir,
+        )
+
     async def health_check(self) -> HealthInfo:
         connected = self.client.is_connected()
         authorized = False
@@ -452,6 +493,7 @@ class TelegramWrapper(
             except Exception:
                 authorized = False
         from .runtime import get_runtime_report
+        from .telethon_compat import telethon_compat_status
 
         return HealthInfo(
             connected=connected,
@@ -466,27 +508,19 @@ class TelegramWrapper(
             ),
             scheduler=self._scheduler.snapshot(),
             runtime_stats=self._runtime_stats_snapshot(),
+            runtime_compat=telethon_compat_status(),
+            telemetry_summary=self._telemetry_summary(),
             **get_runtime_report(),
         )
 
     async def doctor_check(self) -> DoctorInfo:
         warnings: list[str] = []
         checks: dict[str, str] = {}
+        from .runtime import get_runtime_report
+        from .telethon_compat import telethon_compat_status
+
         transport = self.settings.mcp_transport.strip().lower()
         checks["transport"] = transport
-        runtime_fields: dict[str, str | int | None] = {
-            "host": None,
-            "port": None,
-            "http_path": None,
-            "endpoint_url": None,
-        }
-        if transport != "stdio":
-            runtime_fields = {
-                "host": self.settings.mcp_host,
-                "port": self.settings.mcp_port,
-                "http_path": self.settings.mcp_http_path,
-                "endpoint_url": f"http://{self.settings.mcp_host}:{self.settings.mcp_port}{self.settings.mcp_http_path}",
-            }
 
         try:
             self.settings.ensure_dirs()
@@ -533,7 +567,13 @@ class TelegramWrapper(
             download_cleanup=download_cleanup,
             scheduler=self._scheduler.snapshot(),
             runtime_stats=self._runtime_stats_snapshot(),
-            **runtime_fields,
+            runtime_compat=telethon_compat_status(),
+            telemetry_summary=self._telemetry_summary(),
+            **{
+                key: value
+                for key, value in get_runtime_report().items()
+                if key in {"host", "port", "http_path", "endpoint_url"}
+            },
         )
 
     def _acquire_session_lock(self) -> None:

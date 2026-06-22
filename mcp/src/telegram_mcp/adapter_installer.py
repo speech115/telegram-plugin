@@ -13,7 +13,45 @@ from .facade_manifest import codex_mcp_json
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:8799/mcp"
 DEFAULT_TOKEN_ENV = "TELEGRAM_MCP_AUTH_TOKEN"
-HOSTS = ("codex", "claude", "opencode", "standalone")
+HOSTS = ("codex", "claude", "opencode", "cursor", "standalone")
+
+ROUTING_NOTE = (
+    "For Telegram tasks: use the `telegram` skill. For live reads (today/recent/search), "
+    "run `tg` first — do not require `@telegram`. Use direct full MCP for media, sends, and fallback. "
+    "For sends with explicit target and exact text, prefer `telegram_send` / `send_message`; "
+    "preview/confirmed tools are optional."
+)
+
+CODEX_ENTRY_CARD = """# Codex: Telegram live read hot path
+
+Do not load the full telegram skill for «что нового» / read chat today.
+
+## Run first
+
+```bash
+tg read today <chat> --limit 30 --json
+```
+
+Fallbacks (stop on first success): `telegram-fast-read-today` → MCP `telegram_read` mode=fast limit≤30.
+
+Optional: MCP resource `telegram://docs/routing` (5 lines). Not this file on every turn.
+
+## Forbidden before read succeeds
+
+- mcporter / MCP server discovery
+- tool_search for how to read Telegram
+- plugin README, doctor_check, launchd
+- @telegram bootstrap for a simple read
+- mirror / telecrawl for today/latest
+
+## After read
+
+Reuse `chat.dialog_ref`. Sends are direct when the user gave an explicit target
+and exact text: prefer `telegram_send` / `send_message`. Use preview/confirmed
+tools only when the user asks to preview first.
+
+Install tg: tools/telegram/bin/telegram-kit --local
+"""
 
 
 @dataclass(frozen=True)
@@ -100,6 +138,38 @@ def _opencode_adapter(endpoint: str, token_env: str) -> PlannedFile:
     )
 
 
+def _routing_note_adapter(host: str) -> PlannedFile:
+    return PlannedFile(
+        path=f"adapters/{host}/telegram-routing-note.txt",
+        description=f"Always-on Telegram routing note for {host}",
+        content=ROUTING_NOTE + "\n",
+    )
+
+
+def _codex_entry_card_adapter() -> PlannedFile:
+    return PlannedFile(
+        path="adapters/codex/telegram-codex-entry.md",
+        description="Codex-first Telegram read hot path (paste into AGENTS or pin in workspace)",
+        content=CODEX_ENTRY_CARD,
+    )
+
+
+def _cursor_rules_snippet() -> PlannedFile:
+    return PlannedFile(
+        path="adapters/cursor/telegram-routing.mdc",
+        description="Cursor rule snippet for Telegram routing (copy into .cursor/rules if desired)",
+        content=(
+            "---\n"
+            "description: Telegram live reads via tg CLI; direct sends require explicit target/text\n"
+            "globs:\n"
+            "alwaysApply: true\n"
+            "---\n\n"
+            + ROUTING_NOTE
+            + "\n"
+        ),
+    )
+
+
 def _standalone_skill_adapter() -> PlannedFile:
     return PlannedFile(
         path="skills/telegram/INSTALL.md",
@@ -126,12 +196,20 @@ def plan_adapter_install(
     for host in selected_hosts:
         if host == "codex":
             planned.append(_codex_adapter(endpoint, token_env))
+            planned.append(_codex_entry_card_adapter())
+            planned.append(_routing_note_adapter("codex"))
         elif host == "claude":
             planned.append(_claude_adapter(endpoint, token_env))
+            planned.append(_routing_note_adapter("claude"))
         elif host == "opencode":
             planned.append(_opencode_adapter(endpoint, token_env))
+            planned.append(_routing_note_adapter("opencode"))
+        elif host == "cursor":
+            planned.append(_cursor_rules_snippet())
+            planned.append(_routing_note_adapter("cursor"))
         elif host == "standalone":
             planned.append(_standalone_skill_adapter())
+            planned.append(_routing_note_adapter("standalone"))
 
     warnings = [
         "dry-run artifacts are adapter snippets, not live host config writes",

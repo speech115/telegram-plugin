@@ -76,6 +76,7 @@ class MarketplaceState:
 @dataclass(frozen=True)
 class InstallerFlowState:
     command: list[str]
+    materialize_command: list[str]
     marketplace_name: str
     source_path: str | None
     safe_to_apply: bool
@@ -286,15 +287,7 @@ def _read_codex_plugin_config(path: Path, plugin_key: str = "telegram@sereja-loc
             error=f"invalid_toml: {exc}",
         )
 
-    plugins_payload = payload.get("plugins", {})
-    if plugin_key not in plugins_payload:
-        telegram_keys = sorted(
-            key for key in plugins_payload if isinstance(key, str) and key.startswith("telegram@")
-        )
-        if telegram_keys:
-            plugin_key = telegram_keys[0]
-            marketplace_name = _marketplace_name_from_plugin_key(plugin_key)
-    plugin_payload = plugins_payload.get(plugin_key, {})
+    plugin_payload = payload.get("plugins", {}).get(plugin_key, {})
     marketplace_payload = payload.get("marketplaces", {}).get(marketplace_name, {})
     return CodexPluginConfigState(
         path=str(path),
@@ -526,8 +519,15 @@ def check_plugin_drift(
         _skill_dir_from_skill_file(resolved_cache_skill_path),
         ignored_root_files=skill_tree_ignored_root_files,
     )
-    source_package_tree, source_package_files = _hash_tree(_plugin_root_from_skill_file(_expand_path(plugin_source_skill_path)))
-    cache_package_tree, cache_package_files = _hash_tree(cache_plugin_root if _looks_like_plugin_root(cache_plugin_root) else None)
+    package_tree_ignored_root_files = {".DS_Store"}
+    source_package_tree, source_package_files = _hash_tree(
+        _plugin_root_from_skill_file(_expand_path(plugin_source_skill_path)),
+        ignored_root_files=package_tree_ignored_root_files,
+    )
+    cache_package_tree, cache_package_files = _hash_tree(
+        cache_plugin_root if _looks_like_plugin_root(cache_plugin_root) else None,
+        ignored_root_files=package_tree_ignored_root_files,
+    )
     tree_diff: dict[str, dict[str, list[str]]] = {}
     if source_tree.exists and live_tree.exists and source_tree.sha256 != live_tree.sha256:
         tree_diff["plugin_source_vs_live_skill_tree"] = _tree_diff(source_tree_files, live_tree_files)
@@ -556,6 +556,15 @@ def check_plugin_drift(
         marketplace_name=installer_marketplace_name,
         codex_config=codex_config,
     )
+    plugin_source_root = _plugin_root_from_skill_file(_expand_path(plugin_source_skill_path))
+    mcp_repo_root = Path(__file__).resolve().parents[2]
+    materialize_command = [
+        str(mcp_repo_root / "bin/materialize-plugin-cache"),
+        "--source-dir",
+        str(plugin_source_root),
+        "--cache-root",
+        str(_expand_path(plugin_cache_root)),
+    ]
     installer_safe = False
     installer_reason = "source-of-truth not proven"
 
@@ -661,6 +670,7 @@ def check_plugin_drift(
         local_marketplace=local_marketplace,
         installer_flow=InstallerFlowState(
             command=installer_command,
+            materialize_command=materialize_command,
             marketplace_name=installer_marketplace_name,
             source_path=local_marketplace.resolved_source_path,
             safe_to_apply=installer_safe,

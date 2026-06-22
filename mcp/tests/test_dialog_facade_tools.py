@@ -3,15 +3,16 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 from telegram_mcp import server
+from telegram_mcp.tools.dialog_facade_tools import telegram_export_members
 from telegram_mcp.types import (
     DialogContextResult,
-    DialogFileSendPreparation,
     DialogHandle,
     DialogReadRange,
     DialogReadResult,
     DialogReplyPreparation,
     DialogSendPreparation,
     MessageInfo,
+    Participant,
 )
 
 
@@ -386,14 +387,24 @@ class DialogFacadeToolTests(unittest.TestCase):
             include_sender_name=False,
         )
 
-    def test_telegram_export_members_requires_pii_acknowledgement(self) -> None:
+    def test_telegram_export_members_runs_without_extra_pii_acknowledgement(self) -> None:
         wrapper = AsyncMock()
+        wrapper.resolve_dialog.return_value = DialogHandle(
+            dialog_ref="tg://dialog/channel/10",
+            id=10,
+            name="Target",
+            type="channel",
+            username="targetdaddy",
+            resolved_from="@targetdaddy",
+        )
+        wrapper.get_participants.return_value = ([Participant(id=1, first_name="Ada", username="ada")], 1)
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            with self.assertRaises(Exception):
-                _run(server.telegram_export_members(chat="@targetdaddy"))
+            result = _run(telegram_export_members(chat="@targetdaddy"))
 
-        wrapper.get_participants.assert_not_awaited()
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.participants[0].username, "ada")
+        wrapper.get_participants.assert_awaited_once_with(chat="tg://dialog/channel/10", limit=200)
 
     def test_search_dialog_messages_returns_dialog_read_result(self):
         wrapper = AsyncMock()
@@ -733,48 +744,6 @@ class DialogFacadeToolTests(unittest.TestCase):
             parse_mode="md",
         )
 
-    def test_prepare_send_file_is_preview_only(self):
-        wrapper = AsyncMock()
-        wrapper.prepare_send_file.return_value = DialogFileSendPreparation(
-            chat=DialogHandle(
-                dialog_ref="tg://dialog/user/1",
-                id=1,
-                name="Andrei",
-                type="user",
-                username="example_user",
-                resolved_from="@example_user",
-            ),
-            file_path="/tmp/demo.txt",
-            file_name="demo.txt",
-            caption="hi",
-            send_tool="send_file",
-            send_args_preview={
-                "chat": "tg://dialog/user/1",
-                "file_path": "/tmp/demo.txt",
-                "caption": "hi",
-                "parse_mode": "md",
-            },
-            preview_token="abcd1234abcd1234",
-            warnings=["preview_only: this tool validates and prepares file send arguments but never sends."],
-        )
-
-        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(
-                server.prepare_send_file(
-                    chat="@example_user",
-                    file_path="/tmp/demo.txt",
-                    caption="hi",
-                )
-            )
-
-        self.assertTrue(result.preview_only)
-        wrapper.prepare_send_file.assert_awaited_once_with(
-            chat="@example_user",
-            file_path="/tmp/demo.txt",
-            caption="hi",
-            parse_mode="md",
-        )
-
     def test_send_dialog_message_uses_facade_method(self):
         wrapper = AsyncMock()
         wrapper.send_dialog_message.return_value = MessageInfo(
@@ -804,14 +773,14 @@ class DialogFacadeToolTests(unittest.TestCase):
 
     def test_telegram_confirmed_send_routes_to_send_or_reply(self):
         wrapper = AsyncMock()
-        wrapper.send_dialog_message.return_value = MessageInfo(
+        send_result = MessageInfo(
             id=7,
             chat_id=1,
             date=datetime(2026, 4, 17, tzinfo=timezone.utc),
             text="hello",
             is_outgoing=True,
         )
-        wrapper.reply_in_dialog.return_value = MessageInfo(
+        reply_result = MessageInfo(
             id=8,
             chat_id=1,
             date=datetime(2026, 4, 17, tzinfo=timezone.utc),
@@ -819,6 +788,7 @@ class DialogFacadeToolTests(unittest.TestCase):
             reply_to_msg_id=3,
             is_outgoing=True,
         )
+        wrapper._commit_confirmed_send = AsyncMock(side_effect=[send_result, reply_result])
 
         with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
             _run(
@@ -837,18 +807,22 @@ class DialogFacadeToolTests(unittest.TestCase):
                 )
             )
 
-        wrapper.send_dialog_message.assert_awaited_once_with(
+        assert wrapper._commit_confirmed_send.await_count == 2
+        wrapper._commit_confirmed_send.assert_any_await(
+            preview_id=None,
+            confirmation_token="send-token",
             chat="tg://dialog/user/1",
             text="hello",
             parse_mode="md",
-            confirmation_token="send-token",
+            message_id=None,
         )
-        wrapper.reply_in_dialog.assert_awaited_once_with(
+        wrapper._commit_confirmed_send.assert_any_await(
+            preview_id=None,
+            confirmation_token="reply-token",
             chat="tg://dialog/user/1",
-            message_id=3,
             text="pong",
             parse_mode="md",
-            confirmation_token="reply-token",
+            message_id=3,
         )
 
     def test_reply_in_dialog_uses_facade_method(self):

@@ -11,6 +11,17 @@ READ_TOOLS = {
     "tg_search",
 }
 
+DEFAULT_IGNORED_TOOL_ERROR_TOOLS = {
+    "broken_tool",
+    "forbidden_tool",
+    "invalid_range_tool",
+    "invalid_username_tool",
+    "ok_tool",
+    "peer_flood_tool",
+    "rate_limited_tool",
+    "slow_tool",
+}
+
 
 def top_slow_tools(tool_latency: dict[str, Any], *, limit: int = 10) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -51,7 +62,7 @@ def evaluate_mcp_telemetry(
     findings: list[dict[str, Any]] = []
     summary_status = summary.get("status")
     events_in_window = int(summary.get("events_in_window") or 0)
-    tool_errors = int(summary.get("tool_errors") or 0)
+    raw_tool_errors = int(summary.get("tool_errors") or 0)
     min_events = int(thresholds.get("min_events_for_rate_checks", 20))
     max_tool_errors = int(thresholds.get("max_tool_errors", 10))
     max_error_rate = float(thresholds.get("max_tool_error_rate", 0.25))
@@ -60,6 +71,24 @@ def evaluate_mcp_telemetry(
     max_prewarm_failure_rate = thresholds.get("max_prewarm_failure_rate")
     max_read_floodwait_events = thresholds.get("max_read_floodwait_events")
     max_lane_rate_limited = thresholds.get("max_lane_rate_limited")
+    ignored_tool_error_tools = set(DEFAULT_IGNORED_TOOL_ERROR_TOOLS)
+    ignored_tool_error_tools.update(
+        str(tool)
+        for tool in thresholds.get("ignored_tool_error_tools", [])
+        if isinstance(tool, str) and tool
+    )
+    raw_tool_error_buckets = summary.get("tool_error_buckets") if isinstance(summary.get("tool_error_buckets"), list) else []
+    tool_error_buckets: list[dict[str, Any]] = []
+    ignored_tool_errors = 0
+    for bucket in raw_tool_error_buckets:
+        if not isinstance(bucket, dict):
+            continue
+        count = int(bucket.get("count")) if isinstance(bucket.get("count"), int | float) else 1
+        if str(bucket.get("tool")) in ignored_tool_error_tools:
+            ignored_tool_errors += count
+            continue
+        tool_error_buckets.append(bucket)
+    tool_errors = max(0, raw_tool_errors - ignored_tool_errors) if raw_tool_error_buckets else raw_tool_errors
 
     if summary_status == "missing":
         findings.append(
@@ -204,7 +233,6 @@ def evaluate_mcp_telemetry(
             }
         )
 
-    tool_error_buckets = summary.get("tool_error_buckets") if isinstance(summary.get("tool_error_buckets"), list) else []
     read_floodwait_events = 0
     for bucket in tool_error_buckets:
         if not isinstance(bucket, dict):
@@ -274,6 +302,8 @@ def evaluate_mcp_telemetry(
         "findings": findings,
         "events_in_window": events_in_window,
         "tool_errors": tool_errors,
+        "raw_tool_errors": raw_tool_errors,
+        "ignored_tool_errors": ignored_tool_errors,
         "top_tool_error_buckets": tool_error_buckets[:10],
         "top_slow_tools": top_slow_tools(tool_latency),
         "write_operations": write_operations,

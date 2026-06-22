@@ -25,6 +25,23 @@ to a shared-client HTTP path to avoid repeated session lock contention.
 uv pip install -e .
 ```
 
+## Agent docs (MCP resources)
+
+Routing and safety docs are exposed as markdown MCP resources so agents can fetch
+small slices instead of loading the full Telegram skill:
+
+- `telegram://docs/index` — catalog
+- `telegram://docs/routing` — fast defaults and tool choice (read first)
+- `telegram://docs/tools` — default facade surface
+- `telegram://docs/sources` — live vs mirror vs archive
+- `telegram://docs/writes` — send/preview hard stops
+- `telegram://docs/media` — media and voice rules
+- `telegram://me` — current account JSON
+
+Canonical manifest: `skills/telegram/agent-docs/manifest.json` in the plugin package.
+Generated MCP files live in `docs/agent/`. Run `bin/sync-agent-docs` after editing
+`references/` or the manifest. Restart the HTTP daemon after sync.
+
 ## Useful commands
 
 ```bash
@@ -199,6 +216,14 @@ selecting explicit message ids; it delegates to `download_media_batch`.
   `collect_dialog_context`, `read_today_dialog`, `search_dialog_messages`);
   `--mode cache-pair` repeats identical facade reads in pairs so cache-hit
   effects are visible in latency diagnostics
+- Local telemetry uses daily JSONL files under `~/telegram-mcp/telemetry/daily/`
+  (30-day retention) plus symlink `~/telegram-mcp/telemetry.jsonl` → today.
+  Periodic `~/telegram-mcp/telemetry-stats.json` snapshots and Prometheus text
+  metrics at `http://127.0.0.1:9109/metrics` (`TELEGRAM_TELEMETRY_METRICS_PORT`;
+  use `9110` for the second HTTP profile). Events include `source` labels
+  (`mcp_tool`, `fast_read_cli`, …) so operators can see which path was used.
+  Summarize with `bin/telemetry-summary --json`; import Grafana dashboard from
+  control-plane `policy/telemetry/grafana-dashboard.json`.
 - `bin/check-plugin-drift` maps the local Telegram skill/plugin layers:
   live standalone skill, source plugin bundle, staged marketplace copy, managed
   plugin cache, and plugin `.mcp.json` files. It is read-only and reports
@@ -245,6 +270,10 @@ daemon variables are:
 - `TELEGRAM_MCP_HTTP_PATH=/mcp`
 - `TELEGRAM_MCP_JSON_RESPONSE=true`
 - `TELEGRAM_MCP_INCLUDE_DIAGNOSTICS=false`
+- `TELEGRAM_TELEMETRY_ENABLED=true`
+- `TELEGRAM_TELEMETRY_LOG_PATH=<home>/telegram-mcp/telemetry.jsonl`
+- `TELEGRAM_TELEMETRY_STATS_PATH=<home>/telegram-mcp/telemetry-stats.json`
+- `TELEGRAM_TELEMETRY_STATS_FLUSH_SECONDS=60`
 - `TELEGRAM_MCP_PROBE_TIMEOUT_SECONDS=15`
 - `TELEGRAM_DOWNLOAD_REGISTRY_PATH=<download-dir>/download_registry.sqlite3`
 - `TELEGRAM_DOWNLOAD_RETENTION_DAYS=0`

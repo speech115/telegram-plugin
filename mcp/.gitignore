@@ -24,4 +24,4 @@ downloads/
 *.swp
 
 # uv
-# Intentionally keep uv.lock tracked for reproducible dependency resolution.
+uv.lock

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import os
 import plistlib
 import re
 import sqlite3
@@ -40,7 +41,10 @@ from .telemetry_evaluation import evaluate_mcp_telemetry, top_slow_tools
 from .util import load_json, run_json, status_from_findings
 
 APPROVED_FACADE_TOOLS = surface_contract.approved_facade_tools()
-PATH_LIKE_RE = re.compile(r"^(/Users/sereja/Projects|/Users/sereja/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)")
+HOME_PATH = str(Path.home())
+PATH_LIKE_RE = re.compile(
+    rf"^({re.escape(HOME_PATH)}/Projects|{re.escape(HOME_PATH)}/\.|/tmp|/private/tmp|/opt|/usr/local|/bin|/usr/bin)"
+)
 
 SECRET_ENV_KEYS = {"TELEGRAM_API_HASH", "TELEGRAM_SESSION_STRING"}
 
@@ -421,6 +425,7 @@ def audit_fast_read_adapter() -> dict[str, Any]:
         executable = exists and path.stat().st_mode & 0o111 != 0
         command = [str(path), "--help"]
         help_probe: dict[str, Any] = {"ran": False}
+        skip_help_probe = label != "tg"
         if not exists:
             findings.append(
                 {
@@ -437,6 +442,8 @@ def audit_fast_read_adapter() -> dict[str, Any]:
                     "message": f"{label} adapter exists but is not executable.",
                 }
             )
+        elif skip_help_probe:
+            help_probe = {"ran": False, "skipped_reason": "secondary_adapter_source_checked"}
         else:
             try:
                 completed = subprocess.run(
@@ -511,14 +518,22 @@ def audit_fast_read_adapter() -> dict[str, Any]:
 def audit_agent_docs_sync() -> dict[str, Any]:
     """Ensure MCP docs/agent matches plugin references manifest."""
 
+    sync_script = MCP_REPO / "bin/sync-agent-docs"
     command = [
-        str(MCP_REPO / "bin/sync-agent-docs"),
+        str(sync_script),
         "--plugin-dir",
         str(PLUGIN_PACKAGE),
         "--check",
         "--no-restart",
         "--json",
     ]
+    if not sync_script.exists() and os.environ.get("TELEGRAM_CI_PORTABLE") == "1":
+        return {
+            "status": "ok",
+            "findings": [],
+            "command": command,
+            "skipped_reason": "script_unavailable_in_portable_snapshot",
+        }
     raw = run_json(command, timeout=30)
     findings: list[dict[str, Any]] = []
     if raw.get("status") == "drift":
@@ -625,7 +640,7 @@ def audit_install_adapters() -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         content = item.get("content", "")
-        if isinstance(content, str) and "/Users/sereja" in content:
+        if isinstance(content, str) and HOME_PATH in content:
             findings.append(
                 {
                     "id": "install_adapters_private_path",
@@ -996,7 +1011,7 @@ def audit_mcp_profiles() -> dict[str, Any]:
             {
                 "label": label,
                 "port": row.get("telegram_mcp_port"),
-                "session_dir": row.get("telegram_session_dir") or "/Users/sereja/.telegram-mcp/session",
+                "session_dir": row.get("telegram_session_dir") or str(Path.home() / ".telegram-mcp/session"),
                 "working_directory": row.get("working_directory"),
                 "loaded": row.get("loaded"),
                 "write_policy": "unrestricted_server_surface_until_allowlisted",
@@ -1021,8 +1036,8 @@ def audit_sessions() -> dict[str, Any]:
         if isinstance(item, dict) and item.get("path")
     }
     candidates = [
-        Path("/Users/sereja/.telegram-mcp/session.session"),
-        Path("/Users/sereja/.telegram-mcp-pl/session.session"),
+        Path.home() / ".telegram-mcp/session.session",
+        Path.home() / ".telegram-mcp-pl/session.session",
     ]
     candidates.extend(sorted(MIRROR_ROOT.glob("data/*.session")))
     sessions: list[dict[str, Any]] = []

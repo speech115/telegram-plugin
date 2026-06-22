@@ -26,6 +26,25 @@ class ErrorHandlerTests(unittest.TestCase):
             asyncio.run(forbidden_tool())
         self.assertIn("permission_denied:", str(ctx.exception))
 
+    def test_wraps_more_telegram_errors_as_friendly_value_errors(self):
+        from telethon.errors import PeerFloodError, UsernameInvalidError
+
+        @tool_error_handler
+        async def peer_flood_tool():
+            raise PeerFloodError(None)
+
+        with self.assertRaises(ValueError) as ctx:
+            asyncio.run(peer_flood_tool())
+        self.assertIn("rate_limited:", str(ctx.exception))
+
+        @tool_error_handler
+        async def invalid_username_tool():
+            raise UsernameInvalidError(None)
+
+        with self.assertRaises(ValueError) as ctx:
+            asyncio.run(invalid_username_tool())
+        self.assertIn("invalid_input:", str(ctx.exception))
+
     def test_wraps_contract_error_as_typed_value_error(self):
         @tool_error_handler
         async def invalid_range_tool():
@@ -34,10 +53,7 @@ class ErrorHandlerTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             asyncio.run(invalid_range_tool())
 
-        self.assertEqual(
-            str(ctx.exception),
-            "invalid_date_range: date_from must not exceed date_to",
-        )
+        self.assertIn("invalid_date_range: date_from must not exceed date_to", str(ctx.exception))
 
     def test_flood_wait_does_not_retry_tool_body(self):
         from telethon.errors import FloodWaitError

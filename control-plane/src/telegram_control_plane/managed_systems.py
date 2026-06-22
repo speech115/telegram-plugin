@@ -11,6 +11,64 @@ from .util import load_json, status_from_findings
 PACKAGE_ROOT = Path(__file__).resolve().parent
 CONTROL_ROOT_ANCHOR = PACKAGE_ROOT.parent.parent
 MANAGED_SYSTEMS_PATH = CONTROL_ROOT_ANCHOR / "policy/managed-systems.json"
+HOME_PATH = str(Path.home())
+
+ENV_BINDINGS = {
+    "control_root": ("TELEGRAM_CONTROL_PLANE_ROOT", "TELEGRAM_CONTROL_ROOT"),
+    "mcp_repo": ("TELEGRAM_MCP_REPO",),
+    "plugin_package": ("TELEGRAM_PLUGIN_PACKAGE",),
+    "plugin_source": ("TELEGRAM_PLUGIN_SOURCE",),
+    "plugin_cache_root": ("TELEGRAM_PLUGIN_CACHE_ROOT",),
+    "live_skill": ("TELEGRAM_LIVE_SKILL",),
+    "local_mirror_skill": ("TELEGRAM_LOCAL_MIRROR_SKILL",),
+    "mirror_root": ("TELEGRAM_MIRROR_ROOT",),
+    "mirror_runtime_root": ("TELEGRAM_MIRROR_RUNTIME_ROOT",),
+    "mirror_legacy_alias": ("TELEGRAM_MIRROR_LEGACY_ALIAS",),
+    "telecrawl_archive": ("TELEGRAM_TELECRAWL_ARCHIVE",),
+    "telecrawl_default_db": ("TELEGRAM_TELECRAWL_DEFAULT_DB",),
+}
+
+ENV_DERIVED = {
+    "generated_dir": ("TELEGRAM_GENERATED_DIR",),
+    "policy_dir": ("TELEGRAM_POLICY_DIR",),
+    "fast_read_adapter": ("TELEGRAM_FAST_READ_ADAPTER",),
+    "tg_cli": ("TELEGRAM_TG_CLI",),
+    "observed_registry": ("TELEGRAM_OBSERVED_REGISTRY",),
+    "launchagents_dir": ("TELEGRAM_LAUNCHAGENTS_DIR",),
+    "mcp_telemetry_log": ("TELEGRAM_MCP_TELEMETRY_LOG",),
+    "mcp_telemetry_dir": ("TELEGRAM_MCP_TELEMETRY_DIR",),
+    "mcp_telemetry_stats": ("TELEGRAM_MCP_TELEMETRY_STATS",),
+    "telemetry_alert_thresholds": ("TELEGRAM_TELEMETRY_ALERT_THRESHOLDS",),
+}
+
+ENV_SYSTEM_PATHS = {
+    "telegram-mcp-env": ("TELEGRAM_MCP_ENV",),
+}
+
+
+def _env_path(names: tuple[str, ...]) -> Path | None:
+    for name in names:
+        raw = os.environ.get(name)
+        if raw:
+            return Path(os.path.expanduser(raw))
+    return None
+
+
+def _binding_env_path(binding_name: str, system_id: str) -> Path | None:
+    if not system_id.startswith("telegram-"):
+        return None
+    return _env_path(ENV_BINDINGS.get(binding_name, ()))
+
+
+def _system_env_path(system_id: str) -> Path | None:
+    direct = _env_path(ENV_SYSTEM_PATHS.get(system_id, ()))
+    if direct is not None:
+        return direct
+    if system_id == "telegram-mcp-env":
+        mcp_repo = _env_path(ENV_BINDINGS["mcp_repo"])
+        if mcp_repo is not None:
+            return mcp_repo / ".env"
+    return None
 
 
 @dataclass(frozen=True)
@@ -102,6 +160,16 @@ class ControlPlaneTopology:
         record = self.records.get(system_id)
         if record is None:
             raise KeyError(f"Unknown managed system id: {system_id}")
+        override = _system_env_path(system_id)
+        if override is not None:
+            return override
+        topology = self.payload.get("topology") if isinstance(self.payload.get("topology"), dict) else {}
+        bindings = topology.get("bindings") if isinstance(topology.get("bindings"), dict) else {}
+        for binding_name, bound_system_id in bindings.items():
+            if bound_system_id == system_id and isinstance(binding_name, str):
+                override = _binding_env_path(binding_name, system_id)
+                if override is not None:
+                    return override
         return record.path
 
     def resolve(self) -> dict[str, Path]:
@@ -117,12 +185,12 @@ class ControlPlaneTopology:
             record = self.records.get(system_id)
             if record is None:
                 raise KeyError(f"Topology binding {name!r} references unknown system {system_id!r}")
-            resolved[name] = record.path
+            resolved[name] = _binding_env_path(name, system_id) or record.path
 
         for name, raw in derived.items():
             if not isinstance(name, str) or not isinstance(raw, str):
                 continue
-            resolved[name] = _expand_path(raw, home=home_path, resolved=resolved)
+            resolved[name] = _env_path(ENV_DERIVED.get(name, ())) or _expand_path(raw, home=home_path, resolved=resolved)
 
         return resolved
 
@@ -162,6 +230,14 @@ def evaluate_managed_systems(
     payload = policy if policy is not None else load_managed_systems_policy()
     systems_policy = payload.get("systems") if isinstance(payload.get("systems"), list) else []
     records = system_records(policy=payload)
+    portable_mode = os.environ.get("TELEGRAM_CI_PORTABLE") == "1"
+    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
+    bindings = topology.get("bindings") if isinstance(topology.get("bindings"), dict) else {}
+    system_bindings = {
+        system_id: binding_name
+        for binding_name, system_id in bindings.items()
+        if isinstance(binding_name, str) and isinstance(system_id, str)
+    }
     rows: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -179,11 +255,26 @@ def evaluate_managed_systems(
             continue
         system_id = str(item.get("id") or "")
         record = records.get(system_id)
-        raw_path = str(record.path) if record else str(item.get("path") or "")
+        binding_name = system_bindings.get(system_id)
+        env_override = _system_env_path(system_id) or (
+            _binding_env_path(binding_name, system_id) if binding_name else None
+        )
+        raw_path = str(env_override or record.path) if record else str(item.get("path") or "")
         expected_kind = record.expected_kind if record else str(item.get("expected_kind") or "path")
         deletion_protection = record.deletion_protection if record else str(item.get("deletion_protection") or "blocking")
+        if portable_mode and env_override is not None:
+            expected_kind = "path"
+        if (
+            portable_mode
+            and deletion_protection == "blocking"
+            and not bool(item.get("source_of_truth"))
+            and (env_override is not None or raw_path.startswith(f"{HOME_PATH}/"))
+        ):
+            deletion_protection = "warn"
         required_markers = record.required_markers if record else ()
         expected_resolved = str(record.expected_resolved) if record and record.expected_resolved else None
+        if portable_mode and env_override is not None:
+            expected_resolved = None
         path = Path(raw_path) if raw_path else Path()
         exists = bool(raw_path) and path.exists()
         kind_matches = exists and _expected_kind_matches(path, expected_kind)
@@ -242,7 +333,7 @@ def evaluate_managed_systems(
                     "message": "Managed systems policy entry is missing path.",
                 }
             )
-        elif raw_path in seen_paths:
+        elif raw_path in seen_paths and not (portable_mode and not bool(item.get("source_of_truth"))):
             findings.append(
                 {
                     "id": "managed_system_duplicate_path",
@@ -299,8 +390,6 @@ def evaluate_managed_systems(
                 }
             )
 
-    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
-    bindings = topology.get("bindings") if isinstance(topology.get("bindings"), dict) else {}
     for binding_name, system_id in bindings.items():
         if not isinstance(binding_name, str) or not isinstance(system_id, str):
             findings.append(
@@ -334,13 +423,14 @@ def evaluate_managed_systems(
             )
 
     control_plane = records.get("telegram-control-plane")
-    if control_plane is not None and control_plane.path.resolve() != CONTROL_ROOT_ANCHOR.resolve():
+    control_plane_path = system_path("telegram-control-plane", policy=payload) if control_plane is not None else None
+    if control_plane_path is not None and control_plane_path.resolve() != CONTROL_ROOT_ANCHOR.resolve():
         findings.append(
             {
                 "id": "managed_topology_control_plane_anchor_drift",
                 "severity": "blocking",
                 "system": "telegram-control-plane",
-                "policy_path": str(control_plane.path),
+                "policy_path": str(control_plane_path),
                 "package_anchor": str(CONTROL_ROOT_ANCHOR),
                 "message": "Managed-systems control-plane path does not match installed package anchor.",
             }

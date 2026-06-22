@@ -19,13 +19,12 @@ def codex_mcp_servers_block(
     return {
         "mcpServers": {
             "telegram-local": {
-                "type": "http",
-                "url": endpoint,
-                "bearer_token_env_var": token_env,
-                "note": "Local Telegram MCP server backed by telegram-mcp task-shaped facade tools.",
-                "allowedTools": list(default_facade_tool_names()),
-            }
+            "type": "http",
+            "url": endpoint,
+            "bearer_token_env_var": token_env,
+            "note": "Local Telegram MCP server backed by telegram-mcp full local tool surface.",
         }
+    }
     }
 
 

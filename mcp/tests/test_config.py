@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+import sqlite3
 from struct import pack
 
 from telethon.sessions import StringSession
@@ -21,7 +22,7 @@ class ConfigTests(unittest.TestCase):
         self.assertIsNone(settings.download_registry_path)
         self.assertEqual(settings.connect_timeout_seconds, 15.0)
         self.assertEqual(settings.mcp_probe_timeout_seconds, 15.0)
-        self.assertEqual(settings.dialog_read_cache_ttl_seconds, 5)
+        self.assertEqual(settings.dialog_read_cache_ttl_seconds, 60)
         self.assertEqual(settings.read_inflight_dedupe_size, 128)
         self.assertEqual(settings.transcript_cache_size, 256)
         self.assertEqual(settings.tool_read_timeout_seconds, 30.0)
@@ -39,6 +40,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.read_max_media_items, 25)
         self.assertTrue(settings.write_audit_enabled)
         self.assertEqual(settings.write_audit_log_path.name, "write-audit.jsonl")
+        self.assertFalse(settings.write_approval_required)
 
     def test_build_session_uses_string_session_when_configured(self):
         session_token = "1" + StringSession.encode(
@@ -53,6 +55,33 @@ class ConfigTests(unittest.TestCase):
         session = settings.build_session()
 
         self.assertIsInstance(session, StringSession)
+
+    def test_build_session_repairs_missing_tmp_auth_key_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session_dir = Path(tmp)
+            db = session_dir / "session.session"
+            with sqlite3.connect(db) as conn:
+                conn.execute("create table version (version integer primary key)")
+                conn.execute("insert into version values (8)")
+                conn.execute(
+                    "create table sessions ("
+                    "dc_id integer primary key, "
+                    "server_address text, "
+                    "port integer, "
+                    "auth_key blob, "
+                    "takeout_id integer)"
+                )
+
+            settings = Settings(api_id=1, api_hash="hash", session_dir=session_dir)
+
+            self.assertEqual(settings.build_session(), str(session_dir / "session"))
+
+            with sqlite3.connect(db) as conn:
+                columns = {row[1] for row in conn.execute("pragma table_info(sessions)")}
+                version = conn.execute("select version from version").fetchone()[0]
+
+            self.assertIn("tmp_auth_key", columns)
+            self.assertEqual(version, 8)
 
     def test_session_dir_is_not_required_for_string_sessions(self):
         with tempfile.TemporaryDirectory() as tmp:

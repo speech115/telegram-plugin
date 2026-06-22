@@ -5,7 +5,7 @@ description = "Telegram MCP server for Claude Code — read chats, send messages
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.26.0",
-    "telethon>=1.42.0",
+    "telethon>=1.44.0",
     "cryptg>=0.4",
     "pydantic>=2.9",
     "pydantic-settings>=2.7",
