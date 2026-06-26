@@ -127,6 +127,10 @@ class SendConfirmationStore:
             record = self._expire_if_needed(preview_id, record)
             if record.approval_state == "expired":
                 raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
+            if record.approval_state == "used":
+                raise ToolContractError("invalid_confirmation_token", "confirmation token was already used")
+            if record.approval_state == "approved":
+                return record
             record.approval_state = "rejected"
             return record
 

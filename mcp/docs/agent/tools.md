@@ -48,13 +48,16 @@ The restricted plugin profile exposes task-shaped tools only. Prefer these names
 - `download_media`
 - `download_media_batch`
 - `download_dialog_media`
-- `telegram_export_members`
 
 ## Not on default surface
 
 Low-level aliases such as `read_today_dialog`, `send_dialog_message`, and admin
 mutations require an explicit full/admin profile. Agents on the default surface
 must not call them.
+
+`telegram_export_members` is an explicit owner/local privacy export. It remains
+available in the full owner surface, but it is not routine default-facade context
+gathering.
 
 ## Modes for `telegram_read`
 

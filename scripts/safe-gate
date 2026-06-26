@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+python_for() {
+  local package_dir="$1"
+  if [ -x "${ROOT}/${package_dir}/.venv/bin/python" ]; then
+    printf '%s\n' "${ROOT}/${package_dir}/.venv/bin/python"
+  else
+    command -v python3
+  fi
+}
+
+git -C "${ROOT}" diff --check
+
+MCP_PYTHON="$(python_for mcp)"
+CONTROL_PYTHON="$(python_for control-plane)"
+
+(
+  cd "${ROOT}/mcp"
+  "${MCP_PYTHON}" -m unittest discover -s tests
+)
+
+(
+  cd "${ROOT}/control-plane"
+  export TELEGRAM_CI_PORTABLE=1
+  export TELEGRAM_MONOREPO_ROOT="${ROOT}"
+  export TELEGRAM_CONTROL_PLANE_ROOT="${ROOT}/control-plane"
+  export TELEGRAM_MCP_REPO="${ROOT}/mcp"
+  export TELEGRAM_PLUGIN_SOURCE="${ROOT}/plugin"
+  export TELEGRAM_PLUGIN_PACKAGE="${ROOT}/plugin"
+  export TELEGRAM_PROJECTS_ROOT="${ROOT}"
+  "${CONTROL_PYTHON}" -m pytest -q tests
+)
+
+"${ROOT}/mcp/bin/sync-agent-docs" --plugin-dir "${ROOT}/plugin" --check --no-restart --json
