@@ -31,6 +31,7 @@ structlog.configure(
 log = structlog.get_logger()
 _shared_wrapper: TelegramWrapper | None = None
 _shared_wrapper_lock = asyncio.Lock()
+OAUTH_AUTHORIZATION_SERVER_METADATA_PATH = "/.well-known/oauth-authorization-server"
 
 
 class StaticBearerTokenVerifier:
@@ -248,8 +249,13 @@ def configure_transport_auth(transport: str) -> None:
             }
         )
 
+    mcp._custom_starlette_routes = [
+        route
+        for route in mcp._custom_starlette_routes
+        if getattr(route, "path", None) != OAUTH_AUTHORIZATION_SERVER_METADATA_PATH
+    ]
     mcp._custom_starlette_routes.append(
-        _Route("/.well-known/oauth-authorization-server", _oauth_as_metadata, methods=["GET"])
+        _Route(OAUTH_AUTHORIZATION_SERVER_METADATA_PATH, _oauth_as_metadata, methods=["GET"])
     )
 
 

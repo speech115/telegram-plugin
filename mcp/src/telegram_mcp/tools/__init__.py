@@ -192,7 +192,6 @@ FACADE_TOOL_NAMES = {
     "telegram_prepare_reply",
     "telegram_read",
     "telegram_search",
-    "send_file",
 }
 
 FACADE_TOOL_PROFILES = {"facade", "safe", "restricted"}

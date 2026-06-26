@@ -18,33 +18,35 @@
 > Community-maintained integration. Not an official Telegram product or
 > Telegram LLC publication.
 
-Telegram Plugin packages a working local stack for agent-safe Telegram access:
+Telegram Plugin packages a working local stack for owner-local Telegram access:
 a Telethon-backed MCP server, a Codex plugin bundle, and an optional
 control-plane for local audits and repair planning.
 
-Most Telegram automation tools expose too much too quickly. This project takes
-the opposite position: agents should start with a narrow read/search/context
-surface, clear source routing, drift checks, and explicit boundaries around
-sessions, media, archives, and write actions.
+Most Telegram automation tools hide their safety boundary. This project takes
+the opposite position: the owner-local full MCP surface is explicit, the
+restricted facade profile is still available for narrow compatibility, and
+control-plane checks make drift visible.
 
 ## Why It Exists
 
-Use this project when you want an AI coding agent to inspect Telegram context
-without handing it the whole account by default.
+Use this project when you want an AI coding agent to work with a local Telegram
+account under an explicit owner-controlled MCP contract.
 
 - **Local-first:** Telegram credentials and sessions stay on your machine.
-- **Narrow by default:** Default Mode reads, searches, collects context, drafts,
-  previews, downloads scoped media, and transcribes voice locally.
-- **Explicit writes:** sending, admin actions, profile changes, and broad export
-  workflows require separate Power Mode or operator wiring.
+- **Owner-local full surface:** `plugin/.mcp.json` points at the owner-local
+  MCP daemons and intentionally does not use a legacy `allowedTools` allowlist.
+- **Restricted facade available:** set `TELEGRAM_MCP_TOOL_PROFILE=facade` when
+  you need the narrow read/search/context/draft surface.
+- **Explicit write discipline:** sending, admin actions, profile changes, and
+  broad export workflows are visible in the full surface and should be routed
+  through preview/confirmation or operator workflows when risk warrants it.
 - **Auditable setup:** contract smoke checks, plugin drift checks, and
   control-plane reports make the local state explainable.
 
 ## What Is Included
 
 - `mcp/` - a Telethon-backed MCP server with high-level dialog facade tools.
-- `plugin/` - a Codex plugin bundle that points at a local MCP daemon and
-  exposes a restricted default allowlist.
+- `plugin/` - a Codex plugin bundle that points at local owner MCP daemons.
 - `control-plane/` - optional local doctor/status/audit commands for plugin
   drift, LaunchAgent inventory, sessions, source routing, and repair planning.
 - `docs/` - safety model and routing notes for operating the stack.
@@ -53,32 +55,54 @@ without handing it the whole account by default.
 
 | Mode | Use it for | Can change Telegram? | Enabled by default |
 | --- | --- | --- | --- |
-| Default Mode | read, search, context, drafts, previews, scoped media, voice transcription | No direct writes | Yes |
-| Power Mode | send/reply, contacts, groups/channels, stories, profile, privacy state | Yes | No |
+| Owner Local Full MCP | owner-controlled live work across the local full Telegram surface | Yes | Yes |
+| Facade Profile | read, search, context, drafts, previews, scoped media inspection/download | No direct writes | No |
+| Power Mode Example | wildcard client config for the same full local surface | Yes | No |
 | Operator Workflows | mirror/archive, subscriber export, control-plane repair and audits | Can read in bulk or create sensitive artifacts | No |
 
-Power Mode is not a hidden feature. It is the explicit mode for users who want
-the broader Telegram MCP surface and accept that agents can perform externally
-visible actions.
+The full surface is not a hidden feature. It is the explicit owner-local mode
+for users who want agents to work with the broader Telegram MCP surface and
+accept that tools can perform externally visible actions.
 
 For a short, private-data-free example, see
 [Default Mode demo](docs/demo-default-mode.md).
 
+## Surface Contract
+
+Current healthy local mode is `owner_local_full_mcp`.
+
+- `plugin/.mcp.json` points at owner-local MCP daemons and intentionally exposes
+  their full local surface without a legacy `allowedTools` allowlist.
+- `TELEGRAM_MCP_TOOL_PROFILE=default` is not a restricted profile. In current
+  runtime behavior, unset/unknown/default profile names register the full
+  surface.
+- The restricted facade profile is explicit: use
+  `TELEGRAM_MCP_TOOL_PROFILE=facade` (or `safe` / `restricted`) for narrow
+  read/search/context/draft workflows.
+- `plugin/.mcp.full.example.json` is only a wildcard client example, not the
+  only way to reach full MCP.
+
+## Release Gate
+
+Before publishing or treating the local stack as healthy, run the release gates
+that compare runtime tools, plugin metadata, docs, and control-plane policy.
+
 ## Safety Model
 
-The runtime boundary is enforced in two layers:
+The runtime boundary is enforced by explicit local operator choice and audit
+checks:
 
-- MCP runtime profile (`TELEGRAM_MCP_TOOL_PROFILE=default`) keeps write/admin
-  tools outside the default served surface.
-- Plugin allowlist (`plugin/.mcp.json`) exposes only Default Mode facade tools
-  even when a broader local daemon exists.
+- Owner-local full MCP is represented by
+  `control-plane/policy/surface-contract.json`.
+- Restricted facade mode is represented by explicit MCP profile selection
+  (`TELEGRAM_MCP_TOOL_PROFILE=facade`, `safe`, or `restricted`).
 - HTTP/SSE daemon transports require `TELEGRAM_MCP_AUTH_TOKEN`; stdio remains
   local process-only.
 
 ```mermaid
 flowchart LR
-  Agent["AI agent"] --> Plugin["Codex plugin<br/>restricted allowlist"]
-  Plugin --> MCP["Local Telegram MCP<br/>default profile"]
+  Agent["AI agent"] --> Plugin["Codex plugin<br/>owner-local config"]
+  Plugin --> MCP["Local Telegram MCP<br/>owner_local_full_mcp"]
   MCP --> Telethon["Telethon session<br/>on this machine"]
   Control["Control-plane audits"] -.-> Plugin
   Control -.-> MCP
@@ -155,18 +179,18 @@ manual `.mcp.json` wiring only as a fallback:
 - For HTTP daemon mode, set `TELEGRAM_MCP_AUTH_TOKEN` in client environment;
   the plugin MCP config references it via `bearer_token_env_var`.
 
-6. Unified workflow rule: use facade tools in Default Mode first. Switch to
-Power Mode only for explicit write/admin operations. Direct Telethon calls are
-an operator/debug path, not normal user onboarding.
+6. Unified workflow rule: use task-shaped tools first, and treat direct
+write/admin operations as explicit owner-local actions. Direct Telethon calls
+are an operator/debug path, not normal user onboarding.
 
-To inspect the full server surface locally, run the daemon with:
+To inspect a restricted facade server surface locally, run the daemon with:
 
 ```bash
-TELEGRAM_MCP_POWER_MODE=enabled TELEGRAM_MCP_TOOL_PROFILE=full .venv/bin/telegram-mcp
+TELEGRAM_MCP_TOOL_PROFILE=facade .venv/bin/telegram-mcp
 ```
 
-Use `plugin/.mcp.full.example.json` only when you intentionally want Power Mode
-in a local agent client.
+Use `plugin/.mcp.full.example.json` only when you intentionally want a wildcard
+client config for the full local surface.
 
 Dependency strategy for `mcp/`: commit and review `uv.lock` changes for
 reproducible installs. Do not run broad upgrades as part of routine docs or
@@ -222,13 +246,14 @@ blocks those by default.
 
 ## Capability Boundaries
 
-- Default Mode: live read/search/context/draft/preview, scoped local media
-  download, and selected voice/video transcription.
-- Power Mode: broader Telegram API operations, including writes, contacts,
-  groups/channels, stories, profile, and privacy state. This is opt-in and not
-  enabled by the Default Mode allowlist.
+- Owner Local Full MCP: broader Telegram API operations, including writes,
+  contacts, groups/channels, stories, profile, and privacy state. This is the
+  current local owner default.
+- Facade Profile: live read/search/context/draft/preview, scoped local media
+  inspection/download, and selected voice/video transcription. This is opt-in
+  via `TELEGRAM_MCP_TOOL_PROFILE=facade`.
 - Operator Workflows: mirror/archive/subscriber export/control-plane work. These
-  are not Default Mode functions and require their own setup and safety checks.
+  require their own setup and safety checks.
 
 ## Safety Defaults
 

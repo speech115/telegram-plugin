@@ -2,25 +2,11 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from telegram_mcp.metadata_tools_spec import COUNT_SPECS_BY_CLI, LIST_SPECS_BY_CLI
-from telegram_mcp.tg_cli import _wrap_ok, cmd_count_metadata, cmd_count_posts, cmd_list_metadata, route_task
+from telegram_mcp.mcp_http_client import McpToolError
+from telegram_mcp.tg_cli import cmd_count_metadata, cmd_count_posts, cmd_list_metadata, route_task
 
 
 class TgCliTests(unittest.TestCase):
-    def test_wrap_ok_marks_tool_error_payload_as_failure(self):
-        payload = _wrap_ok(
-            command="read today",
-            endpoint="http://127.0.0.1:8799/mcp",
-            endpoint_port=8799,
-            elapsed_seconds=0.1,
-            payload="Error executing tool telegram_read: raw failure",
-            intent="live_today",
-        )
-
-        self.assertIs(payload["ok"], False)
-        self.assertEqual(payload["error"], "telegram_tool_error")
-        self.assertEqual(payload["data_source"], "live_telegram")
-        self.assertEqual(payload["tool_error_payload"], "Error executing tool telegram_read: raw failure")
-
     def test_route_task_plans_channel_post_count_without_execution(self):
         payload = route_task("@sral_v_nastav сколько постов в этом канале всего?")
 
@@ -115,6 +101,35 @@ class TgCliTests(unittest.TestCase):
 
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["intent"], "count_channel_videos")
+
+    def test_count_metadata_records_error_telemetry_for_tool_error(self):
+        async def fake_call_tool_with_failover(**kwargs):
+            raise McpToolError(
+                endpoint="http://127.0.0.1:8799/mcp",
+                port=8799,
+                payload={"error": "invalid_input: bad chat"},
+                elapsed_seconds=0.1,
+            )
+
+        with patch("telegram_mcp.tg_cli.call_tool_with_failover", AsyncMock(side_effect=fake_call_tool_with_failover)):
+            with patch("telegram_mcp.tg_cli.record_telemetry") as telemetry:
+                import asyncio
+
+                payload = asyncio.run(
+                    cmd_count_metadata(
+                        chat="@bad",
+                        spec=COUNT_SPECS_BY_CLI["videos"],
+                        timeout=5,
+                        endpoint=None,
+                        env_file=None,
+                        account="main",
+                    )
+                )
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "telegram_tool_error")
+        self.assertEqual(payload["tool_error_payload"], {"error": "invalid_input: bad chat"})
+        self.assertEqual(telemetry.call_args.kwargs["status"], "error")
 
     def test_list_metadata_uses_spec_tool(self):
         async def fake_call_tool_with_failover(**kwargs):

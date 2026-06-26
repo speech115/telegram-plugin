@@ -16,17 +16,17 @@ from .metadata_tools_spec import (
     METADATA_LIST_SPECS,
     MetadataCountSpec,
 )
-from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover
+from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, McpToolError, call_tool_with_failover
 from .telemetry import record_telemetry, telemetry_fields_from_result
 
 
-def _payload_is_tool_error(payload: object | None) -> bool:
-    if isinstance(payload, str):
-        lower = payload.lower()
-        return "unknown tool" in lower or "error executing tool " in lower
-    if isinstance(payload, dict):
-        return _payload_is_tool_error(payload.get("error") or payload.get("message"))
-    return False
+def _record_tool_telemetry(event_name: str, *, status: str, payload: object | None, **fields: object) -> None:
+    record_telemetry(
+        event_name,
+        status=status,
+        **fields,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
 
 
 def _wrap_ok(
@@ -41,23 +41,6 @@ def _wrap_ok(
     data_source = None
     if isinstance(payload, dict):
         data_source = payload.get("data_source")
-    if _payload_is_tool_error(payload):
-        wrapped = {
-            "ok": False,
-            "command": command,
-            "intent": intent,
-            "data_source": data_source or "live_telegram",
-            "endpoint": endpoint,
-            "endpoint_port": endpoint_port,
-            "elapsed_seconds": elapsed_seconds,
-            "error": "telegram_tool_error",
-            "message": "Live Telegram tool returned an error payload.",
-        }
-        if isinstance(payload, dict):
-            wrapped["tool_error_payload"] = payload
-        elif isinstance(payload, str):
-            wrapped["tool_error_payload"] = payload[:2000]
-        return wrapped
     return {
         "ok": True,
         "command": command,
@@ -70,6 +53,36 @@ def _wrap_ok(
     }
 
 
+def _wrap_tool_error(
+    *,
+    command: str,
+    endpoint: str,
+    endpoint_port: int | None,
+    elapsed_seconds: float,
+    payload: object | None,
+    intent: str,
+) -> dict[str, object]:
+    data_source = payload.get("data_source") if isinstance(payload, dict) else None
+    wrapped = {
+        "ok": False,
+        "command": command,
+        "intent": intent,
+        "data_source": data_source or "live_telegram",
+        "endpoint": endpoint,
+        "endpoint_port": endpoint_port,
+        "elapsed_seconds": elapsed_seconds,
+        "error": "telegram_tool_error",
+        "message": "Live Telegram tool returned an error.",
+    }
+    if isinstance(payload, dict):
+        wrapped["tool_error_payload"] = payload
+    elif isinstance(payload, str):
+        wrapped["tool_error_payload"] = payload[:2000]
+    elif payload is not None:
+        wrapped["tool_error_payload"] = repr(payload)[:2000]
+    return wrapped
+
+
 def _wrap_err(*, command: str, exc: Exception) -> dict[str, object]:
     return {
         "ok": False,
@@ -77,6 +90,66 @@ def _wrap_err(*, command: str, exc: Exception) -> dict[str, object]:
         "error_type": type(exc).__name__,
         "error": str(exc),
     }
+
+
+async def _run_tool_command(
+    *,
+    command: str,
+    intent: str,
+    event_name: str,
+    tool_name: str,
+    arguments: dict[str, object],
+    timeout: float,
+    endpoint: str | None,
+    env_file: str | None,
+    account: str,
+    telemetry_fields: dict[str, object],
+) -> dict[str, object]:
+    try:
+        payload, elapsed, attempt = await call_tool_with_failover(
+            tool_name=tool_name,
+            arguments=arguments,
+            timeout=timeout,
+            explicit_endpoint=endpoint,
+            env_file=env_file,
+            account=account,
+        )
+    except McpToolError as exc:
+        _record_tool_telemetry(
+            event_name,
+            status="error",
+            payload=exc.payload,
+            duration_ms=round(exc.elapsed_seconds * 1000, 3),
+            source="tg_cli",
+            endpoint_port=exc.port,
+            **telemetry_fields,
+        )
+        return _wrap_tool_error(
+            command=command,
+            endpoint=exc.endpoint,
+            endpoint_port=exc.port,
+            elapsed_seconds=exc.elapsed_seconds,
+            payload=exc.payload,
+            intent=intent,
+        )
+
+    _record_tool_telemetry(
+        event_name,
+        status="ok",
+        payload=payload,
+        duration_ms=round(elapsed * 1000, 3),
+        source="tg_cli",
+        endpoint_port=attempt.port or None,
+        **telemetry_fields,
+    )
+    return _wrap_ok(
+        command=command,
+        endpoint=attempt.endpoint,
+        endpoint_port=attempt.port or None,
+        elapsed_seconds=elapsed,
+        payload=payload,
+        intent=intent,
+    )
 
 
 CHAT_RE = re.compile(r"(?P<chat>@[A-Za-z0-9_]{5,}|tg://dialog/[^\s]+|-100\d{6,}|\bme\b)", re.IGNORECASE)
@@ -272,37 +345,24 @@ async def cmd_read_today(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    output = await _run_tool_command(
+        command="read today",
+        intent="live_today",
+        event_name="tg_read_today",
         tool_name="telegram_read",
         arguments={"chat": chat, "day": day, "limit": limit, "mode": "fast"},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
+        telemetry_fields={"arg_chat": chat, "arg_day": day, "arg_limit": limit},
     )
-    duration_ms = round(elapsed * 1000, 3)
     from .agent_preflight import observe_fast_read
 
-    observe_fast_read(tool="tg_read_today", status="ok", source="tg_cli", duration_ms=duration_ms)
-    record_telemetry(
-        "tg_read_today",
-        status="ok",
-        duration_ms=duration_ms,
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        arg_day=day,
-        arg_limit=limit,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="read today",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="live_today",
-    )
+    duration_ms = round(float(output.get("elapsed_seconds") or 0.0) * 1000, 3)
+    status = "ok" if output.get("ok") else "error"
+    observe_fast_read(tool="tg_read_today", status=status, source="tg_cli", duration_ms=duration_ms)
+    return output
 
 
 async def cmd_read_recent(
@@ -314,31 +374,17 @@ async def cmd_read_recent(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command="read recent",
+        intent="live_recent",
+        event_name="tg_read_recent",
         tool_name="telegram_read",
         arguments={"chat": chat, "limit": limit, "mode": "fast"},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        "tg_read_recent",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        arg_limit=limit,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="read recent",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="live_recent",
+        telemetry_fields={"arg_chat": chat, "arg_limit": limit},
     )
 
 
@@ -352,30 +398,17 @@ async def cmd_search(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command="search",
+        intent="live_search",
+        event_name="tg_search",
         tool_name="telegram_search",
         arguments={"chat": chat, "query": query, "limit": limit},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        "tg_search",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="search",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="live_search",
+        telemetry_fields={"arg_chat": chat},
     )
 
 
@@ -388,30 +421,17 @@ async def cmd_count_metadata(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command=f"count {spec.cli_name}",
+        intent=f"count_channel_{spec.key}",
+        event_name=f"tg_count_{spec.key}",
         tool_name=spec.tool_name,
         arguments={"chat": chat},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        f"tg_count_{spec.key}",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command=f"count {spec.cli_name}",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent=f"count_channel_{spec.key}",
+        telemetry_fields={"arg_chat": chat},
     )
 
 
@@ -446,32 +466,17 @@ async def cmd_list_metadata(
 ) -> dict[str, object]:
     if not spec.list_tool_name:
         raise McpCliError(f"{spec.cli_name} does not support bounded list")
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command=f"list {spec.list_cli_name}",
+        intent=f"list_channel_{spec.key}",
+        event_name=f"tg_list_{spec.key}",
         tool_name=spec.list_tool_name,
         arguments={"chat": chat, "limit": limit, "offset_id": offset_id},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        f"tg_list_{spec.key}",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        arg_limit=limit,
-        arg_offset_id=offset_id,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command=f"list {spec.list_cli_name}",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent=f"list_channel_{spec.key}",
+        telemetry_fields={"arg_chat": chat, "arg_limit": limit, "arg_offset_id": offset_id},
     )
 
 
@@ -483,30 +488,17 @@ async def cmd_latest(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command="latest",
+        intent="latest_message_metadata",
+        event_name="tg_latest_message",
         tool_name="telegram_latest_message",
         arguments={"chat": chat},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        "tg_latest_message",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="latest",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="latest_message_metadata",
+        telemetry_fields={"arg_chat": chat},
     )
 
 
@@ -518,30 +510,17 @@ async def cmd_info(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command="info",
+        intent="dialog_metadata",
+        event_name="tg_dialog_metadata",
         tool_name="telegram_dialog_metadata",
         arguments={"chat": chat},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        "tg_dialog_metadata",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="info",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="dialog_metadata",
+        telemetry_fields={"arg_chat": chat},
     )
 
 
@@ -554,31 +533,17 @@ async def cmd_message(
     env_file: str | None,
     account: str,
 ) -> dict[str, object]:
-    payload, elapsed, attempt = await call_tool_with_failover(
+    return await _run_tool_command(
+        command="message",
+        intent="get_message_by_id",
+        event_name="tg_get_message",
         tool_name="telegram_get_message",
         arguments={"chat": chat, "message_id": message_id},
         timeout=timeout,
-        explicit_endpoint=endpoint,
+        endpoint=endpoint,
         env_file=env_file,
         account=account,
-    )
-    record_telemetry(
-        "tg_get_message",
-        status="ok",
-        duration_ms=round(elapsed * 1000, 3),
-        source="tg_cli",
-        endpoint_port=attempt.port or None,
-        arg_chat=chat,
-        arg_message_id=message_id,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
-    )
-    return _wrap_ok(
-        command="message",
-        endpoint=attempt.endpoint,
-        endpoint_port=attempt.port or None,
-        elapsed_seconds=elapsed,
-        payload=payload,
-        intent="get_message_by_id",
+        telemetry_fields={"arg_chat": chat, "arg_message_id": message_id},
     )
 
 

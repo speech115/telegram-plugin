@@ -33,6 +33,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertNotIn("create_channel", names)
         self.assertNotIn("delete_messages", names)
         self.assertNotIn("telegram_export_members", names)
+        self.assertNotIn("send_file", names)
 
     def test_full_tool_registration_surface_is_stable(self):
         mcp = FastMCP("test")

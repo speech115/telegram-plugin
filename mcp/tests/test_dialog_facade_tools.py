@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 from telegram_mcp import server
+from telegram_mcp.errors import ToolContractError
 from telegram_mcp.tools.dialog_facade_tools import telegram_export_members
 from telegram_mcp.types import (
     DialogContextResult,
@@ -519,6 +520,33 @@ class DialogFacadeToolTests(unittest.TestCase):
         self.assertEqual(result.total, 1)
         self.assertEqual(result.participants[0].username, "ada")
         wrapper.get_participants.assert_awaited_once_with(chat="tg://dialog/channel/10", limit=200)
+
+    def test_telegram_export_members_applies_limit_to_admin_filter(self) -> None:
+        wrapper = AsyncMock()
+        wrapper.resolve_dialog.return_value = DialogHandle(
+            dialog_ref="tg://dialog/channel/10",
+            id=10,
+            name="Target",
+            type="channel",
+            username="targetdaddy",
+            resolved_from="@targetdaddy",
+        )
+        wrapper.get_admins.return_value = [Participant(id=1, first_name="Ada", username="ada")]
+
+        with TemporaryDirectory() as tmp:
+            export_dir = Path(tmp)
+            with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)), patch(
+                "telegram_mcp.tools.dialog_facade_tools.resolve_member_export_dir",
+                return_value=export_dir,
+            ):
+                result = _run(telegram_export_members(chat="@targetdaddy", filter="admins", limit=1))
+
+        self.assertEqual(result.total, 1)
+        wrapper.get_admins.assert_awaited_once_with(chat="tg://dialog/channel/10", limit=1)
+
+    def test_telegram_export_members_rejects_unknown_filter(self) -> None:
+        with self.assertRaisesRegex(ToolContractError, "member export filter"):
+            _run(telegram_export_members(chat="@targetdaddy", filter="owners"))
 
     def test_search_dialog_messages_returns_dialog_read_result(self):
         wrapper = AsyncMock()

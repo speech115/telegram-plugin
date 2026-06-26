@@ -58,6 +58,8 @@ class FastReadTodayTests(unittest.TestCase):
         self.assertTrue(payload_is_tool_error("Unknown tool: telegram_read"))
         self.assertTrue(payload_is_tool_error("Error executing tool telegram_read: raw failure"))
         self.assertTrue(payload_is_tool_error({"error": "Error executing tool telegram_read: raw failure"}))
+        self.assertTrue(payload_is_tool_error("permission_denied: private channel | next: ask user"))
+        self.assertTrue(payload_is_tool_error({"error": "rate_limited: retry later"}))
         self.assertFalse(payload_is_tool_error({"data_source": "live_telegram"}))
 
     def test_exception_is_tool_error_detects_nested_tool_failure(self):
@@ -98,3 +100,32 @@ class FastReadTodayTests(unittest.TestCase):
                 )
 
         self.assertIn("8799", str(ctx.exception))
+
+    def test_read_with_failover_does_not_retry_tool_error(self):
+        attempts = [
+            EndpointAttempt("http://127.0.0.1:8799/mcp", "/tmp/a.env", 8799),
+            EndpointAttempt("http://127.0.0.1:8798/mcp", "/tmp/a.env", 8798),
+        ]
+
+        async def fake_read_once(**kwargs):
+            raise FastReadError("MCP tool error at http://127.0.0.1:8799/mcp: permission_denied")
+
+        with patch("telegram_mcp.fast_read_today.endpoint_attempts", return_value=attempts), patch(
+            "telegram_mcp.fast_read_today.read_once",
+            side_effect=fake_read_once,
+        ) as read_once:
+            import asyncio
+
+            with self.assertRaises(FastReadError):
+                asyncio.run(
+                    read_with_failover(
+                        chat="me",
+                        day="2026-06-02",
+                        limit=1,
+                        voice=False,
+                        sender_names=False,
+                        timeout=5.0,
+                    )
+                )
+
+        self.assertEqual(read_once.await_count, 1)

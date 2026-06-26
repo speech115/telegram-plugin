@@ -13,7 +13,7 @@ import httpx
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from .fast_read_today import build_endpoint, endpoint_attempts, load_env_file
+from .mcp_http_client import build_endpoint, endpoint_attempts, load_env_file
 
 
 @dataclass(frozen=True)

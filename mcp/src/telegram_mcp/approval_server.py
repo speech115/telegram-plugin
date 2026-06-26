@@ -50,6 +50,48 @@ class _ApprovalHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _form_fields(self) -> dict[str, str]:
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        return {
+            key: values[0]
+            for key, values in parse_qs(raw).items()
+            if values
+        }
+
+    def _mutate(self, *, token: str, nonce: str, action: str) -> str:
+        store = get_confirmation_store()
+        record = store.get(token)
+        if record is None:
+            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
+        if nonce != record.one_time_nonce:
+            raise ToolContractError("invalid_confirmation_token", "approval nonce is invalid")
+        if action == "approve":
+            store.approve(token)
+            return "<h1>Одобрено</h1><p class='meta'>Можно отправлять через telegram_confirmed_send.</p>"
+        if action == "reject":
+            store.reject(token)
+            return "<h1>Отклонено</h1><p class='meta'>Отправка заблокирована.</p>"
+        raise ToolContractError("invalid_input", "unknown approval action")
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path not in {"/telegram/approve", "/telegram/approve/"}:
+            self._send(404, "text/plain", b"not found\n")
+            return
+        fields = self._form_fields()
+        token = fields.get("token") or ""
+        nonce = fields.get("nonce") or ""
+        action = fields.get("action") or ""
+        try:
+            inner = self._mutate(token=token, nonce=nonce, action=action)
+            status = 200
+        except ToolContractError as exc:
+            inner = f"<h1>Ошибка</h1><p class='meta'>{html.escape(exc.message)}</p>"
+            status = 400
+        page_status, ctype, body = _page("Telegram approve", inner, status=status)
+        self._send(page_status, ctype, body)
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         if parsed.path not in {"/telegram/approve", "/telegram/approve/"}:
@@ -101,23 +143,22 @@ class _ApprovalHandler(BaseHTTPRequestHandler):
 <p class='meta'>Кому: <strong>{chat}</strong> · инструмент: {tool} · статус: {state}</p>
 {reply_line}
 <pre>{text}</pre>
-<div class="actions">
-  <a class="ok" href="/telegram/approve?token={html.escape(token)}&amp;action=approve">Одобрить</a>
-  <a class="no" href="/telegram/approve?token={html.escape(token)}&amp;action=reject">Отклонить</a>
-</div>
-<p class="meta">После одобрения агент может вызвать telegram_confirmed_send с тем же текстом.</p>
-"""
-
-        action = (parse_qs(parsed.query).get("action") or [None])[0]
-        if action == "approve" and record.approval_state == "pending":
-            try:
-                store.approve(token)
-                inner = "<h1>Одобрено</h1><p class='meta'>Можно отправлять через telegram_confirmed_send.</p>" + inner
-            except ToolContractError as exc:
-                inner = f"<h1>Ошибка</h1><p class='meta'>{html.escape(exc.message)}</p>"
-        elif action == "reject" and record.approval_state == "pending":
-            store.reject(token)
-            inner = "<h1>Отклонено</h1><p class='meta'>Отправка заблокирована.</p>"
+	<div class="actions">
+	  <form method="post" action="/telegram/approve">
+	    <input type="hidden" name="token" value="{html.escape(token)}" />
+	    <input type="hidden" name="nonce" value="{html.escape(record.one_time_nonce)}" />
+	    <input type="hidden" name="action" value="approve" />
+	    <button class="ok" type="submit">Одобрить</button>
+	  </form>
+	  <form method="post" action="/telegram/approve">
+	    <input type="hidden" name="token" value="{html.escape(token)}" />
+	    <input type="hidden" name="nonce" value="{html.escape(record.one_time_nonce)}" />
+	    <input type="hidden" name="action" value="reject" />
+	    <button class="no" type="submit">Отклонить</button>
+	  </form>
+	</div>
+	<p class="meta">После одобрения агент может вызвать telegram_confirmed_send с тем же текстом.</p>
+	"""
 
         status, ctype, body = _page("Telegram approve", inner)
         self._send(status, ctype, body)
@@ -125,6 +166,8 @@ class _ApprovalHandler(BaseHTTPRequestHandler):
 
 def start_approval_server(*, host: str, port: int) -> None:
     global _server
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("approval server host must be loopback")
     with _server_lock:
         if _server is not None:
             return

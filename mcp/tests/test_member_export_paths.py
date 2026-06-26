@@ -27,6 +27,20 @@ class MemberExportPathTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "private export root"):
                     resolve_member_export_dir(str(outside))
 
+    @unittest.skipIf(not hasattr(Path, "symlink_to"), "symlinks are not supported")
+    def test_symlinked_private_export_root_is_rejected(self) -> None:
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            target = Path(tmp) / "outside"
+            target.mkdir(parents=True)
+            root = home / ".cache" / "telegram-mcp" / "member-exports"
+            root.parent.mkdir(parents=True)
+            root.symlink_to(target, target_is_directory=True)
+
+            with patch.dict("os.environ", {"HOME": str(home)}):
+                with self.assertRaisesRegex(ValueError, "must not be a symlink"):
+                    resolve_member_export_dir(None)
+
 
 if __name__ == "__main__":
     unittest.main()

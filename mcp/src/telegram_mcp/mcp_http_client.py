@@ -13,6 +13,8 @@ import httpx
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from .errors import payload_is_contract_error
+
 
 @dataclass(frozen=True)
 class EndpointAttempt:
@@ -23,6 +25,22 @@ class EndpointAttempt:
 
 class McpCliError(RuntimeError):
     pass
+
+
+class McpToolError(McpCliError):
+    def __init__(
+        self,
+        *,
+        endpoint: str,
+        port: int | None,
+        payload: object | None,
+        elapsed_seconds: float,
+    ) -> None:
+        self.endpoint = endpoint
+        self.port = port
+        self.payload = payload
+        self.elapsed_seconds = elapsed_seconds
+        super().__init__(f"MCP tool error at {endpoint}: {payload!r}")
 
 
 ACCOUNT_ENDPOINTS = {
@@ -121,11 +139,30 @@ def content_payload(result) -> object | None:
 
 def payload_is_tool_error(payload: object | None) -> bool:
     if isinstance(payload, str):
-        return "Unknown tool" in payload or "unknown tool" in payload.lower()
+        lower = payload.strip().lower()
+        return (
+            "unknown tool" in lower
+            or lower.startswith("error executing tool ")
+            or "error executing tool " in lower
+            or payload_is_contract_error(lower)
+        )
     if isinstance(payload, dict):
-        message = str(payload.get("message") or payload.get("error") or "")
-        return "Unknown tool" in message
+        message = payload.get("message") or payload.get("error")
+        if message is not None and payload_is_tool_error(str(message)):
+            return True
+        return payload_is_contract_error(payload)
     return False
+
+
+def result_is_tool_error(result, payload: object | None) -> bool:
+    return bool(getattr(result, "isError", False)) or payload_is_tool_error(payload)
+
+
+def tool_error_payload(result, payload: object | None) -> object | None:
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        return structured
+    return payload
 
 
 async def call_tool_once(
@@ -164,10 +201,16 @@ async def call_tool_once(
                 result = await session.call_tool(tool_name, arguments)
 
     payload = content_payload(result)
-    if payload_is_tool_error(payload):
-        raise McpCliError(f"MCP tool error at {attempt.endpoint}: {payload!r}")
-
     elapsed_seconds = round(time.perf_counter() - started, 3)
+    if result_is_tool_error(result, payload):
+        error_payload = tool_error_payload(result, payload)
+        raise McpToolError(
+            endpoint=attempt.endpoint,
+            port=attempt.port or None,
+            payload=error_payload,
+            elapsed_seconds=elapsed_seconds,
+        )
+
     return payload, elapsed_seconds, attempt
 
 
@@ -239,7 +282,6 @@ async def call_tool_with_failover(
             httpx.NetworkError,
             ConnectionError,
             OSError,
-            McpCliError,
         ) as exc:
             errors.append(f"{attempt.endpoint}: {type(exc).__name__}: {exc}")
 
@@ -269,7 +311,6 @@ async def list_tools_with_failover(
             httpx.NetworkError,
             ConnectionError,
             OSError,
-            McpCliError,
         ) as exc:
             errors.append(f"{attempt.endpoint}: {type(exc).__name__}: {exc}")
 

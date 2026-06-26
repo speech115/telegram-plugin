@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -44,6 +45,7 @@ class SendConfirmationStore:
         self._ttl_seconds = ttl_seconds
         self._records: dict[str, SendConfirmationRecord] = {}
         self._token_index: dict[str, str] = {}
+        self._lock = threading.RLock()
 
     def _now(self) -> float:
         return time.time()
@@ -68,53 +70,65 @@ class SendConfirmationStore:
         preview_text: str,
         risk_class: str = "standard",
     ) -> tuple[str, str, datetime]:
-        preview_id = secrets.token_urlsafe(16)
-        token = secrets.token_urlsafe(24)
-        nonce = secrets.token_urlsafe(12)
-        expires_at = self._now() + self._ttl_seconds
-        self._records[preview_id] = SendConfirmationRecord(
-            preview_id=preview_id,
-            expires_at=expires_at,
-            payload=dict(payload),
-            preview_text=preview_text,
-            approval_state="pending",
-            risk_class=risk_class,
-            confirmation_token=token,
-            one_time_nonce=nonce,
-        )
-        self._token_index[token] = preview_id
-        return preview_id, token, datetime.fromtimestamp(expires_at, tz=timezone.utc)
+        with self._lock:
+            preview_id = secrets.token_urlsafe(16)
+            token = secrets.token_urlsafe(24)
+            nonce = secrets.token_urlsafe(12)
+            expires_at = self._now() + self._ttl_seconds
+            self._records[preview_id] = SendConfirmationRecord(
+                preview_id=preview_id,
+                expires_at=expires_at,
+                payload=dict(payload),
+                preview_text=preview_text,
+                approval_state="pending",
+                risk_class=risk_class,
+                confirmation_token=token,
+                one_time_nonce=nonce,
+            )
+            self._token_index[token] = preview_id
+            return preview_id, token, datetime.fromtimestamp(expires_at, tz=timezone.utc)
 
     def get(self, key: str) -> SendConfirmationRecord | None:
-        preview_id = self._resolve_key(key)
-        if preview_id is None:
-            return None
-        record = self._records.get(preview_id)
-        if record is None:
-            return None
-        return self._expire_if_needed(preview_id, record)
+        with self._lock:
+            preview_id = self._resolve_key(key)
+            if preview_id is None:
+                return None
+            record = self._records.get(preview_id)
+            if record is None:
+                return None
+            return self._expire_if_needed(preview_id, record)
 
     def approve(self, token: str) -> SendConfirmationRecord:
-        record = self.get(token)
-        if record is None:
-            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
-        if record.approval_state == "expired":
-            raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
-        if record.approval_state == "used":
-            raise ToolContractError("invalid_confirmation_token", "confirmation token was already used")
-        if record.approval_state == "rejected":
-            raise ToolContractError("confirmation_rejected", "confirmation was rejected by the operator")
-        record.approval_state = "approved"
-        self._records[token] = record
-        return record
+        with self._lock:
+            preview_id = self._resolve_key(token)
+            if preview_id is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
+            record = self._records.get(preview_id)
+            if record is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
+            record = self._expire_if_needed(preview_id, record)
+            if record.approval_state == "expired":
+                raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
+            if record.approval_state == "used":
+                raise ToolContractError("invalid_confirmation_token", "confirmation token was already used")
+            if record.approval_state == "rejected":
+                raise ToolContractError("confirmation_rejected", "confirmation was rejected by the operator")
+            record.approval_state = "approved"
+            return record
 
     def reject(self, token: str) -> SendConfirmationRecord:
-        record = self.get(token)
-        if record is None:
-            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
-        record.approval_state = "rejected"
-        self._records[token] = record
-        return record
+        with self._lock:
+            preview_id = self._resolve_key(token)
+            if preview_id is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
+            record = self._records.get(preview_id)
+            if record is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
+            record = self._expire_if_needed(preview_id, record)
+            if record.approval_state == "expired":
+                raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
+            record.approval_state = "rejected"
+            return record
 
     def consume(
         self,
@@ -124,35 +138,37 @@ class SendConfirmationStore:
         approval_required: bool,
         preview_id_only: bool = False,
     ) -> SendConfirmationRecord:
-        if not key:
-            raise ToolContractError(
-                "missing_confirmation_token",
-                "send/reply requires preview_id or confirmation_token from prepare_*",
-            )
-        resolved = self._resolve_key(key)
-        if resolved is None:
-            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown or already used")
-        record = self._records.get(resolved)
-        if record is None:
-            raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown or already used")
-        record = self._expire_if_needed(resolved, record)
-        if record.approval_state == "expired":
-            raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
-        if record.approval_state == "used":
-            raise ToolContractError("invalid_confirmation_token", "confirmation token was already used")
-        if record.approval_state == "rejected":
-            raise ToolContractError("confirmation_rejected", "confirmation was rejected by the operator")
-        if approval_required and record.approval_state != "approved":
-            raise ToolContractError(
-                "human_approval_required",
-                "open the approval URL and click Approve before sending",
-            )
-        if not preview_id_only and expected is not None and record.payload != expected:
-            raise ToolContractError(
-                "confirmation_payload_mismatch",
-                "send/reply arguments do not match the preview confirmation",
-            )
-        record.approval_state = "used"
-        self._records.pop(resolved, None)
-        self._token_index.pop(record.confirmation_token, None)
-        return record
+        with self._lock:
+            if not key:
+                raise ToolContractError(
+                    "missing_confirmation_token",
+                    "send/reply requires preview_id or confirmation_token from prepare_*",
+                )
+            resolved = self._resolve_key(key)
+            if resolved is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown or already used")
+            record = self._records.get(resolved)
+            if record is None:
+                raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown or already used")
+            record = self._expire_if_needed(resolved, record)
+            if record.approval_state == "expired":
+                raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
+            if record.approval_state == "used":
+                raise ToolContractError("invalid_confirmation_token", "confirmation token was already used")
+            if record.approval_state == "rejected":
+                raise ToolContractError("confirmation_rejected", "confirmation was rejected by the operator")
+            if approval_required and record.approval_state != "approved":
+                raise ToolContractError(
+                    "human_approval_required",
+                    "open the approval URL and click Approve before sending",
+                )
+            if not preview_id_only and expected is not None and record.payload != expected:
+                raise ToolContractError(
+                    "confirmation_payload_mismatch",
+                    "send/reply arguments do not match the preview confirmation",
+                )
+            record.approval_state = "used"
+            self._records.pop(resolved, None)
+            self._records.pop(record.confirmation_token, None)
+            self._token_index.pop(record.confirmation_token, None)
+            return record

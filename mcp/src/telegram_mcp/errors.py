@@ -32,6 +32,46 @@ class ToolContractError(ValueError):
         super().__init__(f"{code}: {message}")
 
 
+CONTRACT_ERROR_CODES = frozenset(
+    {
+        "archive_fallback_blocked",
+        "archive_route_blocked",
+        "confirmation_payload_mismatch",
+        "confirmation_rejected",
+        "expired_confirmation_token",
+        "human_approval_required",
+        "invalid_confirmation_token",
+        "invalid_context_mode",
+        "invalid_date_range",
+        "invalid_input",
+        "invalid_intent",
+        "live_intent_conflict",
+        "missing_confirmation_token",
+        "missing_send_target",
+        "permission_denied",
+        "rate_limited",
+        "telegram_tool_error",
+        "transport_unavailable",
+    }
+)
+
+
+def normalize_contract_error_code(value: object) -> str:
+    return str(value).strip().lower().split(":", 1)[0].strip()
+
+
+def payload_is_contract_error(payload: object | None) -> bool:
+    if isinstance(payload, str):
+        return normalize_contract_error_code(payload) in CONTRACT_ERROR_CODES
+    if isinstance(payload, dict):
+        code = payload.get("code") or payload.get("error_code")
+        if code is not None and normalize_contract_error_code(code) in CONTRACT_ERROR_CODES:
+            return True
+        message = payload.get("message") or payload.get("error")
+        return message is not None and payload_is_contract_error(str(message))
+    return False
+
+
 _FRIENDLY: dict[type, tuple[str, str]] = {
     AuthKeyUnregisteredError: (
         "transport_unavailable",
