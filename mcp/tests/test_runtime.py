@@ -69,6 +69,33 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertFalse(runtime.mcp.settings.json_response)
         mcp_run.assert_called_once_with(transport="streamable-http")
 
+    def test_configure_transport_auth_replaces_oauth_metadata_route(self):
+        original_routes = list(runtime.mcp._custom_starlette_routes)
+        try:
+            with patch.dict(
+                "os.environ",
+                {
+                    "TELEGRAM_MCP_TRANSPORT": "streamable-http",
+                    "TELEGRAM_MCP_HOST": "127.0.0.1",
+                    "TELEGRAM_MCP_PORT": "8799",
+                    "TELEGRAM_MCP_AUTH_TOKEN": "test-token",
+                },
+                clear=False,
+            ):
+                get_settings.cache_clear()
+                runtime.configure_transport_auth("streamable-http")
+                runtime.configure_transport_auth("streamable-http")
+
+            routes = [
+                route
+                for route in runtime.mcp._custom_starlette_routes
+                if getattr(route, "path", None)
+                == runtime.OAUTH_AUTHORIZATION_SERVER_METADATA_PATH
+            ]
+            self.assertEqual(len(routes), 1)
+        finally:
+            runtime.mcp._custom_starlette_routes = original_routes
+
     def test_run_server_disconnects_shared_wrapper_on_shutdown(self):
         with patch("telegram_mcp.runtime.shared_mode_enabled", return_value=True):
             with patch.object(runtime.mcp, "run") as mcp_run:

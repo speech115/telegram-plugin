@@ -58,6 +58,8 @@ class FastReadTodayTests(unittest.TestCase):
         self.assertTrue(payload_is_tool_error("Unknown tool: telegram_read"))
         self.assertTrue(payload_is_tool_error("Error executing tool telegram_read: raw failure"))
         self.assertTrue(payload_is_tool_error({"error": "Error executing tool telegram_read: raw failure"}))
+        self.assertTrue(payload_is_tool_error("permission_denied: private channel | next: ask user"))
+        self.assertTrue(payload_is_tool_error({"error": "rate_limited: retry later"}))
         self.assertFalse(payload_is_tool_error({"data_source": "live_telegram"}))
 
     def test_exception_is_tool_error_detects_nested_tool_failure(self):

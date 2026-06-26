@@ -15,6 +15,8 @@ import httpx
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from .mcp_http_client import TOOL_ERROR_PREFIXES
+
 
 @dataclass(frozen=True)
 class EndpointAttempt:
@@ -123,15 +125,19 @@ def content_payload(result) -> object | None:
 
 def payload_is_tool_error(payload: object | None) -> bool:
     if isinstance(payload, str):
-        lower = payload.lower()
+        lower = payload.strip().lower()
         return (
             "unknown tool" in lower
             or lower.startswith("error executing tool ")
             or "error executing tool " in lower
+            or lower.startswith(TOOL_ERROR_PREFIXES)
         )
     if isinstance(payload, dict):
-        message = str(payload.get("message") or payload.get("error") or "")
-        return payload_is_tool_error(message)
+        message = payload.get("message") or payload.get("error")
+        if message is not None and payload_is_tool_error(str(message)):
+            return True
+        code = payload.get("code") or payload.get("error_code")
+        return code is not None and payload_is_tool_error(f"{code}:")
     return False
 
 
@@ -187,8 +193,10 @@ async def read_once(
                 )
 
     payload = content_payload(result)
-    if payload_is_tool_error(payload):
-        raise FastReadError(f"MCP tool error at {attempt.endpoint}: {payload!r}")
+    if bool(getattr(result, "isError", False)) or payload_is_tool_error(payload):
+        structured = getattr(result, "structuredContent", None)
+        error_payload = structured if structured is not None else payload
+        raise FastReadError(f"MCP tool error at {attempt.endpoint}: {error_payload!r}")
 
     elapsed_seconds = round(time.perf_counter() - started, 3)
     from .agent_preflight import observe_fast_read

@@ -1,6 +1,14 @@
 import unittest
+from types import SimpleNamespace
 
-from telegram_mcp.mcp_http_client import McpCliError, endpoint_attempts
+from telegram_mcp.mcp_http_client import (
+    McpCliError,
+    content_payload,
+    endpoint_attempts,
+    payload_is_tool_error,
+    result_is_tool_error,
+    tool_error_payload,
+)
 
 
 class McpHttpClientTests(unittest.TestCase):
@@ -49,6 +57,28 @@ class McpHttpClientTests(unittest.TestCase):
         )
 
         self.assertEqual([attempt.port for attempt in attempts], [8799, 8798])
+
+    def test_payload_is_tool_error_detects_contract_error_strings(self):
+        for payload in (
+            "permission_denied: no access | next: ask user",
+            "rate_limited: retry later",
+            "archive_route_blocked: use live Telegram",
+            {"error": "invalid_date_range: date_from must not exceed date_to"},
+            {"code": "human_approval_required"},
+        ):
+            with self.subTest(payload=payload):
+                self.assertTrue(payload_is_tool_error(payload))
+
+    def test_result_is_tool_error_honors_mcp_is_error(self):
+        result = SimpleNamespace(
+            isError=True,
+            structuredContent={"error": "invalid_input: bad chat"},
+            content=[SimpleNamespace(text='{"error": "invalid_input: bad chat"}')],
+        )
+        payload = content_payload(result)
+
+        self.assertTrue(result_is_tool_error(result, payload))
+        self.assertEqual(tool_error_payload(result, payload), {"error": "invalid_input: bad chat"})
 
 
 if __name__ == "__main__":

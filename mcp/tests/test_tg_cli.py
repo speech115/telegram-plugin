@@ -21,6 +21,20 @@ class TgCliTests(unittest.TestCase):
         self.assertEqual(payload["data_source"], "live_telegram")
         self.assertEqual(payload["tool_error_payload"], "Error executing tool telegram_read: raw failure")
 
+    def test_wrap_ok_marks_contract_error_payload_as_failure(self):
+        payload = _wrap_ok(
+            command="count posts",
+            endpoint="http://127.0.0.1:8799/mcp",
+            endpoint_port=8799,
+            elapsed_seconds=0.1,
+            payload={"error": "permission_denied: private channel | next: ask user"},
+            intent="count_channel_posts",
+        )
+
+        self.assertIs(payload["ok"], False)
+        self.assertEqual(payload["error"], "telegram_tool_error")
+        self.assertEqual(payload["tool_error_payload"], {"error": "permission_denied: private channel | next: ask user"})
+
     def test_route_task_plans_channel_post_count_without_execution(self):
         payload = route_task("@sral_v_nastav сколько постов в этом канале всего?")
 
@@ -115,6 +129,32 @@ class TgCliTests(unittest.TestCase):
 
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["intent"], "count_channel_videos")
+
+    def test_count_metadata_records_error_telemetry_for_error_payload(self):
+        async def fake_call_tool_with_failover(**kwargs):
+            return (
+                {"error": "invalid_input: bad chat"},
+                0.1,
+                type("Attempt", (), {"endpoint": "http://127.0.0.1:8799/mcp", "port": 8799})(),
+            )
+
+        with patch("telegram_mcp.tg_cli.call_tool_with_failover", AsyncMock(side_effect=fake_call_tool_with_failover)):
+            with patch("telegram_mcp.tg_cli.record_telemetry") as telemetry:
+                import asyncio
+
+                payload = asyncio.run(
+                    cmd_count_metadata(
+                        chat="@bad",
+                        spec=COUNT_SPECS_BY_CLI["videos"],
+                        timeout=5,
+                        endpoint=None,
+                        env_file=None,
+                        account="main",
+                    )
+                )
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(telemetry.call_args.kwargs["status"], "error")
 
     def test_list_metadata_uses_spec_tool(self):
         async def fake_call_tool_with_failover(**kwargs):

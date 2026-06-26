@@ -24,7 +24,9 @@ def bin_wrapper_names() -> set[str]:
     return {
         path.name
         for path in BIN_DIR.iterdir()
-        if path.is_file() and path.name not in NON_COMMAND_BIN
+        if path.is_file()
+        and not path.name.startswith(".")
+        and path.name not in NON_COMMAND_BIN
     }
 
 

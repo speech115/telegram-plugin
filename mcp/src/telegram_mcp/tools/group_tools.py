@@ -5,12 +5,23 @@ from __future__ import annotations
 from mcp.types import ToolAnnotations
 
 from .. import runtime
-from ..errors import tool_error_handler
+from ..errors import ToolContractError, tool_error_handler
 from ..types import ChatInfo, InviteLinkInfo, OperationResult, ParticipantsResult
 
 READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
 DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, openWorldHint=True)
+PARTICIPANT_FILTERS = {"all", "admins", "banned"}
+
+
+def _normalize_participant_filter(filter_value: str) -> str:
+    normalized = filter_value.strip().lower()
+    if normalized not in PARTICIPANT_FILTERS:
+        raise ToolContractError(
+            "invalid_input",
+            "participant filter must be one of: all, admins, banned",
+        )
+    return normalized
 
 
 async def create_group(title: str, user_ids: list[int]) -> ChatInfo:
@@ -53,11 +64,12 @@ async def get_participants(
 ) -> ParticipantsResult:
     """Get members of a group or channel (filter: 'all', 'admins', 'banned')."""
     tg = await runtime.get_tg()
+    filter = _normalize_participant_filter(filter)
     if filter == "admins":
-        participants = await tg.get_admins(chat=chat)
+        participants = await tg.get_admins(chat=chat, limit=limit)
         return ParticipantsResult(participants=participants, total=len(participants))
     elif filter == "banned":
-        participants = await tg.get_banned_users(chat=chat)
+        participants = await tg.get_banned_users(chat=chat, limit=limit)
         return ParticipantsResult(participants=participants, total=len(participants))
     else:
         participants, total = await tg.get_participants(chat=chat, limit=limit)

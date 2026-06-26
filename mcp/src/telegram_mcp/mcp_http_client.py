@@ -25,6 +25,25 @@ class McpCliError(RuntimeError):
     pass
 
 
+TOOL_ERROR_PREFIXES = (
+    "archive_route_blocked:",
+    "confirmation_payload_mismatch:",
+    "confirmation_rejected:",
+    "expired_confirmation_token:",
+    "human_approval_required:",
+    "invalid_confirmation_token:",
+    "invalid_context_mode:",
+    "invalid_date_range:",
+    "invalid_input:",
+    "missing_confirmation_token:",
+    "missing_send_target:",
+    "permission_denied:",
+    "rate_limited:",
+    "telegram_tool_error:",
+    "transport_unavailable:",
+)
+
+
 ACCOUNT_ENDPOINTS = {
     "main": (8799, "~/.telegram-mcp/launchd.env"),
     "crwddy": (8799, "~/.telegram-mcp/launchd.env"),
@@ -121,11 +140,31 @@ def content_payload(result) -> object | None:
 
 def payload_is_tool_error(payload: object | None) -> bool:
     if isinstance(payload, str):
-        return "Unknown tool" in payload or "unknown tool" in payload.lower()
+        lower = payload.strip().lower()
+        return (
+            "unknown tool" in lower
+            or lower.startswith("error executing tool ")
+            or "error executing tool " in lower
+            or lower.startswith(TOOL_ERROR_PREFIXES)
+        )
     if isinstance(payload, dict):
-        message = str(payload.get("message") or payload.get("error") or "")
-        return "Unknown tool" in message
+        message = payload.get("message") or payload.get("error")
+        if message is not None and payload_is_tool_error(str(message)):
+            return True
+        code = payload.get("code") or payload.get("error_code")
+        return code is not None and payload_is_tool_error(f"{code}:")
     return False
+
+
+def result_is_tool_error(result, payload: object | None) -> bool:
+    return bool(getattr(result, "isError", False)) or payload_is_tool_error(payload)
+
+
+def tool_error_payload(result, payload: object | None) -> object | None:
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        return structured
+    return payload
 
 
 async def call_tool_once(
@@ -164,8 +203,9 @@ async def call_tool_once(
                 result = await session.call_tool(tool_name, arguments)
 
     payload = content_payload(result)
-    if payload_is_tool_error(payload):
-        raise McpCliError(f"MCP tool error at {attempt.endpoint}: {payload!r}")
+    if result_is_tool_error(result, payload):
+        error_payload = tool_error_payload(result, payload)
+        raise McpCliError(f"MCP tool error at {attempt.endpoint}: {error_payload!r}")
 
     elapsed_seconds = round(time.perf_counter() - started, 3)
     return payload, elapsed_seconds, attempt

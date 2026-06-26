@@ -16,17 +16,25 @@ from .metadata_tools_spec import (
     METADATA_LIST_SPECS,
     MetadataCountSpec,
 )
-from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover
+from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover, payload_is_tool_error
 from .telemetry import record_telemetry, telemetry_fields_from_result
 
 
 def _payload_is_tool_error(payload: object | None) -> bool:
-    if isinstance(payload, str):
-        lower = payload.lower()
-        return "unknown tool" in lower or "error executing tool " in lower
-    if isinstance(payload, dict):
-        return _payload_is_tool_error(payload.get("error") or payload.get("message"))
-    return False
+    return payload_is_tool_error(payload)
+
+
+def _payload_status(payload: object | None) -> str:
+    return "error" if _payload_is_tool_error(payload) else "ok"
+
+
+def _record_tool_telemetry(event_name: str, *, payload: object | None, **fields: object) -> None:
+    record_telemetry(
+        event_name,
+        status=_payload_status(payload),
+        **fields,
+        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
+    )
 
 
 def _wrap_ok(
@@ -283,17 +291,17 @@ async def cmd_read_today(
     duration_ms = round(elapsed * 1000, 3)
     from .agent_preflight import observe_fast_read
 
-    observe_fast_read(tool="tg_read_today", status="ok", source="tg_cli", duration_ms=duration_ms)
-    record_telemetry(
+    status = _payload_status(payload)
+    observe_fast_read(tool="tg_read_today", status=status, source="tg_cli", duration_ms=duration_ms)
+    _record_tool_telemetry(
         "tg_read_today",
-        status="ok",
+        payload=payload,
         duration_ms=duration_ms,
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
         arg_day=day,
         arg_limit=limit,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="read today",
@@ -322,15 +330,14 @@ async def cmd_read_recent(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         "tg_read_recent",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
         arg_limit=limit,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="read recent",
@@ -360,14 +367,13 @@ async def cmd_search(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         "tg_search",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="search",
@@ -396,14 +402,13 @@ async def cmd_count_metadata(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         f"tg_count_{spec.key}",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command=f"count {spec.cli_name}",
@@ -454,16 +459,15 @@ async def cmd_list_metadata(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         f"tg_list_{spec.key}",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
         arg_limit=limit,
         arg_offset_id=offset_id,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command=f"list {spec.list_cli_name}",
@@ -491,14 +495,13 @@ async def cmd_latest(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         "tg_latest_message",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="latest",
@@ -526,14 +529,13 @@ async def cmd_info(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         "tg_dialog_metadata",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="info",
@@ -562,15 +564,14 @@ async def cmd_message(
         env_file=env_file,
         account=account,
     )
-    record_telemetry(
+    _record_tool_telemetry(
         "tg_get_message",
-        status="ok",
+        payload=payload,
         duration_ms=round(elapsed * 1000, 3),
         source="tg_cli",
         endpoint_port=attempt.port or None,
         arg_chat=chat,
         arg_message_id=message_id,
-        **telemetry_fields_from_result(payload if isinstance(payload, dict) else None),
     )
     return _wrap_ok(
         command="message",

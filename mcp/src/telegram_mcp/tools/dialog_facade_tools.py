@@ -34,6 +34,17 @@ from ..types import (
 READONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 ADDITIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
 CONFIRMED_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
+MEMBER_EXPORT_FILTERS = {"all", "admins", "banned"}
+
+
+def _normalize_member_export_filter(filter_value: str) -> str:
+    normalized = filter_value.strip().lower()
+    if normalized not in MEMBER_EXPORT_FILTERS:
+        raise ToolContractError(
+            "invalid_input",
+            "member export filter must be one of: all, admins, banned",
+        )
+    return normalized
 
 
 async def resolve_dialog(query: str | int):
@@ -584,13 +595,14 @@ async def telegram_export_members(
 ):
     """Export channel/group members to a private local JSON artifact."""
     limit = clamp_member_export_limit(limit)
+    filter = _normalize_member_export_filter(filter)
     tg = await runtime.get_tg()
     handle = await tg.resolve_dialog(chat)
     if filter == "admins":
-        participants = await tg.get_admins(chat=handle.dialog_ref)
+        participants = await tg.get_admins(chat=handle.dialog_ref, limit=limit)
         total = len(participants)
     elif filter == "banned":
-        participants = await tg.get_banned_users(chat=handle.dialog_ref)
+        participants = await tg.get_banned_users(chat=handle.dialog_ref, limit=limit)
         total = len(participants)
     else:
         participants, total = await tg.get_participants(chat=handle.dialog_ref, limit=limit)

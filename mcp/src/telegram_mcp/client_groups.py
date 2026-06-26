@@ -181,7 +181,7 @@ class GroupOperationsMixin:
         return participants, total
 
     async def get_admins(
-        self, chat: str | int
+        self, chat: str | int, limit: int = 200
     ) -> list[Participant]:
         entity = await self._resolve_entity(chat)
         admins = []
@@ -193,7 +193,7 @@ class GroupOperationsMixin:
                         channel=entity,
                         filter=ChannelParticipantsAdmins(),
                         offset=0,
-                        limit=200,
+                        limit=limit,
                         hash=0,
                     )
                 ),
@@ -205,7 +205,7 @@ class GroupOperationsMixin:
                     role = "creator" if "Creator" in type(p).__name__ else "admin"
                     admins.append(self._user_to_participant(user, role))
         else:
-            async for user in self.client.iter_participants(entity, aggressive=False):
+            async for user in self.client.iter_participants(entity, aggressive=False, limit=limit):
                 ptype = type(getattr(user, "participant", None)).__name__
                 if "Creator" in ptype or "Admin" in ptype:
                     role = "creator" if "Creator" in ptype else "admin"
@@ -213,7 +213,7 @@ class GroupOperationsMixin:
         return admins
 
     async def get_banned_users(
-        self, chat: str | int
+        self, chat: str | int, limit: int = 200
     ) -> list[Participant]:
         entity = await self._resolve_entity(chat)
         banned = []
@@ -225,7 +225,7 @@ class GroupOperationsMixin:
                         channel=entity,
                         filter=ChannelParticipantsBanned(""),
                         offset=0,
-                        limit=200,
+                        limit=limit,
                         hash=0,
                     )
                 ),
