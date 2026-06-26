@@ -66,6 +66,14 @@ class _ApprovalHandler(BaseHTTPRequestHandler):
             raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
         if nonce != record.one_time_nonce:
             raise ToolContractError("invalid_confirmation_token", "approval nonce is invalid")
+        if record.approval_state == "approved":
+            return "<h1>Уже одобрено</h1><p class='meta'>Можно отправлять через telegram_confirmed_send.</p>"
+        if record.approval_state == "used":
+            return "<h1>Уже использовано</h1><p class='meta'>Этот токен уже был отправлен.</p>"
+        if record.approval_state == "rejected":
+            return "<h1>Уже отклонено</h1><p class='meta'>Создайте новое превью, если нужно отправить сообщение.</p>"
+        if record.approval_state == "expired":
+            raise ToolContractError("expired_confirmation_token", "confirmation token has expired")
         if action == "approve":
             store.approve(token)
             return "<h1>Одобрено</h1><p class='meta'>Можно отправлять через telegram_confirmed_send.</p>"

@@ -118,6 +118,18 @@ class SendConfirmationStoreTests(unittest.TestCase):
         self.assertIsNone(store.get(token))
         self.assertIsNone(store.get(preview_id))
 
+    def test_reject_after_approval_does_not_cancel_approval(self):
+        store = SendConfirmationStore(ttl_seconds=60)
+        payload = {"chat": "@x", "text_hash": "abc"}
+        _preview_id, token, _ = store.mint(payload, preview_text="hi")
+
+        store.approve(token)
+        store.reject(token)
+
+        record = store.get(token)
+        self.assertIsNotNone(record)
+        self.assertEqual(record.approval_state, "approved")  # type: ignore[union-attr]
+
 
 class ApprovalServerTests(unittest.TestCase):
     def tearDown(self):
@@ -157,6 +169,15 @@ class ApprovalServerTests(unittest.TestCase):
         self.assertEqual(store.get(token).approval_state, "pending")  # type: ignore[union-attr]
 
         body = urlencode({"token": token, "nonce": record.one_time_nonce, "action": "approve"})
+        conn = HTTPConnection("127.0.0.1", port)
+        conn.request("POST", "/telegram/approve", body=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(store.get(token).approval_state, "approved")  # type: ignore[union-attr]
+
+        body = urlencode({"token": token, "nonce": record.one_time_nonce, "action": "reject"})
         conn = HTTPConnection("127.0.0.1", port)
         conn.request("POST", "/telegram/approve", body=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
         response = conn.getresponse()

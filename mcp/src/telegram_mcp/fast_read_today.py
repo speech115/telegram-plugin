@@ -29,6 +29,13 @@ class FastReadError(RuntimeError):
     pass
 
 
+class FastReadToolError(FastReadError):
+    def __init__(self, endpoint: str, payload: object | None) -> None:
+        self.endpoint = endpoint
+        self.payload = payload
+        super().__init__(f"MCP tool error at {endpoint}: {payload!r}")
+
+
 ACCOUNT_ENDPOINTS = {
     "main": (8799, "~/.telegram-mcp/launchd.env"),
     "crwddy": (8799, "~/.telegram-mcp/launchd.env"),
@@ -142,7 +149,22 @@ def payload_is_tool_error(payload: object | None) -> bool:
 
 
 def exception_is_tool_error(exc: Exception) -> bool:
+    if isinstance(exc, FastReadToolError):
+        return True
     return payload_is_tool_error(str(exc))
+
+
+def tool_error_code(payload: object | None) -> str | None:
+    if isinstance(payload, dict):
+        code = payload.get("code") or payload.get("error_code")
+        return str(code) if code is not None else None
+    if isinstance(payload, str):
+        stripped = payload.strip()
+        if ":" in stripped:
+            prefix = stripped.split(":", 1)[0].strip()
+            if prefix:
+                return prefix
+    return None
 
 
 async def read_once(
@@ -196,7 +218,7 @@ async def read_once(
     if bool(getattr(result, "isError", False)) or payload_is_tool_error(payload):
         structured = getattr(result, "structuredContent", None)
         error_payload = structured if structured is not None else payload
-        raise FastReadError(f"MCP tool error at {attempt.endpoint}: {error_payload!r}")
+        raise FastReadToolError(attempt.endpoint, error_payload)
 
     elapsed_seconds = round(time.perf_counter() - started, 3)
     from .agent_preflight import observe_fast_read
@@ -326,6 +348,10 @@ def main(argv: list[str] | None = None) -> int:
                 "error": "telegram_tool_error",
                 "message": "Live Telegram read failed inside the MCP tool.",
             }
+            if isinstance(exc, FastReadToolError):
+                error["endpoint"] = exc.endpoint
+                error["tool_error_code"] = tool_error_code(exc.payload)
+                error["tool_error_payload"] = exc.payload
         else:
             error = {
                 "ok": False,

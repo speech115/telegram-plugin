@@ -4,10 +4,12 @@ from unittest.mock import patch
 from telegram_mcp.fast_read_today import (
     EndpointAttempt,
     FastReadError,
+    FastReadToolError,
     exception_is_tool_error,
     endpoint_attempts,
     payload_is_tool_error,
     read_with_failover,
+    tool_error_code,
 )
 
 
@@ -69,6 +71,17 @@ class FastReadTodayTests(unittest.TestCase):
         )
 
         self.assertTrue(exception_is_tool_error(exc))
+
+    def test_typed_fast_read_tool_error_keeps_payload_code(self):
+        payload = {
+            "code": "permission_denied",
+            "message": "private channel",
+            "next": "ask user for access",
+        }
+        exc = FastReadToolError("http://127.0.0.1:8799/mcp", payload)
+
+        self.assertTrue(exception_is_tool_error(exc))
+        self.assertEqual(tool_error_code(exc.payload), "permission_denied")
 
     def test_read_with_failover_does_not_cross_account_by_default(self):
         attempts = [
