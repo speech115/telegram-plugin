@@ -1,5 +1,7 @@
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 from telegram_mcp import server
@@ -506,8 +508,13 @@ class DialogFacadeToolTests(unittest.TestCase):
         )
         wrapper.get_participants.return_value = ([Participant(id=1, first_name="Ada", username="ada")], 1)
 
-        with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)):
-            result = _run(telegram_export_members(chat="@targetdaddy"))
+        with TemporaryDirectory() as tmp:
+            export_dir = Path(tmp)
+            with patch("telegram_mcp.runtime.get_tg", AsyncMock(return_value=wrapper)), patch(
+                "telegram_mcp.tools.dialog_facade_tools.resolve_member_export_dir",
+                return_value=export_dir,
+            ):
+                result = _run(telegram_export_members(chat="@targetdaddy"))
 
         self.assertEqual(result.total, 1)
         self.assertEqual(result.participants[0].username, "ada")

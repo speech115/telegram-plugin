@@ -737,6 +737,7 @@ def register(
     include_writes: bool = False,
     include_legacy_reads: bool = False,
     include_legacy_facade: bool = False,
+    include_member_export: bool = False,
 ) -> None:
     mcp.tool(annotations=READONLY)(tool_error_handler(resolve_dialog))
     mcp.tool(annotations=READONLY)(tool_error_handler(find_dialog))
@@ -762,7 +763,8 @@ def register(
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_latest_message))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_dialog_metadata))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_get_message))
-    mcp.tool(annotations=READONLY)(tool_error_handler(telegram_export_members))
+    if include_member_export:
+        mcp.tool(annotations=ADDITIVE)(tool_error_handler(telegram_export_members))
     mcp.tool(annotations=READONLY)(tool_error_handler(telegram_prepare_reply))
     mcp.tool(annotations=CONFIRMED_WRITE)(tool_error_handler(telegram_confirmed_send))
     if include_writes:

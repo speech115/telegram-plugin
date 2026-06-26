@@ -38,7 +38,8 @@ def test_surface_contract_policy_matches_task_shaped_allowlist() -> None:
     assert "telegram_confirmed_send" in policy.confirmed_write_facade_tools
     assert "send_dialog_message" not in policy.approved_facade_tools
     assert policy.legacy_tool_aliases["read_today_dialog"] == "telegram_read"
-    assert len(policy.approved_facade_tools) == 39
+    assert "telegram_export_members" not in policy.approved_facade_tools
+    assert len(policy.approved_facade_tools) == 38
 
 
 def test_canonical_tool_name_resolves_legacy_aliases() -> None:

@@ -26,6 +26,19 @@ def _parse_date(value: str | None) -> date | None:
     return date.fromisoformat(value.strip())
 
 
+def _positive_limit(value: int) -> int:
+    if value < 1:
+        raise ValueError("limit must be a positive integer")
+    return value
+
+
+def _positive_limit_arg(value: str) -> int:
+    try:
+        return _positive_limit(int(value))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _row_date(row: dict[str, Any]) -> date | None:
     raw = str(row.get("date") or row.get("timestamp") or "").strip()
     if not raw:
@@ -209,7 +222,8 @@ def read_messages(
     if start and end and start > end:
         raise ValueError("--date-from must be before or equal to --date-to")
 
-    messages: deque[dict[str, Any]] = deque(maxlen=max(limit, 0) or None)
+    limit = _positive_limit(limit)
+    messages: deque[dict[str, Any]] = deque(maxlen=limit)
     missing_exports: list[dict[str, Any]] = []
     for row in matches:
         path = _messages_path(row, export_root)
@@ -298,13 +312,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     read.add_argument("query")
     read.add_argument("--date-from")
     read.add_argument("--date-to")
-    read.add_argument("--limit", type=int, default=30)
+    read.add_argument("--limit", type=_positive_limit_arg, default=30)
     read.add_argument("--json", action="store_true")
 
     search = subparsers.add_parser("search", help="Search mirrored channel/chat exports")
     search.add_argument("text")
     search.add_argument("--target", help="Optional channel/chat filter")
-    search.add_argument("--limit", type=int, default=30)
+    search.add_argument("--limit", type=_positive_limit_arg, default=30)
     search.add_argument("--json", action="store_true")
     return parser.parse_args(argv)
 

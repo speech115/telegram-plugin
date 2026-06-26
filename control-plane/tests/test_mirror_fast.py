@@ -84,6 +84,25 @@ def test_read_messages_reports_missing_target(tmp_path: Path) -> None:
     assert payload["error"] == "mirror_target_not_found"
 
 
+def test_read_messages_rejects_zero_limit(tmp_path: Path) -> None:
+    config_root, export_root = _write_fixture(tmp_path)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        mirror_fast.read_messages(
+            query="prime-chat",
+            limit=0,
+            config_root=config_root,
+            export_root=export_root,
+        )
+
+
+def test_main_rejects_zero_limit(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        mirror_fast.main(["read", "prime-chat", "--limit", "0", "--json"])
+    assert exc.value.code == 2
+    assert "positive integer" in capsys.readouterr().err
+
+
 def test_main_uses_provided_argv(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setattr(
         mirror_fast,

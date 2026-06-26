@@ -99,7 +99,6 @@
       "telegram_count_videos",
       "telegram_count_voice",
       "telegram_dialog_metadata",
-      "telegram_export_members",
       "telegram_get_message",
       "telegram_inspect_media",
       "telegram_latest_message",

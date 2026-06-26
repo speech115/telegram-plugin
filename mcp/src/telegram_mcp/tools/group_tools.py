@@ -120,5 +120,5 @@ def register(mcp) -> None:
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(promote_admin))
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(demote_admin))
     mcp.tool(annotations=DESTRUCTIVE)(tool_error_handler(set_user_banned))
-    mcp.tool(annotations=READONLY)(tool_error_handler(get_invite_link))
+    mcp.tool(annotations=ADDITIVE)(tool_error_handler(get_invite_link))
     mcp.tool(annotations=ADDITIVE)(tool_error_handler(invite_to_group))

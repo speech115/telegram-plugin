@@ -340,7 +340,7 @@ class GroupOperationsMixin:
 
     async def get_invite_link(self, chat: str | int) -> InviteLinkInfo:
         peer = await self._resolve_input_entity(chat)
-        result = await self._run_read(
+        result = await self._run_write(
             "get_invite_link",
             lambda: self.client(ExportChatInviteRequest(peer=peer)),
         )

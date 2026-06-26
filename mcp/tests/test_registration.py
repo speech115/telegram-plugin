@@ -32,6 +32,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(names, FACADE_TOOL_NAMES)
         self.assertNotIn("create_channel", names)
         self.assertNotIn("delete_messages", names)
+        self.assertNotIn("telegram_export_members", names)
 
     def test_full_tool_registration_surface_is_stable(self):
         mcp = FastMCP("test")
@@ -147,3 +148,21 @@ class RegistrationTests(unittest.TestCase):
 
         self.assertEqual(len(names), len(expected))
         self.assertEqual(set(names), set(expected))
+
+    def test_invite_link_is_not_registered_as_read_only(self):
+        mcp = FastMCP("test")
+        register_all_tools(mcp, profile="full")
+        tools = {tool.name: tool for tool in mcp._tool_manager.list_tools()}
+
+        self.assertFalse(tools["get_invite_link"].annotations.readOnlyHint)
+
+    def test_member_export_is_owner_full_only_and_not_read_only(self):
+        facade = FastMCP("facade")
+        register_all_tools(facade, profile="facade")
+        facade_tools = {tool.name: tool for tool in facade._tool_manager.list_tools()}
+        self.assertNotIn("telegram_export_members", facade_tools)
+
+        full = FastMCP("full")
+        register_all_tools(full, profile="full")
+        full_tools = {tool.name: tool for tool in full._tool_manager.list_tools()}
+        self.assertFalse(full_tools["telegram_export_members"].annotations.readOnlyHint)

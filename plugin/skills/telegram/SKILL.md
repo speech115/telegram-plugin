@@ -110,11 +110,12 @@ Prefer the task-shaped and direct tools exposed by Telegram MCP:
 - `mark_as_read`
 - `telegram_inspect_media`
 - `send_file`
-- `telegram_export_members`
 - `resolve_dialog` / `find_dialog`
 - `collect_context` / `collect_dialog_context`
 - `prepare_media_inspection_manifest`
 - `download_media` / `download_media_batch` / `download_dialog_media`
+- `telegram_export_members` — explicit owner/local privacy export; do not treat
+  it as routine facade context gathering.
 
 Preview aliases (`prepare_send_message`, `prepare_reply_message`,
 `telegram_confirmed_send`) remain available when a preview workflow is useful,

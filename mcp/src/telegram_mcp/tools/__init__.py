@@ -181,7 +181,6 @@ FACADE_TOOL_NAMES = {
     "telegram_count_videos",
     "telegram_count_voice",
     "telegram_dialog_metadata",
-    "telegram_export_members",
     "telegram_get_message",
     "telegram_inspect_media",
     "telegram_latest_message",
@@ -220,6 +219,7 @@ def register_all_tools(mcp, *, profile: str | None = None) -> None:
         include_writes=True,
         include_legacy_reads=True,
         include_legacy_facade=True,
+        include_member_export=True,
     )
     register_message_tools(mcp, facade_only=True)
     register_contact_tools(mcp)
