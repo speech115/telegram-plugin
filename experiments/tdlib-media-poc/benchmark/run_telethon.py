@@ -43,6 +43,16 @@ def build_telethon_result(
     )
 
 
+def extract_json_envelope(stdout: str) -> dict:
+    """`tg download --json` interleaves PROGRESS lines with its JSON envelope
+    on stdout even with --json set; the envelope is the trailing `{...}`
+    block, so parse from the first brace rather than the whole stream."""
+    json_start = stdout.find("{")
+    if json_start == -1:
+        raise json.JSONDecodeError("no JSON object found in stdout", stdout, 0)
+    return json.loads(stdout[json_start:])
+
+
 def download_one(target: BenchmarkTarget) -> DownloadResult:
     DOWNLOAD_DEST.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
@@ -53,14 +63,15 @@ def download_one(target: BenchmarkTarget) -> DownloadResult:
     )
     elapsed = time.perf_counter() - started
     try:
-        envelope = json.loads(proc.stdout)
+        envelope = extract_json_envelope(proc.stdout)
     except json.JSONDecodeError:
         envelope = {"ok": False, "error": proc.stderr.strip() or "no JSON output"}
 
     downloaded_size = None
     payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
-    local_path = payload.get("local_path") or payload.get("path")
-    if local_path and Path(local_path).exists():
+    downloaded_size = payload.get("size_bytes")
+    local_path = payload.get("path")
+    if downloaded_size is None and local_path and Path(local_path).exists():
         downloaded_size = Path(local_path).stat().st_size
 
     return build_telethon_result(target, elapsed, envelope, downloaded_size)
