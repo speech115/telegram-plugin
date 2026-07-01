@@ -1,4 +1,13 @@
-"""Heuristic safety checks for agent-facing Telegram workflows."""
+"""Heuristic safety checks for agent-facing Telegram workflows.
+
+These are best-effort substring/regex heuristics, not a complete prompt
+injection defense. The primary defense against injected instructions in
+retrieved Telegram content is architectural: retrieved text is always quoted
+as untrusted data, sends require an explicit stable dialog target, and
+`telegram_confirmed_send` replays the server-stored preview payload rather
+than trusting agent-supplied text at commit time. Do not treat a `False`
+result from these helpers as proof that text is safe.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +22,12 @@ _UNTRUSTED_INSTRUCTION_MARKERS = (
     "ignore all previous",
     "system prompt",
     "you are now",
+    "игнорируй предыдущие инструкции",
+    "игнорируй все предыдущие",
+    "системный промпт",
+    "системная инструкция",
+    "теперь ты являешься",
+    "теперь ты — ассистент",
 )
 
 

@@ -186,6 +186,19 @@ class ApprovalServerTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(store.get(token).approval_state, "approved")  # type: ignore[union-attr]
 
+    def test_mutate_compares_nonce_in_constant_time(self):
+        store = SendConfirmationStore(ttl_seconds=60)
+        payload = {"chat": "@x", "send_tool": "send_dialog_message", "text_hash": "abc"}
+        _preview_id, token, _ = store.mint(payload, preview_text="hi")
+        bind_confirmation_store(store)
+        handler = approval_server._ApprovalHandler.__new__(approval_server._ApprovalHandler)
+
+        with patch("telegram_mcp.approval_server.secrets.compare_digest", wraps=approval_server.secrets.compare_digest) as digest:
+            with self.assertRaises(ToolContractError):
+                handler._mutate(token=token, nonce="wrong-nonce", action="approve")
+
+        digest.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
