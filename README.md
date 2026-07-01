@@ -73,9 +73,9 @@ Current healthy local mode is `owner_local_full_mcp`.
 
 - `plugin/.mcp.json` points at owner-local MCP daemons and intentionally exposes
   their full local surface without a legacy `allowedTools` allowlist.
-- `TELEGRAM_MCP_TOOL_PROFILE=default` is not a restricted profile. In current
-  runtime behavior, unset/unknown/default profile names register the full
-  surface.
+- `TELEGRAM_MCP_TOOL_PROFILE=default` is not a restricted profile. Unset
+  registers the full surface; unknown non-empty values raise an error instead
+  of silently registering it.
 - The restricted facade profile is explicit: use
   `TELEGRAM_MCP_TOOL_PROFILE=facade` (or `safe` / `restricted`) for narrow
   read/search/context/draft workflows.

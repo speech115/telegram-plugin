@@ -167,3 +167,22 @@ class RegistrationTests(unittest.TestCase):
         register_all_tools(full, profile="full")
         full_tools = {tool.name: tool for tool in full._tool_manager.list_tools()}
         self.assertFalse(full_tools["telegram_export_members"].annotations.readOnlyHint)
+
+    def test_unknown_profile_value_raises_instead_of_silently_granting_full_surface(self):
+        mcp = FastMCP("test")
+        with self.assertRaises(ValueError):
+            register_all_tools(mcp, profile="facde")
+
+    def test_unknown_profile_value_from_env_raises_instead_of_silently_granting_full_surface(self):
+        mcp = FastMCP("test")
+        with patch.dict(os.environ, {"TELEGRAM_MCP_TOOL_PROFILE": "readonly"}, clear=True):
+            with self.assertRaises(ValueError):
+                register_all_tools(mcp)
+
+    def test_unset_env_still_defaults_to_full_surface(self):
+        mcp = FastMCP("test")
+        with patch.dict(os.environ, {}, clear=True):
+            register_all_tools(mcp)
+        names = {tool.name for tool in mcp._tool_manager.list_tools()}
+
+        self.assertIn("create_channel", names)

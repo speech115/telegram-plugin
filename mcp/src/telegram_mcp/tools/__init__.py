@@ -208,6 +208,11 @@ def register_all_tools(mcp, *, profile: str | None = None) -> None:
         register_dialog_facade_tools(mcp)
         register_media_facade_tools(mcp)
         return
+    if selected_profile not in FULL_TOOL_PROFILES:
+        known = sorted(FACADE_TOOL_PROFILES | FULL_TOOL_PROFILES)
+        raise ValueError(
+            f"unknown TELEGRAM_MCP_TOOL_PROFILE {selected_profile!r}; expected one of {known}"
+        )
 
     register_user_tools(mcp)
     register_chat_tools(mcp)
