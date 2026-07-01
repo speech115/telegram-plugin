@@ -1,7 +1,13 @@
 import unittest
 from types import SimpleNamespace
 
-from telegram_mcp.download_post import ParsedLink, _ext_from_message, parse_post_link
+from telegram_mcp.download_post import (
+    ParsedLink,
+    _ext_from_message,
+    _telethon_media_kind,
+    _telethon_media_size_bytes,
+    parse_post_link,
+)
 from telegram_mcp.mcp_http_client import McpCliError
 
 
@@ -68,6 +74,48 @@ class ExtFromMessageTests(unittest.TestCase):
         msg = SimpleNamespace(media=None)
 
         self.assertEqual(_ext_from_message(msg), ".bin")
+
+
+class TelethonMediaKindTests(unittest.TestCase):
+    def test_photo_is_photo_kind(self):
+        msg = SimpleNamespace(media=SimpleNamespace(document=None, photo=object()))
+        self.assertEqual(_telethon_media_kind(msg), "photo")
+
+    def test_video_mime_is_video_kind(self):
+        doc = SimpleNamespace(attributes=[], mime_type="video/mp4", size=123)
+        msg = SimpleNamespace(media=SimpleNamespace(document=doc, photo=None))
+        self.assertEqual(_telethon_media_kind(msg), "video")
+
+    def test_audio_mime_is_audio_kind(self):
+        doc = SimpleNamespace(attributes=[], mime_type="audio/mpeg", size=123)
+        msg = SimpleNamespace(media=SimpleNamespace(document=doc, photo=None))
+        self.assertEqual(_telethon_media_kind(msg), "audio")
+
+    def test_other_document_mime_is_document_kind(self):
+        doc = SimpleNamespace(attributes=[], mime_type="application/pdf", size=123)
+        msg = SimpleNamespace(media=SimpleNamespace(document=doc, photo=None))
+        self.assertEqual(_telethon_media_kind(msg), "document")
+
+    def test_no_media_is_unsupported(self):
+        msg = SimpleNamespace(media=None)
+        self.assertIsNone(_telethon_media_kind(msg))
+
+
+class TelethonMediaSizeBytesTests(unittest.TestCase):
+    def test_document_size(self):
+        doc = SimpleNamespace(size=123456)
+        msg = SimpleNamespace(media=SimpleNamespace(document=doc, photo=None))
+        self.assertEqual(_telethon_media_size_bytes(msg), 123456)
+
+    def test_photo_largest_size(self):
+        sizes = [SimpleNamespace(size=100), SimpleNamespace(size=9000)]
+        photo = SimpleNamespace(sizes=sizes)
+        msg = SimpleNamespace(media=SimpleNamespace(document=None, photo=photo))
+        self.assertEqual(_telethon_media_size_bytes(msg), 9000)
+
+    def test_no_media_is_none(self):
+        msg = SimpleNamespace(media=None)
+        self.assertIsNone(_telethon_media_size_bytes(msg))
 
 
 if __name__ == "__main__":

@@ -116,3 +116,43 @@ Use subscriber export only with explicit user intent, private local output
 paths, and clear reporting of `visible_count`, `exported_count`, `missing`, and
 completeness caveats. Do not treat a single `get_participants` slice as a full
 export.
+
+## TDLib Large-Media Downloads (main account only)
+
+`tg download` (and `download_post()` under it) can optionally route large
+media downloads on the `main` account through TDLib instead of Telethon,
+based on a measured advantage confirmed in a live POC (+78.7% faster average
+elapsed, resumability confirmed on 3 real files — see
+`mcp/docs/superpowers/specs/2026-07-01-tdlib-large-media-download-design.md`).
+This does **not** change any other Telegram operation or account: reads,
+search, sends, and MCP tool downloads (`download_media_batch`,
+`download_dialog_media`) stay on Telethon unchanged.
+
+The capability stays off until explicitly enabled. Rollout:
+
+1. Install the optional extra: `pip install -e ".[tdlib]"` (from `mcp/`).
+2. Run the one-time interactive login for `main`:
+   ```
+   PYTHONPATH=src .venv/bin/python scripts/tdlib_login.py --phone +<your number>
+   # then, after Telegram sends a code to another active session:
+   PYTHONPATH=src .venv/bin/python scripts/tdlib_login.py --code <code>
+   # only if 2FA is enabled:
+   PYTHONPATH=src .venv/bin/python scripts/tdlib_login.py --password <password>
+   ```
+3. Set in `main`'s env (`~/.telegram-mcp/launchd.env` or `mcp/.env`):
+   ```
+   TELEGRAM_TDLIB_ENABLED=true
+   ```
+   Optional tuning: `TELEGRAM_TDLIB_SESSION_DIR` (default
+   `~/.telegram-mcp-tdlib/main`), `TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB`
+   (default `20`).
+4. Watch telemetry (`download_post_backend` events: `backend`,
+   `route_attempted`, `fallback_reason`) for the backend-used distribution
+   and fallback rate before considering wider rollout (other accounts, lower
+   threshold) — each of those is a separate future decision, not part of
+   this change.
+
+Every TDLib failure mode (session not authorized, network error, unsupported
+content type, lock not acquired within 5s) falls back to Telethon
+automatically using the connection already open for routing — there is no
+new failure mode a user can hit from this change.

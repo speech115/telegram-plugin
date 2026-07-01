@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import time
 from pathlib import Path
 from typing import TextIO
 
@@ -50,3 +51,26 @@ class FileSessionLock:
         finally:
             self._handle.close()
             self._handle = None
+
+
+def try_acquire_with_timeout(
+    lock: FileSessionLock,
+    *,
+    timeout_seconds: float = 5.0,
+    poll_interval_seconds: float = 0.2,
+) -> bool:
+    """Retry ``lock.acquire()`` until it succeeds or ``timeout_seconds`` elapse.
+
+    Returns True if acquired (caller owns the lock and must call release()).
+    Returns False if the timeout elapsed without acquiring — the caller
+    should fall back rather than treat this as an error.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            lock.acquire()
+            return True
+        except SessionLockError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(poll_interval_seconds)
