@@ -14,6 +14,7 @@ import os
 import time
 from pathlib import Path
 
+import pytdbot
 from dotenv import load_dotenv
 
 from benchmark.models import BenchmarkTarget, DownloadResult, load_benchmark_set, save_results
@@ -24,6 +25,12 @@ POC_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = POC_ROOT / "data" / "tdlib"
 BENCHMARK_SET_PATH = POC_ROOT / "data" / "benchmark_set.json"
 RESULTS_PATH = POC_ROOT / "data" / "results_tdlib.json"
+
+
+def raise_if_error(result):
+    if isinstance(result, pytdbot.types.Error):
+        raise RuntimeError(f"TDLib error {result['code']}: {result['message']}")
+    return result
 
 
 def build_tdlib_result(
@@ -46,9 +53,11 @@ def build_tdlib_result(
 
 
 async def resolve_file_id(client, target: BenchmarkTarget) -> int:
-    link_info = await client.getMessageLinkInfo(url=target.link)
-    message = await client.getMessage(
-        chat_id=link_info["chat_id"], message_id=link_info["message"]["id"]
+    link_info = raise_if_error(await client.getMessageLinkInfo(url=target.link))
+    message = raise_if_error(
+        await client.getMessage(
+            chat_id=link_info["chat_id"], message_id=link_info["message"]["id"]
+        )
     )
     return extract_file_id_from_message(message.to_dict() if hasattr(message, "to_dict") else message)
 
@@ -56,7 +65,9 @@ async def resolve_file_id(client, target: BenchmarkTarget) -> int:
 async def measure_clean_download(client, file_id: int) -> tuple[float, dict]:
     """Single-shot download latency, directly comparable to the Telethon baseline."""
     started = time.perf_counter()
-    result = await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
+    result = raise_if_error(
+        await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
+    )
     elapsed = time.perf_counter() - started
     file_dict = result.to_dict() if hasattr(result, "to_dict") else result
     return elapsed, file_dict
@@ -66,17 +77,21 @@ async def measure_resumability(client, file_id: int) -> bool:
     """Delete the local copy, start a fresh async download, cancel it mid-flight
     while it is still partial, then confirm a second call resumes from the
     partial bytes already on disk instead of restarting from zero."""
-    await client.deleteFile(file_id=file_id)
-    await client.downloadFile(file_id=file_id, priority=1, synchronous=False, offset=0, limit=0)
+    raise_if_error(await client.deleteFile(file_id=file_id))
+    raise_if_error(
+        await client.downloadFile(file_id=file_id, priority=1, synchronous=False, offset=0, limit=0)
+    )
     await asyncio.sleep(2)
 
-    partial = await client.getFile(file_id=file_id)
+    partial = raise_if_error(await client.getFile(file_id=file_id))
     partial_dict = partial.to_dict() if hasattr(partial, "to_dict") else partial
     partial_bytes = (partial_dict.get("local") or {}).get("downloaded_size", 0)
 
-    await client.cancelDownloadFile(file_id=file_id, only_if_pending=False)
+    raise_if_error(await client.cancelDownloadFile(file_id=file_id, only_if_pending=False))
 
-    resumed_result = await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
+    resumed_result = raise_if_error(
+        await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
+    )
     resumed_dict = resumed_result.to_dict() if hasattr(resumed_result, "to_dict") else resumed_result
     resumed_local = resumed_dict.get("local") or {}
     completed = bool(resumed_local.get("is_downloading_completed"))
