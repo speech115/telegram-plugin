@@ -1,3 +1,4 @@
+import pytdbot
 import pytest
 
 from benchmark.tdlib_message import extract_file_id_from_message
@@ -14,37 +15,35 @@ TARGET = BenchmarkTarget(
 
 
 def test_extract_file_id_from_message_video():
-    message = {
-        "content": {
-            "@type": "messageVideo",
-            "video": {"video": {"id": 555, "size": 52_428_800}},
-        }
-    }
+    message = pytdbot.types.Message(
+        content=pytdbot.types.MessageVideo(
+            video=pytdbot.types.Video(video=pytdbot.types.File(id=555, size=52_428_800))
+        )
+    )
     assert extract_file_id_from_message(message) == 555
 
 
 def test_extract_file_id_from_message_document():
-    message = {
-        "content": {
-            "@type": "messageDocument",
-            "document": {"document": {"id": 777, "size": 10_000_000}},
-        }
-    }
+    message = pytdbot.types.Message(
+        content=pytdbot.types.MessageDocument(
+            document=pytdbot.types.Document(document=pytdbot.types.File(id=777, size=10_000_000))
+        )
+    )
     assert extract_file_id_from_message(message) == 777
 
 
 def test_extract_file_id_from_message_unsupported_type():
-    message = {"content": {"@type": "messageText"}}
+    message = pytdbot.types.Message(content=pytdbot.types.MessageText())
     with pytest.raises(ValueError, match="unsupported message content type"):
         extract_file_id_from_message(message)
 
 
 def test_build_tdlib_result_completed_download():
-    file_object = {
-        "id": 555,
-        "size": 52_428_800,
-        "local": {"downloaded_size": 52_428_800, "is_downloading_completed": True},
-    }
+    file_object = pytdbot.types.File(
+        id=555,
+        size=52_428_800,
+        local=pytdbot.types.LocalFile(downloaded_size=52_428_800, is_downloading_completed=True),
+    )
     result = build_tdlib_result(TARGET, 8.0, file_object, resumed=True)
 
     assert result.ok is True
@@ -55,11 +54,11 @@ def test_build_tdlib_result_completed_download():
 
 
 def test_build_tdlib_result_incomplete_download():
-    file_object = {
-        "id": 555,
-        "size": 52_428_800,
-        "local": {"downloaded_size": 1_000_000, "is_downloading_completed": False},
-    }
+    file_object = pytdbot.types.File(
+        id=555,
+        size=52_428_800,
+        local=pytdbot.types.LocalFile(downloaded_size=1_000_000, is_downloading_completed=False),
+    )
     result = build_tdlib_result(TARGET, 3.0, file_object, resumed=False)
 
     assert result.ok is False

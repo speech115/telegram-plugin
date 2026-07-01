@@ -36,17 +36,17 @@ def raise_if_error(result):
 def build_tdlib_result(
     target: BenchmarkTarget,
     elapsed_seconds: float,
-    file_object: dict,
+    file_object,
     resumed: bool,
 ) -> DownloadResult:
-    local = file_object.get("local") or {}
-    ok = bool(local.get("is_downloading_completed"))
+    local = file_object["local"]
+    ok = bool(local["is_downloading_completed"]) if local else False
     return DownloadResult(
         label=target.label,
         backend="tdlib",
         ok=ok,
         elapsed_seconds=elapsed_seconds,
-        bytes_downloaded=local.get("downloaded_size"),
+        bytes_downloaded=local["downloaded_size"] if local else None,
         resumed=resumed,
         error=None if ok else "download did not complete",
     )
@@ -59,18 +59,17 @@ async def resolve_file_id(client, target: BenchmarkTarget) -> int:
             chat_id=link_info["chat_id"], message_id=link_info["message"]["id"]
         )
     )
-    return extract_file_id_from_message(message.to_dict() if hasattr(message, "to_dict") else message)
+    return extract_file_id_from_message(message)
 
 
-async def measure_clean_download(client, file_id: int) -> tuple[float, dict]:
+async def measure_clean_download(client, file_id: int):
     """Single-shot download latency, directly comparable to the Telethon baseline."""
     started = time.perf_counter()
     result = raise_if_error(
         await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
     )
     elapsed = time.perf_counter() - started
-    file_dict = result.to_dict() if hasattr(result, "to_dict") else result
-    return elapsed, file_dict
+    return elapsed, result
 
 
 async def measure_resumability(client, file_id: int) -> bool:
@@ -84,18 +83,18 @@ async def measure_resumability(client, file_id: int) -> bool:
     await asyncio.sleep(2)
 
     partial = raise_if_error(await client.getFile(file_id=file_id))
-    partial_dict = partial.to_dict() if hasattr(partial, "to_dict") else partial
-    partial_bytes = (partial_dict.get("local") or {}).get("downloaded_size", 0)
+    partial_local = partial["local"]
+    partial_bytes = partial_local["downloaded_size"] if partial_local else 0
 
     raise_if_error(await client.cancelDownloadFile(file_id=file_id, only_if_pending=False))
 
     resumed_result = raise_if_error(
         await client.downloadFile(file_id=file_id, priority=1, synchronous=True, offset=0, limit=0)
     )
-    resumed_dict = resumed_result.to_dict() if hasattr(resumed_result, "to_dict") else resumed_result
-    resumed_local = resumed_dict.get("local") or {}
-    completed = bool(resumed_local.get("is_downloading_completed"))
-    grew_from_partial = resumed_local.get("downloaded_size", 0) >= partial_bytes
+    resumed_local = resumed_result["local"]
+    completed = bool(resumed_local["is_downloading_completed"]) if resumed_local else False
+    downloaded = resumed_local["downloaded_size"] if resumed_local else 0
+    grew_from_partial = downloaded >= partial_bytes
 
     return completed and partial_bytes > 0 and grew_from_partial
 
