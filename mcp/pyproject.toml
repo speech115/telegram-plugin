@@ -13,6 +13,12 @@ dependencies = [
     "structlog>=24.4",
 ]
 
+[project.optional-dependencies]
+tdlib = [
+    "Pytdbot>=0.10.1",
+    "tdjson>=1.8.65",
+]
+
 [project.scripts]
 telegram-mcp = "telegram_mcp.__main__:main"
 
