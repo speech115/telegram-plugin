@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from datetime import date
+from pathlib import Path
 
 from .metadata_tools_spec import (
     COUNT_SPECS_BY_CLI,
@@ -17,6 +18,7 @@ from .metadata_tools_spec import (
     MetadataCountSpec,
 )
 from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, call_tool_with_failover, payload_is_tool_error
+from .download_post import download_post
 from .telemetry import record_telemetry, telemetry_fields_from_result
 
 
@@ -583,6 +585,31 @@ async def cmd_message(
     )
 
 
+async def cmd_download(
+    *,
+    link: str,
+    dest: str | None,
+    account: str,
+) -> dict[str, object]:
+    import time as _time
+
+    started = _time.perf_counter()
+    result = await download_post(
+        link=link,
+        account=account,
+        dest_dir=Path(dest).expanduser() if dest else None,
+    )
+    elapsed = round(_time.perf_counter() - started, 3)
+    return {
+        "ok": True,
+        "command": "download",
+        "intent": "download_post_media",
+        "data_source": "live_telegram",
+        "elapsed_seconds": elapsed,
+        "payload": result,
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="Emit JSON envelope.")
@@ -660,6 +687,15 @@ def build_parser() -> argparse.ArgumentParser:
     message.add_argument("chat")
     message.add_argument("message_id", type=int)
     message.set_defaults(handler="message")
+
+    download = sub.add_parser(
+        "download",
+        parents=[common],
+        help="Download media from a t.me post link (direct Telethon, no 120s MCP cap)",
+    )
+    download.add_argument("link", help="t.me/c/<id>/<msg> or t.me/<username>/<msg>")
+    download.add_argument("--dest", default=None, help="Destination dir (default: ~/Downloads)")
+    download.set_defaults(handler="download")
 
     return parser
 
@@ -748,6 +784,8 @@ async def run_command(args: argparse.Namespace) -> dict[str, object]:
             env_file=env_file,
             account=account,
         )
+    if args.handler == "download":
+        return await cmd_download(link=args.link, dest=args.dest, account=account)
     raise McpCliError(f"unknown handler: {args.handler}")
 
 

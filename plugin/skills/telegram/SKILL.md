@@ -75,7 +75,15 @@ tg list gifs|music|links|polls|geo <chat> --limit 20 --json
 tg latest <chat> --json
 tg info <chat> --json
 tg message <chat> <message_id> --json
+tg download <t.me-link> [--dest DIR] [--account NAME] --json
 ```
+
+Скачивание поста по ссылке: на любую `t.me/c/<id>/<msg>` или
+`t.me/<username>/<msg>` запускай `tg download <link>` (по умолчанию в
+`~/Downloads`). Команда качает напрямую через Telethon на снимке сессии
+аккаунта, минуя 120с-таймаут MCP `download_media`, поэтому тянет и большие
+видео. Аккаунт по умолчанию `main`; для приватного канала, доступного с
+другого номера, добавь `--account <name>`.
 
 Fallback: `telegram-fast-read-today` or MCP `telegram_read` with `mode="fast"`.
 This portable plugin package intentionally does not hardcode machine-local adapter paths.
@@ -180,6 +188,7 @@ telecrawl, and source-label details.
 - "подготовь ответ", "что ответить" -> `telegram_prepare_reply` first; fetch more context only when warnings or evidence gaps require it.
 - "отправь", "reply/send" -> use `telegram_send` / `send_message` directly when the target and exact text are explicit; use preview helpers only when useful or requested.
 - "что на фото/стикерах/видео" -> collect scoped message ids, use media manifest if available, then download and inspect actual files.
+- "скачай это видео/файл/пост", ссылка `t.me/c/<id>/<msg>` или `t.me/<user>/<msg>` -> `tg download <link>` (в `~/Downloads`). Прямой Telethon мимо 120с-лимита MCP `download_media`; для крупных файлов это единственный рабочий путь. MCP `download_media` оставляй для мелких медиа в рамках одного диалога.
 - "список подписчиков", "всех подписчиков", "members/subscribers канала" -> run the subscriber exporter; do not stop at MCP `get_participants`.
 
 See [facade-routing.md](references/facade-routing.md) for app-style aliases,
