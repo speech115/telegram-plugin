@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -64,7 +65,7 @@ class _ApprovalHandler(BaseHTTPRequestHandler):
         record = store.get(token)
         if record is None:
             raise ToolContractError("invalid_confirmation_token", "confirmation token is unknown")
-        if nonce != record.one_time_nonce:
+        if not secrets.compare_digest(nonce, record.one_time_nonce):
             raise ToolContractError("invalid_confirmation_token", "approval nonce is invalid")
         if record.approval_state == "approved":
             return "<h1>Уже одобрено</h1><p class='meta'>Можно отправлять через telegram_confirmed_send.</p>"

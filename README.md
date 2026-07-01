@@ -263,6 +263,13 @@ blocks those by default.
 - Prefer preview/draft tools over sending.
 - Require separate, explicit wiring for destructive or externally visible
   Telegram actions.
+- `TELEGRAM_WRITE_APPROVAL_REQUIRED` defaults to `false`: `telegram_confirmed_send`
+  and friends still replay a server-stored preview (the agent cannot change the
+  text after preview), and every send is written to the local write-audit log,
+  but no human clicks Approve before the message goes out. Set
+  `TELEGRAM_WRITE_APPROVAL_REQUIRED=true` to require an explicit click on the
+  localhost approval page (`http://127.0.0.1:8798` by default) before any
+  confirmed send is committed.
 
 See [docs/threat-model.md](docs/threat-model.md) and
 [docs/source-routing.md](docs/source-routing.md) for the operating model. See
