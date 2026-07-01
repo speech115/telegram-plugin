@@ -19,6 +19,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 
 from .mcp_http_client import ACCOUNT_ENDPOINTS, McpCliError, load_env_file
+from .telemetry import record_telemetry
 
 DEFAULT_DEST_DIR = Path.home() / "Downloads"
 
@@ -87,6 +88,39 @@ def _ext_from_message(msg) -> str:
     if getattr(getattr(msg, "media", None), "photo", None) is not None:
         return ".jpg"
     return ".bin"
+
+
+def _telethon_media_kind(msg) -> str | None:
+    media = getattr(msg, "media", None)
+    if media is None:
+        return None
+    if getattr(media, "photo", None) is not None:
+        return "photo"
+    doc = getattr(media, "document", None)
+    if doc is None:
+        return None
+    mime = getattr(doc, "mime_type", "") or ""
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "document"
+
+
+def _telethon_media_size_bytes(msg) -> int | None:
+    media = getattr(msg, "media", None)
+    if media is None:
+        return None
+    photo = getattr(media, "photo", None)
+    if photo is not None:
+        sizes = getattr(photo, "sizes", None) or []
+        if not sizes:
+            return None
+        return max(getattr(s, "size", 0) for s in sizes)
+    doc = getattr(media, "document", None)
+    if doc is not None:
+        return getattr(doc, "size", None)
+    return None
 
 
 def _make_progress():
@@ -163,8 +197,46 @@ async def download_post(
                 f"(чат {parsed.chat}, аккаунт {account})"
             )
         out = dest_dir / f"{parsed.label}_{parsed.message_id}{_ext_from_message(msg)}"
-        progress = None if quiet else _make_progress()
-        saved = await client.download_media(msg, file=str(out), progress_callback=progress)
+
+        from . import tdlib_download  # lazy: keeps pytdbot fully optional at module load time
+
+        tdlib_enabled = os.environ.get("TELEGRAM_TDLIB_ENABLED", "false").strip().lower() == "true"
+        threshold_mb = float(os.environ.get("TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB", "20"))
+        route_to_tdlib = tdlib_download.should_route_to_tdlib(
+            account=account,
+            tdlib_enabled=tdlib_enabled,
+            content_kind=_telethon_media_kind(msg),
+            media_size_bytes=_telethon_media_size_bytes(msg),
+            threshold_mb=threshold_mb,
+        )
+
+        tdlib_backend_used = False
+        fallback_reason: str | None = None
+        saved: str | None = None
+
+        if route_to_tdlib:
+            session_dir = Path(
+                os.environ.get("TELEGRAM_TDLIB_SESSION_DIR", "~/.telegram-mcp-tdlib/main")
+            ).expanduser()
+            try:
+                tdlib_path = await tdlib_download.download_via_tdlib(link=link, session_dir=session_dir)
+                shutil.copy2(tdlib_path, out)
+                saved = str(out)
+                tdlib_backend_used = True
+            except Exception as exc:  # noqa: BLE001 - any TDLib failure falls back to Telethon
+                fallback_reason = str(exc)
+
+        if saved is None:
+            progress = None if quiet else _make_progress()
+            saved = await client.download_media(msg, file=str(out), progress_callback=progress)
+
+        record_telemetry(
+            "download_post_backend",
+            backend="tdlib" if tdlib_backend_used else "telethon",
+            account=account,
+            route_attempted=route_to_tdlib,
+            fallback_reason=fallback_reason,
+        )
     finally:
         await client.disconnect()
         if tmp_session is not None:
