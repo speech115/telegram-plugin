@@ -123,6 +123,20 @@ def _telethon_media_size_bytes(msg) -> int | None:
     return None
 
 
+def _parse_threshold_mb(raw: str | None, *, default: float = 20.0) -> float:
+    """Parse the TDLib routing threshold from an env value, tolerating garbage.
+
+    A typo in TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB must not break downloads —
+    the Telethon path still works — so fall back to the default instead of
+    raising."""
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _make_progress():
     last = {"pct": -5}
 
@@ -201,12 +215,13 @@ async def download_post(
         from . import tdlib_download  # lazy: keeps pytdbot fully optional at module load time
 
         tdlib_enabled = os.environ.get("TELEGRAM_TDLIB_ENABLED", "false").strip().lower() == "true"
-        threshold_mb = float(os.environ.get("TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB", "20"))
+        threshold_mb = _parse_threshold_mb(os.environ.get("TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB"))
+        media_size_bytes = _telethon_media_size_bytes(msg)
         route_to_tdlib = tdlib_download.should_route_to_tdlib(
             account=account,
             tdlib_enabled=tdlib_enabled,
             content_kind=_telethon_media_kind(msg),
-            media_size_bytes=_telethon_media_size_bytes(msg),
+            media_size_bytes=media_size_bytes,
             threshold_mb=threshold_mb,
         )
 
@@ -218,9 +233,16 @@ async def download_post(
             session_dir = Path(
                 os.environ.get("TELEGRAM_TDLIB_SESSION_DIR", "~/.telegram-mcp-tdlib/main")
             ).expanduser()
+            if not quiet:
+                print("PROGRESS routing large download through TDLib…", flush=True)
             try:
-                tdlib_path = await tdlib_download.download_via_tdlib(link=link, session_dir=session_dir)
-                shutil.copy2(tdlib_path, out)
+                await tdlib_download.download_via_tdlib(
+                    link=link,
+                    session_dir=session_dir,
+                    dest=out,
+                    expected_size_bytes=media_size_bytes,
+                    progress_callback=None if quiet else _make_progress(),
+                )
                 saved = str(out)
                 tdlib_backend_used = True
             except Exception as exc:  # noqa: BLE001 - any TDLib failure falls back to Telethon
