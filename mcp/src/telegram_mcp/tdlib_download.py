@@ -90,6 +90,25 @@ def extract_file_id_from_message(message) -> int:
     raise ValueError(f"unsupported message content type for download: {content_type!r}")
 
 
+def assert_expected_size(*, downloaded_bytes: int, expected_bytes: int | None) -> None:
+    """Guard against TDLib resolving a different message than Telethon.
+
+    Telethon resolves the post by the chat/message_id parsed from the link; the
+    TDLib path re-resolves the same t.me URL via getMessageLinkInfo, which for a
+    link carrying a ?comment= / thread suffix can land on a *different* message
+    and silently download the wrong file. If the byte count we downloaded does
+    not match the size Telethon saw, refuse it so the caller falls back to the
+    correctly-resolved Telethon download. ``expected_bytes is None`` -> no check.
+    """
+    if expected_bytes is None:
+        return
+    if downloaded_bytes != expected_bytes:
+        raise TdlibDownloadError(
+            f"TDLib downloaded {downloaded_bytes} bytes but Telethon expected "
+            f"{expected_bytes}; the link likely resolved to a different message"
+        )
+
+
 def should_route_to_tdlib(
     *,
     account: str,
@@ -138,11 +157,53 @@ async def start_client_ready(
         await asyncio.sleep(poll_interval_seconds)
 
 
-async def download_via_tdlib(*, link: str, session_dir: Path, dest: Path) -> Path:
+async def _download_with_progress(
+    client,
+    *,
+    file_id: int,
+    progress_callback,
+    total_bytes: int | None,
+    poll_interval_seconds: float = 1.0,
+):
+    """Start an async download and poll getFile until it completes, reporting
+    progress each poll. TDLib's ``synchronous=True`` download stays silent until
+    it finishes, which for a multi-gig file means minutes with no feedback; the
+    poll loop lets the caller surface real progress. Returns the completed File.
+    """
+    raise_if_error(
+        await client.downloadFile(
+            file_id=file_id, priority=1, synchronous=False, offset=0, limit=0
+        )
+    )
+    while True:
+        file = raise_if_error(await client.getFile(file_id=file_id))
+        local = file["local"]
+        downloaded = int(local["downloaded_size"]) if local else 0
+        total = total_bytes or int(file["size"]) or downloaded
+        progress_callback(downloaded, total)
+        if local and bool(local["is_downloading_completed"]):
+            return file
+        await asyncio.sleep(poll_interval_seconds)
+
+
+async def download_via_tdlib(
+    *,
+    link: str,
+    session_dir: Path,
+    dest: Path,
+    expected_size_bytes: int | None = None,
+    progress_callback=None,
+) -> Path:
     """Resolve `link` via TDLib, download it fully, copy it to `dest`, and drop
     the TDLib-side copy. Returns `dest` on success. Raises TdlibDownloadError on
     any failure (lock timeout, unauthorized session, TDLib error, incomplete
-    download) — the caller decides to fall back."""
+    download, size mismatch) — the caller decides to fall back.
+
+    ``expected_size_bytes`` is the size Telethon saw for the resolved message;
+    it guards against the link resolving to a different message on the TDLib
+    side (see ``assert_expected_size``) and doubles as the progress denominator.
+    When ``progress_callback`` is given the download runs asynchronously with a
+    progress poll; otherwise it blocks synchronously."""
     lock = FileSessionLock(session_dir / "download.lock")
     if not await try_acquire_with_timeout(lock, timeout_seconds=5.0):
         raise TdlibDownloadError("could not acquire TDLib session lock within 5s")
@@ -162,14 +223,26 @@ async def download_via_tdlib(*, link: str, session_dir: Path, dest: Path) -> Pat
                 )
             )
             file_id = extract_file_id_from_message(message)
-            result = raise_if_error(
-                await client.downloadFile(
-                    file_id=file_id, priority=1, synchronous=True, offset=0, limit=0
+            if progress_callback is None:
+                result = raise_if_error(
+                    await client.downloadFile(
+                        file_id=file_id, priority=1, synchronous=True, offset=0, limit=0
+                    )
                 )
-            )
+            else:
+                result = await _download_with_progress(
+                    client,
+                    file_id=file_id,
+                    progress_callback=progress_callback,
+                    total_bytes=expected_size_bytes,
+                )
             local = result["local"]
             if not local or not bool(local["is_downloading_completed"]):
                 raise TdlibDownloadError("TDLib download did not complete")
+            assert_expected_size(
+                downloaded_bytes=int(local["downloaded_size"]),
+                expected_bytes=expected_size_bytes,
+            )
             shutil.copy2(local["path"], dest)
             # Drop the TDLib-side copy so files_directory doesn't grow without
             # bound; resumability matters for partial files, not ones we've

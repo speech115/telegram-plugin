@@ -216,11 +216,12 @@ async def download_post(
 
         tdlib_enabled = os.environ.get("TELEGRAM_TDLIB_ENABLED", "false").strip().lower() == "true"
         threshold_mb = _parse_threshold_mb(os.environ.get("TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB"))
+        media_size_bytes = _telethon_media_size_bytes(msg)
         route_to_tdlib = tdlib_download.should_route_to_tdlib(
             account=account,
             tdlib_enabled=tdlib_enabled,
             content_kind=_telethon_media_kind(msg),
-            media_size_bytes=_telethon_media_size_bytes(msg),
+            media_size_bytes=media_size_bytes,
             threshold_mb=threshold_mb,
         )
 
@@ -236,7 +237,11 @@ async def download_post(
                 print("PROGRESS routing large download through TDLib…", flush=True)
             try:
                 await tdlib_download.download_via_tdlib(
-                    link=link, session_dir=session_dir, dest=out
+                    link=link,
+                    session_dir=session_dir,
+                    dest=out,
+                    expected_size_bytes=media_size_bytes,
+                    progress_callback=None if quiet else _make_progress(),
                 )
                 saved = str(out)
                 tdlib_backend_used = True

@@ -3,6 +3,7 @@ import unittest
 
 from telegram_mcp.tdlib_download import (
     TdlibDownloadError,
+    assert_expected_size,
     assert_isolated_from_telethon,
     should_route_to_tdlib,
     start_client_ready,
@@ -125,6 +126,67 @@ class StartClientReadyTests(unittest.IsolatedAsyncioTestCase):
             await start_client_ready(
                 client, timeout_seconds=0.2, poll_interval_seconds=0.05
             )
+
+
+class AssertExpectedSizeTests(unittest.TestCase):
+    def test_no_expected_size_skips_check(self):
+        assert_expected_size(downloaded_bytes=123, expected_bytes=None)  # no raise
+
+    def test_matching_size_passes(self):
+        assert_expected_size(downloaded_bytes=52_428_800, expected_bytes=52_428_800)
+
+    def test_mismatch_raises_so_caller_falls_back(self):
+        with self.assertRaisesRegex(TdlibDownloadError, "different message"):
+            assert_expected_size(downloaded_bytes=10, expected_bytes=52_428_800)
+
+
+class _FakeDownloadClient:
+    """Async fake exercising the progress-poll loop without pytdbot/network.
+
+    getFile reports ``downloaded_size`` growing across polls until it reaches
+    ``total`` and flips ``is_downloading_completed``. Returns plain dicts, which
+    ``raise_if_error`` passes through unchanged (they are not pytdbot Errors).
+    """
+
+    def __init__(self, total, steps):
+        self.total = total
+        self._steps = list(steps)
+        self.download_calls = []
+
+    async def downloadFile(self, **kwargs):
+        self.download_calls.append(kwargs)
+        return {"local": {"downloaded_size": 0, "is_downloading_completed": False}}
+
+    async def getFile(self, *, file_id):
+        downloaded = self._steps.pop(0) if len(self._steps) > 1 else self._steps[0]
+        return {
+            "size": self.total,
+            "expected_size": self.total,
+            "local": {
+                "downloaded_size": downloaded,
+                "is_downloading_completed": downloaded >= self.total,
+            },
+        }
+
+
+@unittest.skipUnless(PYTDBOT_AVAILABLE, "pytdbot not installed (optional [tdlib] extra)")
+class DownloadWithProgressTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reports_progress_and_returns_completed_file(self):
+        from telegram_mcp.tdlib_download import _download_with_progress
+
+        client = _FakeDownloadClient(total=100, steps=[40, 100])
+        seen = []
+        result = await _download_with_progress(
+            client,
+            file_id=7,
+            progress_callback=lambda done, total: seen.append((done, total)),
+            total_bytes=100,
+            poll_interval_seconds=0,
+        )
+        self.assertEqual(client.download_calls[0]["synchronous"], False)
+        self.assertIn((40, 100), seen)
+        self.assertIn((100, 100), seen)
+        self.assertTrue(result["local"]["is_downloading_completed"])
 
 
 class AssertIsolatedFromTelethonTests(unittest.TestCase):
