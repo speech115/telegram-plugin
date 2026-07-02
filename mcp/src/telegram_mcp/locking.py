@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import os
 import time
@@ -53,13 +54,17 @@ class FileSessionLock:
             self._handle = None
 
 
-def try_acquire_with_timeout(
+async def try_acquire_with_timeout(
     lock: FileSessionLock,
     *,
     timeout_seconds: float = 5.0,
     poll_interval_seconds: float = 0.2,
 ) -> bool:
     """Retry ``lock.acquire()`` until it succeeds or ``timeout_seconds`` elapse.
+
+    Async so callers running inside an event loop (e.g. the TDLib download
+    path, which shares the loop with a live Telethon client) don't block it
+    while polling — the wait uses ``asyncio.sleep``.
 
     Returns True if acquired (caller owns the lock and must call release()).
     Returns False if the timeout elapsed without acquiring — the caller
@@ -73,4 +78,4 @@ def try_acquire_with_timeout(
         except SessionLockError:
             if time.monotonic() >= deadline:
                 return False
-            time.sleep(poll_interval_seconds)
+            await asyncio.sleep(poll_interval_seconds)

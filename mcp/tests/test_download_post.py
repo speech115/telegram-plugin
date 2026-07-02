@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from telegram_mcp.download_post import (
     ParsedLink,
     _ext_from_message,
+    _parse_threshold_mb,
     _telethon_media_kind,
     _telethon_media_size_bytes,
     parse_post_link,
@@ -116,6 +117,20 @@ class TelethonMediaSizeBytesTests(unittest.TestCase):
     def test_no_media_is_none(self):
         msg = SimpleNamespace(media=None)
         self.assertIsNone(_telethon_media_size_bytes(msg))
+
+
+class ParseThresholdMbTests(unittest.TestCase):
+    def test_valid_value(self):
+        self.assertEqual(_parse_threshold_mb("50"), 50.0)
+
+    def test_none_falls_back_to_default(self):
+        self.assertEqual(_parse_threshold_mb(None), 20.0)
+
+    def test_garbage_falls_back_to_default_instead_of_raising(self):
+        self.assertEqual(_parse_threshold_mb("twenty"), 20.0)
+
+    def test_empty_falls_back_to_default(self):
+        self.assertEqual(_parse_threshold_mb(""), 20.0)
 
 
 if __name__ == "__main__":

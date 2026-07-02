@@ -20,7 +20,9 @@ class LockingTests(unittest.TestCase):
             finally:
                 first.release()
 
-    def test_try_acquire_with_timeout_returns_false_when_held(self):
+
+class TryAcquireWithTimeoutTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_false_when_held(self):
         with tempfile.TemporaryDirectory() as tmp:
             lock_path = Path(tmp) / "telegram.lock"
 
@@ -28,19 +30,19 @@ class LockingTests(unittest.TestCase):
             holder.acquire()
             try:
                 waiter = FileSessionLock(lock_path)
-                acquired = try_acquire_with_timeout(
+                acquired = await try_acquire_with_timeout(
                     waiter, timeout_seconds=0.3, poll_interval_seconds=0.1
                 )
                 self.assertFalse(acquired)
             finally:
                 holder.release()
 
-    def test_try_acquire_with_timeout_succeeds_once_free(self):
+    async def test_succeeds_once_free(self):
         with tempfile.TemporaryDirectory() as tmp:
             lock_path = Path(tmp) / "telegram.lock"
 
             lock = FileSessionLock(lock_path)
-            acquired = try_acquire_with_timeout(lock, timeout_seconds=0.3)
+            acquired = await try_acquire_with_timeout(lock, timeout_seconds=0.3)
             try:
                 self.assertTrue(acquired)
             finally:

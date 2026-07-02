@@ -1,9 +1,38 @@
 import importlib.util
 import unittest
 
-from telegram_mcp.tdlib_download import assert_isolated_from_telethon, should_route_to_tdlib
+from telegram_mcp.tdlib_download import (
+    TdlibDownloadError,
+    assert_isolated_from_telethon,
+    should_route_to_tdlib,
+    start_client_ready,
+)
 
 PYTDBOT_AVAILABLE = importlib.util.find_spec("pytdbot") is not None
+
+
+class _FakeClient:
+    """Minimal stand-in for pytdbot.Client for start_client_ready tests.
+
+    start_client_ready never imports pytdbot itself — it only calls
+    ``start(wait_login=False)`` and reads ``authorization_state`` — so it can
+    be exercised without the optional extra installed.
+    """
+
+    def __init__(self, states):
+        # states: list of authorization_state values yielded on each read;
+        # the last value repeats once exhausted.
+        self._states = list(states)
+        self.start_calls = []
+
+    async def start(self, wait_login=True):
+        self.start_calls.append(wait_login)
+
+    @property
+    def authorization_state(self):
+        if len(self._states) > 1:
+            return self._states.pop(0)
+        return self._states[0]
 
 
 class ShouldRouteToTdlibTests(unittest.TestCase):
@@ -74,6 +103,30 @@ class ShouldRouteToTdlibTests(unittest.TestCase):
         )
 
 
+class StartClientReadyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_when_ready(self):
+        client = _FakeClient(["authorizationStateReady"])
+        await start_client_ready(client, timeout_seconds=1.0, poll_interval_seconds=0.05)
+        self.assertEqual(client.start_calls, [False])  # start(wait_login=False)
+
+    async def test_returns_once_state_becomes_ready(self):
+        client = _FakeClient(
+            [
+                "authorizationStateWaitTdlibParameters",
+                "authorizationStateWaitTdlibParameters",
+                "authorizationStateReady",
+            ]
+        )
+        await start_client_ready(client, timeout_seconds=1.0, poll_interval_seconds=0.01)
+
+    async def test_raises_instead_of_hanging_when_unauthorized(self):
+        client = _FakeClient(["authorizationStateWaitPhoneNumber"])
+        with self.assertRaisesRegex(TdlibDownloadError, "not ready"):
+            await start_client_ready(
+                client, timeout_seconds=0.2, poll_interval_seconds=0.05
+            )
+
+
 class AssertIsolatedFromTelethonTests(unittest.TestCase):
     def test_rejects_telethon_session_tree(self):
         with self.assertRaises(ValueError):
@@ -110,6 +163,20 @@ class PytdbotDependentTests(unittest.TestCase):
             )
         )
         self.assertEqual(extract_file_id_from_message(message), 555)
+
+    def test_extract_file_id_from_message_animation(self):
+        import pytdbot
+
+        from telegram_mcp.tdlib_download import extract_file_id_from_message
+
+        message = pytdbot.types.Message(
+            content=pytdbot.types.MessageAnimation(
+                animation=pytdbot.types.Animation(
+                    animation=pytdbot.types.File(id=777, size=52_428_800)
+                )
+            )
+        )
+        self.assertEqual(extract_file_id_from_message(message), 777)
 
     def test_extract_file_id_from_message_unsupported_type(self):
         import pytdbot

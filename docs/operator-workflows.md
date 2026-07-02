@@ -145,7 +145,9 @@ The capability stays off until explicitly enabled. Rollout:
    ```
    Optional tuning: `TELEGRAM_TDLIB_SESSION_DIR` (default
    `~/.telegram-mcp-tdlib/main`), `TELEGRAM_TDLIB_DOWNLOAD_THRESHOLD_MB`
-   (default `20`).
+   (default `20`), `TELEGRAM_TDLIB_DB_ENCRYPTION_KEY` (default
+   `telegram-mcp-tdlib` — set a secret here so the TDLib database, which holds
+   the `main`-account auth key, isn't encrypted with a public constant).
 4. Watch telemetry (`download_post_backend` events: `backend`,
    `route_attempted`, `fallback_reason`) for the backend-used distribution
    and fallback rate before considering wider rollout (other accounts, lower
@@ -155,4 +157,7 @@ The capability stays off until explicitly enabled. Rollout:
 Every TDLib failure mode (session not authorized, network error, unsupported
 content type, lock not acquired within 5s) falls back to Telethon
 automatically using the connection already open for routing — there is no
-new failure mode a user can hit from this change.
+new failure mode a user can hit from this change. An unauthorized or revoked
+TDLib session is bounded by a readiness timeout (~15s) before it falls back,
+so a stale session adds a one-time delay per download, not a hang; re-run
+`scripts/tdlib_login.py` to clear it.
